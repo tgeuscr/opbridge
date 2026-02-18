@@ -1,0 +1,138 @@
+:root {
+  --bg: #f5f4ee;
+  --ink: #1e2227;
+  --muted: #5b6672;
+  --line: #c9cfd4;
+  --panel: #ffffff;
+  --accent: #116d60;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 100% 0%, #dbece7, transparent 35%),
+    radial-gradient(circle at 0% 100%, #e9efe2, transparent 40%),
+    var(--bg);
+}
+
+.page {
+  width: min(1180px, 94vw);
+  margin: 2rem auto 3rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(1.6rem, 3vw, 2.6rem);
+}
+
+.hero p {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+}
+
+.kicker {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.74rem;
+  color: #235f53;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.95rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.two-col {
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.87rem;
+}
+
+input,
+select,
+button {
+  height: 2.4rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  padding: 0 0.68rem;
+  font-size: 0.9rem;
+}
+
+button {
+  background: #f8faf7;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.3rem 0.55rem;
+  background: #fbfcfa;
+  font-size: 0.8rem;
+}
+
+.inline-check input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  padding: 0;
+}
+
+.status,
+.output {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f7f8f9;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.7rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.output {
+  min-height: 180px;
+}
+
+@media (max-width: 900px) {
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+}

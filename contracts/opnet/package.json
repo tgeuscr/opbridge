@@ -1,0 +1,27 @@
+{
+  "name": "@heptad/opnet-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run build:bridge && npm run build:husdt && npm run build:hwbtc && npm run build:heth && npm run build:hpaxg",
+    "build:bridge": "asc src/bridge/index.ts --target bridge --measure --uncheckedBehavior never",
+    "build:husdt": "asc src/wrapped/husdt/index.ts --target husdt --measure --uncheckedBehavior never",
+    "build:hwbtc": "asc src/wrapped/hwbtc/index.ts --target hwbtc --measure --uncheckedBehavior never",
+    "build:heth": "asc src/wrapped/heth/index.ts --target heth --measure --uncheckedBehavior never",
+    "build:hpaxg": "asc src/wrapped/hpaxg/index.ts --target hpaxg --measure --uncheckedBehavior never",
+    "test": "echo 'TODO: add OP_NET unit tests'",
+    "typecheck": "echo 'TODO: add OP_NET-compatible type/lint checks'"
+  },
+  "dependencies": {
+    "@assemblyscript/loader": "^0.28.9",
+    "@btc-vision/as-bignum": "^0.1.2",
+    "@btc-vision/assemblyscript": "^0.29.2",
+    "@btc-vision/btc-runtime": "^1.11.0-rc.6",
+    "@btc-vision/opnet-transform": "^1.1.0",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3"
+  }
+}

@@ -1,0 +1,477 @@
+{
+    "functions": [
+        {
+            "name": "mintWithRelaySignatures",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "asset",
+                    "type": "UINT8"
+                },
+                {
+                    "name": "recipient",
+                    "type": "ADDRESS"
+                },
+                {
+                    "name": "amount",
+                    "type": "UINT256"
+                },
+                {
+                    "name": "depositId",
+                    "type": "UINT256"
+                },
+                {
+                    "name": "relayIndexesPacked",
+                    "type": "BYTES"
+                },
+                {
+                    "name": "relaySignaturesPacked",
+                    "type": "BYTES"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "requestBurn",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "asset",
+                    "type": "UINT8"
+                },
+                {
+                    "name": "from",
+                    "type": "ADDRESS"
+                },
+                {
+                    "name": "amount",
+                    "type": "UINT256"
+                },
+                {
+                    "name": "withdrawalId",
+                    "type": "UINT256"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "setRelayPubKey",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "relayIndex",
+                    "type": "UINT8"
+                },
+                {
+                    "name": "relayPubKey",
+                    "type": "BYTES"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "setRelayPubKeysPacked",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "relayPubKeysPacked",
+                    "type": "BYTES"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "setRelaysConfigPacked",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "relayPubKeysPacked",
+                    "type": "BYTES"
+                },
+                {
+                    "name": "newThreshold",
+                    "type": "UINT8"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "setWrappedToken",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "asset",
+                    "type": "UINT8"
+                },
+                {
+                    "name": "token",
+                    "type": "ADDRESS"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "setSupportedAssetsPacked",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "assetsPacked",
+                    "type": "BYTES"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "removeSupportedAsset",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "asset",
+                    "type": "UINT8"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "removeSupportedAssetsPacked",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "assetIdsPacked",
+                    "type": "BYTES"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "wrappedToken",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "asset",
+                    "type": "UINT8"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "token",
+                    "type": "ADDRESS"
+                }
+            ]
+        },
+        {
+            "name": "supportedAssetCount",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "count",
+                    "type": "UINT16"
+                }
+            ]
+        },
+        {
+            "name": "supportedAssetAt",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "index",
+                    "type": "UINT16"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "assetId",
+                    "type": "UINT8"
+                },
+                {
+                    "name": "token",
+                    "type": "ADDRESS"
+                },
+                {
+                    "name": "decimals",
+                    "type": "UINT8"
+                },
+                {
+                    "name": "symbol",
+                    "type": "BYTES"
+                }
+            ]
+        },
+        {
+            "name": "isSignatureEnforced",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "enabled",
+                    "type": "BOOL"
+                }
+            ]
+        },
+        {
+            "name": "paused",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "paused",
+                    "type": "BOOL"
+                }
+            ]
+        },
+        {
+            "name": "relayThreshold",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "requiredSignatures",
+                    "type": "UINT8"
+                }
+            ]
+        },
+        {
+            "name": "relayCount",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "relayCount",
+                    "type": "UINT8"
+                }
+            ]
+        },
+        {
+            "name": "setRelayCount",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "newRelayCount",
+                    "type": "UINT8"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "setRelayThreshold",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "newThreshold",
+                    "type": "UINT8"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "setPaused",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "paused",
+                    "type": "BOOL"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "owner",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "owner",
+                    "type": "ADDRESS"
+                }
+            ]
+        },
+        {
+            "name": "transferOwnership",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "newOwner",
+                    "type": "ADDRESS"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "computeMintAttestationHash",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "asset",
+                    "type": "UINT8"
+                },
+                {
+                    "name": "recipient",
+                    "type": "ADDRESS"
+                },
+                {
+                    "name": "amount",
+                    "type": "UINT256"
+                },
+                {
+                    "name": "depositId",
+                    "type": "UINT256"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "messageHash",
+                    "type": "BYTES32"
+                }
+            ]
+        }
+    ],
+    "events": [
+        {
+            "name": "MintFinalized",
+            "values": [
+                {
+                    "name": "assetId",
+                    "type": "UINT8"
+                },
+                {
+                    "name": "recipient",
+                    "type": "ADDRESS"
+                },
+                {
+                    "name": "amount",
+                    "type": "UINT256"
+                },
+                {
+                    "name": "depositId",
+                    "type": "UINT256"
+                }
+            ],
+            "type": "Event"
+        },
+        {
+            "name": "BurnRequested",
+            "values": [
+                {
+                    "name": "assetId",
+                    "type": "UINT8"
+                },
+                {
+                    "name": "from",
+                    "type": "ADDRESS"
+                },
+                {
+                    "name": "amount",
+                    "type": "UINT256"
+                },
+                {
+                    "name": "withdrawalId",
+                    "type": "UINT256"
+                }
+            ],
+            "type": "Event"
+        },
+        {
+            "name": "WrappedTokenUpdated",
+            "values": [
+                {
+                    "name": "assetId",
+                    "type": "UINT8"
+                },
+                {
+                    "name": "token",
+                    "type": "ADDRESS"
+                }
+            ],
+            "type": "Event"
+        },
+        {
+            "name": "RelayCountUpdated",
+            "values": [
+                {
+                    "name": "relayCount",
+                    "type": "UINT8"
+                }
+            ],
+            "type": "Event"
+        },
+        {
+            "name": "RelayThresholdUpdated",
+            "values": [
+                {
+                    "name": "requiredSignatures",
+                    "type": "UINT8"
+                }
+            ],
+            "type": "Event"
+        },
+        {
+            "name": "BridgePausedUpdated",
+            "values": [
+                {
+                    "name": "paused",
+                    "type": "BOOL"
+                }
+            ],
+            "type": "Event"
+        },
+        {
+            "name": "OwnershipTransferred",
+            "values": [
+                {
+                    "name": "previousOwner",
+                    "type": "ADDRESS"
+                },
+                {
+                    "name": "newOwner",
+                    "type": "ADDRESS"
+                }
+            ],
+            "type": "Event"
+        }
+    ]
+}

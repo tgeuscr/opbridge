@@ -1,0 +1,36 @@
+{
+  "targets": {
+    "bridge": {
+      "outFile": "build/HeptadBridge.wasm",
+      "use": ["abort=src/bridge/index/abort"]
+    },
+    "husdt": {
+      "outFile": "build/HUSDT.wasm",
+      "use": ["abort=src/wrapped/husdt/index/abort"]
+    },
+    "hwbtc": {
+      "outFile": "build/HWBTC.wasm",
+      "use": ["abort=src/wrapped/hwbtc/index/abort"]
+    },
+    "heth": {
+      "outFile": "build/HETH.wasm",
+      "use": ["abort=src/wrapped/heth/index/abort"]
+    },
+    "hpaxg": {
+      "outFile": "build/HPAXG.wasm",
+      "use": ["abort=src/wrapped/hpaxg/index/abort"]
+    }
+  },
+  "options": {
+    "sourceMap": false,
+    "optimizeLevel": 3,
+    "shrinkLevel": 1,
+    "converge": true,
+    "noAssert": false,
+    "runtime": "stub",
+    "memoryBase": 0,
+    "initialMemory": 1,
+    "exportStart": "start",
+    "transform": "@btc-vision/opnet-transform"
+  }
+}
