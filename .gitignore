@@ -3,3 +3,11 @@ node_modules
 dist
 coverage
 .env
+
+# Private keys / sensitive local key material
+*.pem
+*.key
+*.pk8
+*private*key*
+*private-keys*
+apps/web/src/dev-relay-keys.json
