@@ -2,7 +2,7 @@
 
 Planned contents:
 
-- Vault contract for ETH/WBTC/USDT deposits
+- Vault contract for ETH/WBTC/USDT/PAXG deposits
 - Multi-sig/threshold signature verification for OP_NET burn attestations
 - Withdrawal execution and replay protection
 

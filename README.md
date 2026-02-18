@@ -4,8 +4,8 @@ Heptad is a bi-directional bridge between Ethereum and OP_NET (smart contracts o
 
 ## Initial scope
 
-- Bridge assets from Ethereum to OP_NET: `ETH`, `WBTC`, `USDT`
-- Mint wrapped OP_NET representations: `hETH`, `hWBTC`, `hUSDT`
+- Bridge assets from Ethereum to OP_NET: `ETH`, `WBTC`, `USDT`, `PAXG`
+- Mint wrapped OP_NET representations: `hETH`, `hWBTC`, `hUSDT`, `hPAXG`
 - Burn wrapped OP_NET assets for redemption on Ethereum
 - Start implementation with:
   - OP_NET smart contracts (`contracts/opnet`)
@@ -25,7 +25,7 @@ Heptad is a bi-directional bridge between Ethereum and OP_NET (smart contracts o
 1. User deposits supported asset into Ethereum vault contract.
 2. Relayers observe deposit events and sign attested bridge messages.
 3. User submits proofs/signatures to OP_NET bridge contract.
-4. OP_NET bridge mints wrapped tokens (`hETH`, `hWBTC`, `hUSDT`).
+4. OP_NET bridge mints wrapped tokens (`hETH`, `hWBTC`, `hUSDT`, `hPAXG`).
 5. For withdrawals, user burns wrapped OP_NET tokens.
 6. Relayers attest burn events and user redeems on Ethereum vault.
 
@@ -37,9 +37,10 @@ Heptad is a bi-directional bridge between Ethereum and OP_NET (smart contracts o
 
 ```bash
 npm install
+npm run build
 npm run dev:web
 ```
 
 ## Status
 
-This repository is a development skeleton, not production-ready bridge infrastructure.
+This repository is an active development prototype, not production-ready bridge infrastructure.
