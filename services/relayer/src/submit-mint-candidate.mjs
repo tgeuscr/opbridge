@@ -191,7 +191,7 @@ Optional:
   }
 
   const { wallet, walletSource, walletMeta } = buildWalletFromEnv(opnetNetwork);
-  const provider = new JSONRpcProvider(opnetRpcUrl, opnetNetwork);
+  const provider = new JSONRpcProvider({ url: opnetRpcUrl, network: opnetNetwork });
 
   const bridge = getContract(bridgeAddress, BRIDGE_MINT_ABI, provider, opnetNetwork);
   const recipient = Address.fromString(String(mintSubmission.recipient));

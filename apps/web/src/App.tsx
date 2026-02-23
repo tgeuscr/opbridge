@@ -680,7 +680,7 @@ export function App() {
   const bridgeContractTarget = bridgeInput;
   const tokenContractTarget = tokenInput;
   const readProvider = useMemo(
-    () => new JSONRpcProvider(RPC_URLS[networkMode], readNetwork),
+    () => new JSONRpcProvider({ url: RPC_URLS[networkMode], network: readNetwork }),
     [networkMode, readNetwork],
   );
 
