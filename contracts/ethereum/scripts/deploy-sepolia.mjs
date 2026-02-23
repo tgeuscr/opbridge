@@ -118,7 +118,7 @@ async function main() {
       tokenAddress: token.tokenAddress,
     })),
     opnet: {
-      network: "regtest",
+      network: "testnet",
       bridgeAddress: process.env.OPNET_BRIDGE_ADDRESS || "",
       wrappedTokens: {
         USDT: process.env.OPNET_HUSDT_ADDRESS || "",

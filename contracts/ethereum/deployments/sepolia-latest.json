@@ -32,7 +32,7 @@
     }
   ],
   "opnet": {
-    "network": "regtest",
+    "network": "testnet",
     "bridgeAddress": "",
     "wrappedTokens": {
       "USDT": "",

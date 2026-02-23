@@ -164,12 +164,20 @@ function parseMldsaPrivateKey(raw) {
   );
 }
 
-function buildRelaySigner(rawKey, relayIndex, relayerId) {
+function resolveOPNetNetwork(name) {
+  const normalized = String(name ?? "testnet").trim().toLowerCase();
+  if (normalized === "testnet") return networks.testnet;
+  if (normalized === "regtest") return networks.regtest;
+  if (normalized === "mainnet") return networks.bitcoin;
+  throw new Error(`Unsupported opnet.network=${name}. Expected testnet, regtest, or mainnet.`);
+}
+
+function buildRelaySigner(rawKey, relayIndex, relayerId, opnetNetwork) {
   const privateKey = parseMldsaPrivateKey(rawKey);
   const signer = QuantumBIP32Factory.fromPrivateKey(
     privateKey,
     ZERO_CHAIN_CODE,
-    networks.regtest,
+    opnetNetwork,
     MLDSASecurityLevel.LEVEL2,
   );
   const publicKey = new Uint8Array(signer.publicKey);
@@ -201,7 +209,7 @@ function loadRelayKeyPayload() {
   return null;
 }
 
-function loadRelaySigners(relayerId) {
+function loadRelaySigners(relayerId, opnetNetwork) {
   const singlePrivateKey = process.env.RELAYER_PRIVATE_KEY?.trim();
   if (singlePrivateKey) {
     const relayIndexRaw = process.env.RELAYER_INDEX?.trim();
@@ -212,7 +220,7 @@ function loadRelaySigners(relayerId) {
     if (!Number.isInteger(relayIndex) || relayIndex < 0 || relayIndex > 255) {
       throw new Error("RELAYER_INDEX must be an integer in [0,255].");
     }
-    return [buildRelaySigner(singlePrivateKey, relayIndex, relayerId)];
+    return [buildRelaySigner(singlePrivateKey, relayIndex, relayerId, opnetNetwork)];
   }
 
   const payload = loadRelayKeyPayload();
@@ -222,7 +230,7 @@ function loadRelaySigners(relayerId) {
 
   const keys = Array.isArray(payload.relayPrivateKeys) ? payload.relayPrivateKeys : [];
   return keys
-    .map((raw, relayIndex) => buildRelaySigner(raw, relayIndex, relayerId))
+    .map((raw, relayIndex) => buildRelaySigner(raw, relayIndex, relayerId, opnetNetwork))
     .filter(Boolean);
 }
 
@@ -295,6 +303,9 @@ function parseMapping(raw, options = {}) {
   }
   if (!opnet.bridgeHex) {
     opnet.bridgeHex = opnet.bridgeAddress;
+  }
+  if (!opnet.network) {
+    opnet.network = "testnet";
   }
   if (!Array.isArray(ethereum.assets) || ethereum.assets.length === 0) {
     throw new Error("Mapping ethereum.assets must be a non-empty array.");
@@ -431,7 +442,7 @@ Example:
 
   const mappingRaw = fs.readFileSync(mappingFile, "utf8");
   const mapping = parseMapping(mappingRaw, { opnetBridgeAddress, opnetBridgeHex });
-  const relaySigners = loadRelaySigners(relayerId);
+  const relaySigners = loadRelaySigners(relayerId, resolveOPNetNetwork(mapping.opnet.network));
   if (Number(mapping.ethereum.chainId) !== 11155111) {
     throw new Error(`Expected ethereum.chainId=11155111 for Sepolia, got ${mapping.ethereum.chainId}`);
   }

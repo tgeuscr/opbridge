@@ -26,7 +26,7 @@ class OPWalletSigner extends UnisatSigner {
   }
 }
 
-type NetworkMode = 'regtest' | 'mainnet';
+type NetworkMode = 'testnet' | 'regtest' | 'mainnet';
 type DevToolTab = 'opnet' | 'ethereum';
 type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -157,6 +157,7 @@ type OP20ReadContract = {
 };
 
 const RPC_URLS: Record<NetworkMode, string> = {
+  testnet: 'https://testnet.opnet.org',
   regtest: 'https://regtest.opnet.org',
   mainnet: 'https://mainnet.opnet.org',
 };
@@ -456,7 +457,7 @@ export function App() {
     connecting,
   } = useWalletConnect();
 
-  const [networkMode, setNetworkMode] = useState<NetworkMode>('regtest');
+  const [networkMode, setNetworkMode] = useState<NetworkMode>('testnet');
   const [devToolTab, setDevToolTab] = useState<DevToolTab>('opnet');
   const [bridgeAddress, setBridgeAddress] = useState('');
   const [asset, setAsset] = useState<string>(DEFAULT_ASSET);
@@ -2331,6 +2332,7 @@ signerFallbackError: ${fallbackSignerError ?? '-'}`}
           <label>
             OP_NET Network
             <select value={networkMode} onChange={(e) => setNetworkMode(e.target.value as NetworkMode)}>
+              <option value="testnet">testnet</option>
               <option value="regtest">regtest</option>
               <option value="mainnet">mainnet</option>
             </select>

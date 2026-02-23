@@ -9,7 +9,7 @@ import { ABIDataTypes, BitcoinAbiTypes, JSONRpcProvider, getContract } from "opn
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
 const DEFAULT_CANDIDATES_FILE = path.resolve(REPO_ROOT, "services/relayer/.data/mint-submission-candidates.json");
-const DEFAULT_OPNET_RPC_URL = "https://regtest.opnet.org";
+const DEFAULT_OPNET_RPC_URL = "https://testnet.opnet.org";
 
 const BRIDGE_MINT_ABI = [
   {
@@ -52,10 +52,11 @@ function hexToBytes(raw) {
 }
 
 function resolveNetwork(name) {
-  const normalized = (name || "regtest").toLowerCase();
+  const normalized = (name || "testnet").toLowerCase();
+  if (normalized === "testnet") return networks.testnet;
   if (normalized === "regtest") return networks.regtest;
   if (normalized === "mainnet") return networks.bitcoin;
-  throw new Error(`Unsupported OPNET_NETWORK=${name}. Expected regtest or mainnet.`);
+  throw new Error(`Unsupported OPNET_NETWORK=${name}. Expected testnet, regtest, or mainnet.`);
 }
 
 function selectCandidate(parsed) {
@@ -149,7 +150,7 @@ Optional:
   MINT_CANDIDATE_NONCE (select specific ready candidate by nonce)
   OPNET_BRIDGE_ADDRESS (fallback if candidate message.opnetBridge missing)
   OPNET_RPC_URL (default: ${DEFAULT_OPNET_RPC_URL})
-  OPNET_NETWORK (default: regtest; allowed: regtest|mainnet)
+  OPNET_NETWORK (default: testnet; allowed: testnet|regtest|mainnet)
   OPNET_MAX_SAT_SPEND (default: 20000)
   OPNET_FEE_RATE (default: 2)
 `);
@@ -237,7 +238,7 @@ Optional:
         candidatePayloadHash: selected.payloadHashHex,
         bridgeAddress,
         rpcUrl: opnetRpcUrl,
-        network: process.env.OPNET_NETWORK?.trim() || "regtest",
+        network: process.env.OPNET_NETWORK?.trim() || "testnet",
         walletSource,
         walletMeta,
         walletP2TR: wallet.p2tr,
