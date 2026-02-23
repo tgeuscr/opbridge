@@ -4,9 +4,11 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@btc-vision/bitcoin": "^6.5.6",
-    "@btc-vision/transaction": "^1.8.0-rc.2",
-    "opnet": "^1.8.0"
+    "@btc-vision/bip32": "latest",
+    "@btc-vision/bitcoin": "rc",
+    "@btc-vision/ecpair": "latest",
+    "@btc-vision/transaction": "rc",
+    "opnet": "rc"
   },
   "scripts": {
     "run:sepolia": "node src/sepolia-poller.mjs",

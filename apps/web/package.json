@@ -9,11 +9,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@btc-vision/bitcoin": "^6.5.6",
-    "@btc-vision/transaction": "^1.8.0-rc.2",
+    "@btc-vision/bip32": "latest",
+    "@btc-vision/bitcoin": "rc",
+    "@btc-vision/ecpair": "latest",
+    "@btc-vision/transaction": "rc",
     "@btc-vision/walletconnect": "^1.10.0-beta.0",
     "@heptad/shared": "0.1.0",
-    "opnet": "^1.8.0",
+    "opnet": "rc",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
