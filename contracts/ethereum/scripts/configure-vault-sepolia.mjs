@@ -18,6 +18,7 @@ async function main() {
     path.join(projectRoot, "deployments", "sepolia-latest.json");
   const rpcUrl = requireEnv("SEPOLIA_RPC_URL");
   const privateKey = requireEnv("SEPOLIA_DEPLOYER_PRIVATE_KEY");
+  const feeRecipientRaw = process.env.ETH_VAULT_FEE_RECIPIENT?.trim() || "";
 
   if (!fs.existsSync(deploymentPath)) {
     throw new Error(`Deployment file not found: ${deploymentPath}`);
@@ -34,11 +35,17 @@ async function main() {
   const vaultAddress = deployment.vaultAddress;
   const vaultAbi = [
     "function configureAsset(uint8 assetId, address token, bool enabled) external",
+    "function setFeeRecipient(address nextFeeRecipient) external",
     "function owner() view returns (address)",
   ];
   const vault = new ethers.Contract(vaultAddress, vaultAbi, signer);
 
   console.log(`Configuring vault ${vaultAddress} as ${signer.address}`);
+  if (feeRecipientRaw) {
+    const tx = await vault.setFeeRecipient(feeRecipientRaw);
+    await tx.wait();
+    console.log(`Configured feeRecipient -> ${feeRecipientRaw}`);
+  }
   for (const asset of deployment.assets) {
     const tx = await vault.configureAsset(asset.assetId, asset.tokenAddress, true);
     await tx.wait();

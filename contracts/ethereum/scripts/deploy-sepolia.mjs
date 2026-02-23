@@ -29,6 +29,8 @@ async function main() {
   const privateKey = requireEnv("SEPOLIA_DEPLOYER_PRIVATE_KEY");
   const initialOwner = process.env.ETH_VAULT_OWNER?.trim() || "";
   const ownerAddress = initialOwner || new ethers.Wallet(privateKey).address;
+  const feeRecipientRaw = process.env.ETH_VAULT_FEE_RECIPIENT?.trim() || "";
+  const feeRecipientAddress = feeRecipientRaw || ownerAddress;
   const mintPerTokenRaw = process.env.SEPOLIA_TEST_MINT_PER_TOKEN || "1000000";
   const outputDir = path.join(projectRoot, "deployments");
 
@@ -62,7 +64,7 @@ async function main() {
     signer,
   );
 
-  console.log(`Deploying with deployer=${signer.address} owner=${ownerAddress}`);
+  console.log(`Deploying with deployer=${signer.address} owner=${ownerAddress} feeRecipient=${feeRecipientAddress}`);
 
   const deployedTokens = [];
   for (const token of DEFAULT_TOKENS) {
@@ -93,13 +95,18 @@ async function main() {
   console.log(`Vault deployed -> ${vaultAddress}`);
 
   if (ownerAddress.toLowerCase() === signer.address.toLowerCase()) {
+    if (feeRecipientAddress.toLowerCase() !== ownerAddress.toLowerCase()) {
+      const feeTx = await vault.setFeeRecipient(feeRecipientAddress);
+      await feeTx.wait();
+      console.log(`Configured vault feeRecipient=${feeRecipientAddress}`);
+    }
     for (const token of deployedTokens) {
       const tx = await vault.configureAsset(token.assetId, token.tokenAddress, true);
       await tx.wait();
       console.log(`Configured vault assetId=${token.assetId} token=${token.tokenAddress}`);
     }
   } else {
-    console.log("Skipped configureAsset calls (owner != deployer)");
+    console.log("Skipped vault config calls (owner != deployer): setFeeRecipient/configureAsset");
   }
 
   fs.mkdirSync(outputDir, { recursive: true });
@@ -110,6 +117,7 @@ async function main() {
     deployedAt: new Date().toISOString(),
     deployer: signer.address,
     owner: ownerAddress,
+    feeRecipient: feeRecipientAddress,
     vaultAddress,
     assets: deployedTokens.map((token) => ({
       assetId: token.assetId,

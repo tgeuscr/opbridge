@@ -12,8 +12,13 @@
   },
   "scripts": {
     "run:sepolia": "node src/sepolia-poller.mjs",
+    "run:opnet-burn": "node src/opnet-burn-poller.mjs",
+    "keys:generate": "node src/generate-relay-keys.mjs",
+    "keys:verify": "node src/verify-relay-keys.mjs",
     "aggregate:sepolia": "node src/aggregate-attestations.mjs",
+    "aggregate:release": "node src/aggregate-release-attestations.mjs",
     "submit:opnet": "node src/submit-mint-candidate.mjs",
+    "submit:sepolia-release": "node src/submit-release-candidate.mjs",
     "test": "echo 'No relayer tests yet'",
     "build": "echo 'No relayer build step yet'"
   }

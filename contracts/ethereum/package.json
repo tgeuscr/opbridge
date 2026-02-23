@@ -8,7 +8,9 @@
     "clean": "hardhat clean",
     "deploy:sepolia": "node scripts/deploy-sepolia.mjs",
     "configure:sepolia": "node scripts/configure-vault-sepolia.mjs",
-    "deposit:sepolia": "node scripts/deposit-sepolia.mjs"
+    "configure:release-relays:sepolia": "node scripts/configure-release-relays-sepolia.mjs",
+    "deposit:sepolia": "node scripts/deposit-sepolia.mjs",
+    "admin:sepolia": "node scripts/admin-vault-sepolia.mjs"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

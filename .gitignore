@@ -11,3 +11,4 @@ coverage
 *private*key*
 *private-keys*
 apps/web/src/dev-relay-keys.json
+services/relayer/.data/

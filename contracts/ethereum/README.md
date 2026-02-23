@@ -4,17 +4,18 @@ Current scaffolding:
 
 - `HeptadVault.sol` includes:
   - owner / pause controls
+  - deploys **paused by default**
   - per-asset configuration (`assetId -> token/enabled`)
-  - `depositERC20` only (ERC20-only vault)
+  - ERC20 deposit path (`depositERC20`)
+  - OP_NET burn -> ETH release path (`releaseWithRelaySignatures`)
+  - threshold relay signer verification (ECDSA)
+  - replay protection (`processedWithdrawals`)
+  - fee model on both deposit and release:
+    - `feeBps` (default `100` = 1%)
+    - `feeRecipient` (default = owner, configurable)
   - monotonic `depositId` generation
   - canonical `DepositInitiated` event for relayers
 - `HeptadTestToken.sol` for Sepolia test assets (owner-mintable ERC20)
-
-Still pending:
-
-- withdrawal attestation verification
-- threshold signer set management
-- replay protection on redemption path
 
 ## Sepolia deployment scripts
 
@@ -23,9 +24,11 @@ Environment variables:
 - `SEPOLIA_RPC_URL` (required)
 - `SEPOLIA_DEPLOYER_PRIVATE_KEY` (required)
 - `ETH_VAULT_OWNER` (optional; defaults to deployer)
+- `ETH_VAULT_FEE_RECIPIENT` (optional; defaults to owner)
 - `SEPOLIA_TEST_MINT_PER_TOKEN` (optional; defaults to `1000000`)
 - Optional OPNet metadata for deployment artifact:
   - `OPNET_BRIDGE_ADDRESS`
+  - `OPNET_BRIDGE_HEX`
   - `OPNET_HUSDT_ADDRESS`
   - `OPNET_HWBTC_ADDRESS`
   - `OPNET_HETH_ADDRESS`
@@ -36,7 +39,57 @@ Commands:
 ```bash
 npm run deploy:sepolia --workspace @heptad/ethereum-contracts
 npm run configure:sepolia --workspace @heptad/ethereum-contracts
+npm run configure:release-relays:sepolia --workspace @heptad/ethereum-contracts
+npm run admin:sepolia --workspace @heptad/ethereum-contracts
 npm run deposit:sepolia --workspace @heptad/ethereum-contracts
+```
+
+Notes:
+
+- `deploy:sepolia` deploys the vault in a **paused** state
+- If `ETH_VAULT_OWNER != deployer`, deploy skips owner-only vault configuration calls
+- Use `configure:sepolia`, `configure:release-relays:sepolia`, and `admin:sepolia` with the owner key to finish wiring
+
+## Sepolia vault admin (terminal)
+
+Use `admin:sepolia` for terminal-only owner actions:
+
+- pause / unpause (`setPaused`)
+- fee bps (`setFeeBps`, pause-guarded)
+- fee recipient (`setFeeRecipient`)
+
+Required env vars:
+
+- `SEPOLIA_RPC_URL`
+- `SEPOLIA_DEPLOYER_PRIVATE_KEY` (owner key)
+
+Optional actions:
+
+- `SEPOLIA_VAULT_PAUSED=true|false`
+- `ETH_VAULT_FEE_BPS=<0..10000>`
+- `ETH_VAULT_FEE_RECIPIENT=0x...`
+- `SEPOLIA_DEPLOYMENT_FILE` or `SEPOLIA_VAULT_ADDRESS`
+
+Examples:
+
+Keep vault paused and set fee recipient:
+
+```bash
+SEPOLIA_RPC_URL=... \
+SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-key> \
+ETH_VAULT_FEE_RECIPIENT=0x<fee-recipient> \
+SEPOLIA_VAULT_PAUSED=true \
+npm run admin:sepolia --workspace @heptad/ethereum-contracts
+```
+
+Set fee bps (1%) and unpause:
+
+```bash
+SEPOLIA_RPC_URL=... \
+SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-key> \
+ETH_VAULT_FEE_BPS=100 \
+SEPOLIA_VAULT_PAUSED=false \
+npm run admin:sepolia --workspace @heptad/ethereum-contracts
 ```
 
 ## Sepolia terminal deposit (approve + depositERC20)
@@ -49,6 +102,12 @@ Environment variables:
 - `SEPOLIA_DEPOSIT_AMOUNT` (required; human amount, e.g. `25.5`)
 - `SEPOLIA_DEPOSIT_RECIPIENT` (required; OPNet recipient as `bytes32` hex)
 - `SEPOLIA_DEPLOYMENT_FILE` (optional; default `contracts/ethereum/deployments/sepolia-latest.json`)
+
+Behavior:
+
+- Deposit fee is taken in-vault before relaying/minting
+- At default `1%` fee, depositing `X` emits `DepositInitiated.amount = 0.99 * X`
+- Relayers mint the emitted net amount on OP_NET
 
 Example:
 
@@ -69,3 +128,36 @@ Outputs:
 Reference template:
 
 - `docs/sepolia-opnet-regtest-asset-map.template.json`
+
+## Sepolia vault release relay configuration (OP_NET -> ETH)
+
+Configures the Ethereum vault with:
+
+- `opnetBridgeHex`
+- `relayCount`
+- `relayThreshold`
+- `relaySigners[index]`
+
+Required env vars:
+
+- `SEPOLIA_RPC_URL`
+- `SEPOLIA_DEPLOYER_PRIVATE_KEY`
+- Relay EVM keys:
+  - `RELAYER_EVM_KEYS_FILE`, or
+  - `RELAYER_EVM_KEYS_JSON`, or
+  - `RELAYER_EVM_PRIVATE_KEYS`
+- OP_NET bridge hash binding:
+  - `OPNET_BRIDGE_HEX` (32-byte hex), or deployment JSON containing `opnet.bridgeHex`
+
+Optional:
+
+- `SEPOLIA_DEPLOYMENT_FILE` (default: `contracts/ethereum/deployments/sepolia-latest.json`)
+- `RELAYER_THRESHOLD` (default: `2`)
+
+Command:
+
+```bash
+npm run configure:release-relays:sepolia --workspace @heptad/ethereum-contracts
+```
+
+This must be done while the vault is paused.

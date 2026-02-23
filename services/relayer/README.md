@@ -50,7 +50,7 @@ Optional env vars:
 - `RELAYER_OUTPUT_FILE` (default: `services/relayer/.data/pending-attestations.json`)
 - `RELAYER_START_BLOCK` (default: latest-20)
 - `RELAYER_MAX_BLOCK_RANGE` (default: `10`, Alchemy free-tier safe)
-- `RELAYER_POLL_INTERVAL_MS` (default: `8000`)
+- `RELAYER_POLL_INTERVAL_MS` (default: `30000`)
 
 Run:
 
@@ -66,6 +66,42 @@ Relay keys JSON shape:
     "0x..."
   ]
 }
+```
+
+Combined key file (recommended for both directions):
+
+```json
+{
+  "relayPrivateKeys": ["0x..."],
+  "relayEvmPrivateKeys": ["0x..."]
+}
+```
+
+## Deterministic relay key generation (MLDSA + ECDSA)
+
+Generate both relay key sets from one mnemonic:
+
+```bash
+RELAYER_KEYS_MNEMONIC="word1 word2 ... word12" \
+npm run keys:generate --workspace @heptad/relayer
+```
+
+Outputs:
+
+- `services/relayer/.data/relay-keys.json` (private keys; local only)
+- `services/relayer/.data/relay-public-config.json` (public config for contract wiring)
+
+Public config includes:
+
+- `relayPubKeysPackedHex` for OP_NET bridge `setRelaysConfigPacked`
+- per-relay MLDSA public keys / relay IDs
+- per-relay ECDSA addresses for Ethereum vault `setRelaySigner`
+
+Verify derived keys against local public config and (optionally) Sepolia vault relay slots:
+
+```bash
+RELAYER_KEYS_MNEMONIC="word1 word2 ... word12" \
+npm run keys:verify --workspace @heptad/relayer
 ```
 
 Current pending attestation output now includes per-signer signatures:

@@ -56,6 +56,10 @@
                     "type": "ADDRESS"
                 },
                 {
+                    "name": "ethereumRecipient",
+                    "type": "ADDRESS"
+                },
+                {
                     "name": "amount",
                     "type": "UINT256"
                 },
@@ -505,6 +509,10 @@
                 },
                 {
                     "name": "from",
+                    "type": "ADDRESS"
+                },
+                {
+                    "name": "ethereumRecipient",
                     "type": "ADDRESS"
                 },
                 {

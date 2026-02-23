@@ -121,6 +121,7 @@ type HeptadBridgeContract = {
   requestBurn: (
     asset: number,
     from: unknown,
+    ethereumRecipient: unknown,
     amount: bigint,
     withdrawalId: bigint,
   ) => Promise<CallResult>;
@@ -470,6 +471,7 @@ export function App() {
   const [dummyDepositId, setDummyDepositId] = useState('1');
   const [mintDepositId, setMintDepositId] = useState('1');
   const [withdrawalId, setWithdrawalId] = useState('1');
+  const [burnEthereumRecipientAddress, setBurnEthereumRecipientAddress] = useState('');
   const [dummyEthereumUserAddress, setDummyEthereumUserAddress] = useState('');
   const [mintEthereumUserAddress, setMintEthereumUserAddress] = useState('');
   const [mintAttestationVersionInput, setMintAttestationVersionInput] = useState(`${ATTESTATION_VERSION}`);
@@ -3201,6 +3203,14 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
             Withdrawal ID (uint256)
             <input value={withdrawalId} onChange={(e) => setWithdrawalId(e.target.value)} />
           </label>
+          <label>
+            Ethereum Recipient (0x...)
+            <input
+              value={burnEthereumRecipientAddress}
+              onChange={(e) => setBurnEthereumRecipientAddress(e.target.value)}
+              placeholder="0x..."
+            />
+          </label>
           <div className="row">
             <button
               onClick={() => {
@@ -3209,8 +3219,13 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
                   return;
                 }
                 let rawAmount: bigint;
+                let ethereumRecipient: string;
                 try {
                   rawAmount = parseHumanAmount(amount, resolveAssetDecimals(asset));
+                  ethereumRecipient = normalizeEthereumAddress(
+                    burnEthereumRecipientAddress,
+                    'Ethereum burn recipient',
+                  );
                 } catch (error) {
                   setOutput(`Invalid burn amount: ${(error as Error).message}`);
                   return;
@@ -3222,6 +3237,7 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
                     bridge.requestBurn(
                       resolveAssetId(asset),
                       opnetAddress,
+                      ethereumRecipient,
                       rawAmount,
                       BigInt(withdrawalId || '0'),
                     ),
@@ -3238,8 +3254,13 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
                   return;
                 }
                 let rawAmount: bigint;
+                let ethereumRecipient: string;
                 try {
                   rawAmount = parseHumanAmount(amount, resolveAssetDecimals(asset));
+                  ethereumRecipient = normalizeEthereumAddress(
+                    burnEthereumRecipientAddress,
+                    'Ethereum burn recipient',
+                  );
                 } catch (error) {
                   setOutput(`Invalid burn amount: ${(error as Error).message}`);
                   return;
@@ -3251,6 +3272,7 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
                     bridge.requestBurn(
                       resolveAssetId(asset),
                       opnetAddress,
+                      ethereumRecipient,
                       rawAmount,
                       BigInt(withdrawalId || '0'),
                     ),

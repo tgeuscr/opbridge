@@ -16,6 +16,7 @@ export const HeptadBridgeEvents = [
         values: [
             { name: 'assetId', type: ABIDataTypes.UINT8 },
             { name: 'from', type: ABIDataTypes.ADDRESS },
+            { name: 'ethereumRecipient', type: ABIDataTypes.ADDRESS },
             { name: 'amount', type: ABIDataTypes.UINT256 },
             { name: 'withdrawalId', type: ABIDataTypes.UINT256 },
         ],
@@ -91,6 +92,7 @@ export const HeptadBridgeAbi = [
         inputs: [
             { name: 'asset', type: ABIDataTypes.UINT8 },
             { name: 'from', type: ABIDataTypes.ADDRESS },
+            { name: 'ethereumRecipient', type: ABIDataTypes.ADDRESS },
             { name: 'amount', type: ABIDataTypes.UINT256 },
             { name: 'withdrawalId', type: ABIDataTypes.UINT256 },
         ],

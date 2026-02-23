@@ -23,10 +23,11 @@ export class MintFinalizedEvent extends NetEvent {
 
 @final
 export class BurnRequestedEvent extends NetEvent {
-    constructor(assetId: u8, from: Address, amount: u256, withdrawalId: u256) {
-        const data: BytesWriter = new BytesWriter(U8_BYTE_LENGTH + ADDRESS_BYTE_LENGTH + U256_BYTE_LENGTH * 2);
+    constructor(assetId: u8, from: Address, ethereumRecipient: Address, amount: u256, withdrawalId: u256) {
+        const data: BytesWriter = new BytesWriter(U8_BYTE_LENGTH + ADDRESS_BYTE_LENGTH * 2 + U256_BYTE_LENGTH * 2);
         data.writeU8(assetId);
         data.writeAddress(from);
+        data.writeAddress(ethereumRecipient);
         data.writeU256(amount);
         data.writeU256(withdrawalId);
 

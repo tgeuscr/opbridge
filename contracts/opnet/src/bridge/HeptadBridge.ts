@@ -345,6 +345,7 @@ export class HeptadBridge extends OP_NET {
     @method(
         { name: 'asset', type: ABIDataTypes.UINT8 },
         { name: 'from', type: ABIDataTypes.ADDRESS },
+        { name: 'ethereumRecipient', type: ABIDataTypes.ADDRESS },
         { name: 'amount', type: ABIDataTypes.UINT256 },
         { name: 'withdrawalId', type: ABIDataTypes.UINT256 },
     )
@@ -352,6 +353,7 @@ export class HeptadBridge extends OP_NET {
     public requestBurn(calldata: Calldata): BytesWriter {
         const asset = calldata.readU8();
         const from = calldata.readAddress();
+        const ethereumRecipient = calldata.readAddress();
         const amount = calldata.readU256();
         const withdrawalId = calldata.readU256();
 
@@ -361,6 +363,7 @@ export class HeptadBridge extends OP_NET {
         if (!from.equals(Blockchain.tx.sender)) {
             throw new Revert('Burn account must match sender');
         }
+        this._requireValidAddress(ethereumRecipient, 'Invalid ethereum recipient');
         this._requireNonZeroAmount(amount);
         this._assertUnusedWithdrawal(withdrawalId);
 
@@ -374,7 +377,7 @@ export class HeptadBridge extends OP_NET {
         Blockchain.call(token, burnWriter, true);
 
         this._processedWithdrawalsStore().set(withdrawalId, u256.One);
-        this.emitEvent(new BurnRequestedEvent(asset, from, amount, withdrawalId));
+        this.emitEvent(new BurnRequestedEvent(asset, from, ethereumRecipient, amount, withdrawalId));
 
         return new BytesWriter(0);
     }

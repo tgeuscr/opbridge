@@ -417,7 +417,7 @@ Optional:
   RELAYER_OUTPUT_FILE  (default: ${DEFAULT_OUTPUT_FILE})
   RELAYER_START_BLOCK  (default: latest-20)
   RELAYER_MAX_BLOCK_RANGE (default: 10)
-  RELAYER_POLL_INTERVAL_MS (default: 8000)
+  RELAYER_POLL_INTERVAL_MS (default: 30000)
 
 Example:
   SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \\
@@ -429,7 +429,7 @@ Example:
   const mappingFile = process.env.RELAYER_MAPPING_FILE || DEFAULT_MAPPING_FILE;
   const outputFile = process.env.RELAYER_OUTPUT_FILE || DEFAULT_OUTPUT_FILE;
   const relayerId = process.env.RELAYER_ID?.trim() || "relayer-0";
-  const pollIntervalMs = Number(process.env.RELAYER_POLL_INTERVAL_MS || 8000);
+  const pollIntervalMs = Number(process.env.RELAYER_POLL_INTERVAL_MS || 30000);
   const startBlockEnv = process.env.RELAYER_START_BLOCK;
   const rpcUrl = process.env.SEPOLIA_RPC_URL;
   const opnetBridgeAddress = process.env.OPNET_BRIDGE_ADDRESS;

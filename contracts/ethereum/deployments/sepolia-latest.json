@@ -1,44 +1,45 @@
 {
   "network": "sepolia",
   "chainId": 11155111,
-  "deployedAt": "2026-02-20T15:15:31.879Z",
+  "deployedAt": "2026-02-23T21:31:39.789Z",
   "deployer": "0xDBC112f28da61cA54e8F2A802866Dcc516Fa6D86",
   "owner": "0xDBC112f28da61cA54e8F2A802866Dcc516Fa6D86",
-  "vaultAddress": "0x5BA82388c224EaA7941fC86a853b068847eBBA15",
+  "feeRecipient": "0x7c72d96895627928B8060942E37e6f0a43a1Dba4",
+  "vaultAddress": "0xE55E2dC9Bb1C0331d332E4454618aE53985CBDaa",
   "assets": [
     {
       "assetId": 0,
       "symbol": "USDT",
       "decimals": 6,
-      "tokenAddress": "0xA22A604ba784Fb08Ff13f1cAb9F5b9eE7c8605D0"
+      "tokenAddress": "0xAa625436C45487C4893b4CAb16E413Ea494b99e9"
     },
     {
       "assetId": 1,
       "symbol": "WBTC",
       "decimals": 8,
-      "tokenAddress": "0x59c01bFa1832C6346e421e0D6Ab1B6A8BF186C5b"
+      "tokenAddress": "0x774d1c1CE5DC24894E4635647A18b466C6866625"
     },
     {
       "assetId": 2,
       "symbol": "WETH",
       "decimals": 18,
-      "tokenAddress": "0x7CaC0CCB0CCc2dC59bE5ec4590F9d38847Bb157b"
+      "tokenAddress": "0x63a11Bd486A7955A13B6D47318aF6F85eCCC92E9"
     },
     {
       "assetId": 3,
       "symbol": "PAXG",
       "decimals": 18,
-      "tokenAddress": "0xB3191b81356eBBab77C46e2127B94d31d61c6522"
+      "tokenAddress": "0xA98BBF5cb5a47E9875E23fe903A98f9800922DE6"
     }
   ],
   "opnet": {
     "network": "regtest",
-    "bridgeAddress": "",
+    "bridgeAddress": "opr1sqrk7pxceap0k64594ez9ezpv8v852lc4qqp2aghp",
     "wrappedTokens": {
-      "USDT": "",
-      "WBTC": "",
-      "WETH": "",
-      "PAXG": ""
+      "USDT": "opr1sqr9sk7l8emd0wuk44r6hfkmgrt7hxet5xgz0av76",
+      "WBTC": "opr1sqpap6cuetyr0hevmm5d2k7qxe9m0l2r8vvmu8zll",
+      "WETH": "opr1sqpwryfg9jjf4kv3svdeuynu4fwmf4t5nqucskzxr",
+      "PAXG": "opr1sqp0kwpqekt7jtrf0aa2qwp7lvcaf5a8r8q9wj37u"
     }
   }
 }
