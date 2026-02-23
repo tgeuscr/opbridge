@@ -41,6 +41,30 @@ npm run build
 npm run dev:web
 ```
 
+## Quick admin boot sequence (OP_NET bridge)
+
+Run these in order after deploying contracts.
+
+1. Keep bridge paused during setup.
+2. For each wrapped token, set bridge authority:
+   - `TOKEN.setBridgeAuthority(bridge)`
+3. Configure supported assets in one batch:
+   - `BRIDGE.setSupportedAssetsPacked(assetsPacked)`
+4. Configure relays and threshold in one call:
+   - `BRIDGE.setRelaysConfigPacked(relayPubKeysPacked, threshold)`
+5. Optional per-asset token rewiring:
+   - `BRIDGE.setWrappedToken(assetId, tokenAddress)`
+6. Verify bridge state:
+   - `paused == true`
+   - `relayCount / relayThreshold` match expected values
+   - supported assets + wrapped token addresses are correct
+7. Unpause bridge:
+   - `BRIDGE.setPaused(false)`
+
+Notes:
+- Use `op...` addresses where possible (`0x...` also supported by the dev UI).
+- Simulate first, then send for every admin action.
+
 ## Status
 
 This repository is an active development prototype, not production-ready bridge infrastructure.

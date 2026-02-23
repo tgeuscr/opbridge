@@ -1,0 +1,43 @@
+{
+  "ethereum": {
+    "network": "sepolia",
+    "chainId": 11155111,
+    "vaultAddress": "0x...",
+    "assets": [
+      {
+        "assetId": 0,
+        "symbol": "USDT",
+        "decimals": 6,
+        "tokenAddress": "0x..."
+      },
+      {
+        "assetId": 1,
+        "symbol": "WBTC",
+        "decimals": 8,
+        "tokenAddress": "0x..."
+      },
+      {
+        "assetId": 2,
+        "symbol": "WETH",
+        "decimals": 18,
+        "tokenAddress": "0x..."
+      },
+      {
+        "assetId": 3,
+        "symbol": "PAXG",
+        "decimals": 18,
+        "tokenAddress": "0x..."
+      }
+    ]
+  },
+  "opnet": {
+    "network": "regtest",
+    "bridgeAddress": "op...",
+    "wrappedTokens": {
+      "USDT": "op...",
+      "WBTC": "op...",
+      "WETH": "op...",
+      "PAXG": "op..."
+    }
+  }
+}

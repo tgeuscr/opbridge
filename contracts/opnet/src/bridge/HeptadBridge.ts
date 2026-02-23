@@ -13,6 +13,8 @@ import {
     StoredMapU256,
 } from '@btc-vision/btc-runtime/runtime';
 import {
+    ActiveAttestationVersionUpdatedEvent,
+    AttestationVersionAcceptanceUpdatedEvent,
     BridgePausedUpdatedEvent,
     BurnRequestedEvent,
     MintFinalizedEvent,
@@ -39,6 +41,9 @@ const processedDepositsPointer:    u16 = Blockchain.nextPointer;
 const processedWithdrawalsPointer: u16 = Blockchain.nextPointer;
 
 const relayConfigPointer: u16 = Blockchain.nextPointer;
+const ethereumVaultPointer: u16 = Blockchain.nextPointer;
+const attestationConfigPointer: u16 = Blockchain.nextPointer;
+const attestationAcceptedVersionsPointer: u16 = Blockchain.nextPointer;
 
 // sha256("mint(address,uint256)")[:4]
 const TOKEN_MINT_SELECTOR: u32 = 0x3950e061;
@@ -46,7 +51,7 @@ const TOKEN_MINT_SELECTOR: u32 = 0x3950e061;
 // sha256("burnFrom(address,uint256)")[:4]
 const TOKEN_BURN_FROM_SELECTOR: u32 = 0x1646b13c;
 
-const ATTESTATION_VERSION:      u8  = 1;
+const DEFAULT_ATTESTATION_VERSION: u8 = 1;
 const DIRECTION_ETH_TO_OP_MINT: u8  = 1;
 const MAX_RELAY_COUNT:          u8  = 32;
 const MIN_RELAY_COUNT:          u8  = 1;
@@ -56,6 +61,8 @@ const RELAY_SIGNATURE_BYTES:    i32 = 2420;
 const ASSET_SYMBOL_BYTES:       i32 = 16;
 const ASSET_ENTRY_BYTES:        i32 = 1 + 32 + 1 + ASSET_SYMBOL_BYTES;
 const RELAY_CONFIG_SUBPOINTER = new Uint8Array(0);
+const ATTESTATION_CONFIG_SUBPOINTER = new Uint8Array(0);
+const ATTESTATION_ACCEPTED_VERSIONS_SUBPOINTER = new Uint8Array(0);
 const RELAY_PUBKEY_HASHES_SUBPOINTER = new Uint8Array(0);
 const WRAPPED_TOKENS_SUBPOINTER = new Uint8Array(0);
 const ASSET_CONFIG_SUBPOINTER = new Uint8Array(0);
@@ -66,7 +73,9 @@ const MAX_ASSET_SLOTS: u32 = 256;
 const RELAY_CONFIG_INDEX_COUNT: u8 = 0;
 const RELAY_CONFIG_INDEX_THRESHOLD: u8 = 1;
 const RELAY_CONFIG_INDEX_PAUSED: u8 = 2;
+const ATTESTATION_CONFIG_INDEX_ACTIVE_VERSION: u8 = 0;
 const ASSET_CONFIG_INDEX_COUNT: u8 = 0;
+const MAX_ATTESTATION_VERSIONS: u32 = 256;
 
 function relayPubKeySubPointer(index: u8): Uint8Array {
     const pointer = new Uint8Array(1);
@@ -96,7 +105,10 @@ export class HeptadBridge extends OP_NET {
     private _supportedAssetIds: StoredU8Array | null = null;
 
     private _owner: StoredAddress | null = null;
+    private _ethereumVault: StoredAddress | null = null;
     private _relayConfig: StoredU32 | null = null;
+    private _attestationConfig: StoredU32 | null = null;
+    private _attestationAcceptedVersions: StoredU8Array | null = null;
     private _assetConfig: StoredU32 | null = null;
 
     private _processedDeposits: StoredMapU256 | null = null;
@@ -168,11 +180,36 @@ export class HeptadBridge extends OP_NET {
         return this._owner!;
     }
 
+    private _ethereumVaultStore(): StoredAddress {
+        if (this._ethereumVault === null) {
+            this._ethereumVault = new StoredAddress(ethereumVaultPointer);
+        }
+        return this._ethereumVault!;
+    }
+
     private _relayConfigStore(): StoredU32 {
         if (this._relayConfig === null) {
             this._relayConfig = new StoredU32(relayConfigPointer, RELAY_CONFIG_SUBPOINTER);
         }
         return this._relayConfig!;
+    }
+
+    private _attestationConfigStore(): StoredU32 {
+        if (this._attestationConfig === null) {
+            this._attestationConfig = new StoredU32(attestationConfigPointer, ATTESTATION_CONFIG_SUBPOINTER);
+        }
+        return this._attestationConfig!;
+    }
+
+    private _attestationAcceptedVersionsStore(): StoredU8Array {
+        if (this._attestationAcceptedVersions === null) {
+            this._attestationAcceptedVersions = new StoredU8Array(
+                attestationAcceptedVersionsPointer,
+                ATTESTATION_ACCEPTED_VERSIONS_SUBPOINTER,
+                MAX_ATTESTATION_VERSIONS,
+            );
+        }
+        return this._attestationAcceptedVersions!;
     }
 
     private _assetConfigStore(): StoredU32 {
@@ -198,40 +235,62 @@ export class HeptadBridge extends OP_NET {
 
     public override onDeployment(_: Calldata): void {
         const deployer = Blockchain.tx.sender;
+        const startsPaused = true;
 
         this._ownerStore().value = deployer;
+        this._ethereumVaultStore().value = Address.zero();
         this._relayConfigStore().set(RELAY_CONFIG_INDEX_COUNT, 0);
         this._relayConfigStore().set(RELAY_CONFIG_INDEX_THRESHOLD, 0);
-        this._relayConfigStore().set(RELAY_CONFIG_INDEX_PAUSED, 1);
+        this._relayConfigStore().set(RELAY_CONFIG_INDEX_PAUSED, startsPaused ? 1 : 0);
         this._relayConfigStore().save();
+        this._attestationConfigStore().set(
+            ATTESTATION_CONFIG_INDEX_ACTIVE_VERSION,
+            DEFAULT_ATTESTATION_VERSION,
+        );
+        this._attestationConfigStore().save();
+        this._attestationAcceptedVersionsStore().set_physical(<u32>DEFAULT_ATTESTATION_VERSION, 1);
+        this._attestationAcceptedVersionsStore().save();
         this._assetConfigStore().set(ASSET_CONFIG_INDEX_COUNT, 0);
         this._assetConfigStore().save();
+        this.emitEvent(new BridgePausedUpdatedEvent(startsPaused));
         this.emitEvent(new OwnershipTransferredEvent(Address.zero(), deployer));
+        this.emitEvent(
+            new ActiveAttestationVersionUpdatedEvent(0, DEFAULT_ATTESTATION_VERSION),
+        );
+        this.emitEvent(
+            new AttestationVersionAcceptanceUpdatedEvent(DEFAULT_ATTESTATION_VERSION, true),
+        );
     }
 
     @method(
         { name: 'asset', type: ABIDataTypes.UINT8 },
+        { name: 'ethereumUser', type: ABIDataTypes.ADDRESS },
         { name: 'recipient', type: ABIDataTypes.ADDRESS },
         { name: 'amount', type: ABIDataTypes.UINT256 },
         { name: 'depositId', type: ABIDataTypes.UINT256 },
+        { name: 'attestationVersion', type: ABIDataTypes.UINT8 },
         { name: 'relayIndexesPacked', type: ABIDataTypes.BYTES },
         { name: 'relaySignaturesPacked', type: ABIDataTypes.BYTES },
     )
     @emit('MintFinalized')
     public mintWithRelaySignatures(calldata: Calldata): BytesWriter {
         const asset = calldata.readU8();
+        const ethereumUser = calldata.readAddress();
         const recipient = calldata.readAddress();
         const amount = calldata.readU256();
         const depositId = calldata.readU256();
+        const attestationVersion = calldata.readU8();
         const relayIndexesPacked = calldata.readBytesWithLength();
         const relaySignaturesPacked = calldata.readBytesWithLength();
 
         this._requireNotPaused();
 
         // Fail fast on cheap state checks before expensive signature verification.
+        this._requireValidAddress(ethereumUser, 'Invalid ethereum user');
         this._requireValidAddress(recipient, 'Invalid recipient');
         this._requireNonZeroAmount(amount);
         this._assertUnusedDeposit(depositId);
+        this._requireAttestationVersionAccepted(attestationVersion);
         const token = this._tokenForAsset(asset);
 
         if (
@@ -263,7 +322,14 @@ export class HeptadBridge extends OP_NET {
             signatures[i] = relaySignaturesPacked.slice(start, start + RELAY_SIGNATURE_BYTES);
         }
 
-        const messageHash = this._mintAttestationHash(asset, recipient, amount, depositId);
+        const messageHash = this._mintAttestationHash(
+            attestationVersion,
+            asset,
+            ethereumUser,
+            recipient,
+            amount,
+            depositId,
+        );
         this._verifyRelayAttestationsThresholdStoredPubKeys(
             messageHash,
             relayIndexes,
@@ -292,6 +358,9 @@ export class HeptadBridge extends OP_NET {
         this._requireNotPaused();
 
         this._requireValidAddress(from, 'Invalid burn account');
+        if (!from.equals(Blockchain.tx.sender)) {
+            throw new Revert('Burn account must match sender');
+        }
         this._requireNonZeroAmount(amount);
         this._assertUnusedWithdrawal(withdrawalId);
 
@@ -546,6 +615,75 @@ export class HeptadBridge extends OP_NET {
         return new BytesWriter(0);
     }
 
+    @method({ name: 'ethereumVault', type: ABIDataTypes.ADDRESS })
+    public setEthereumVault(calldata: Calldata): BytesWriter {
+        this._onlyOwner();
+        this._requirePaused();
+
+        const ethereumVault = calldata.readAddress();
+        this._requireValidAddress(ethereumVault, 'Invalid ethereum vault');
+        this._ethereumVaultStore().value = ethereumVault;
+        return new BytesWriter(0);
+    }
+
+    @method()
+    @returns({ name: 'ethereumVault', type: ABIDataTypes.ADDRESS })
+    public ethereumVault(_: Calldata): BytesWriter {
+        const response = new BytesWriter(32);
+        response.writeAddress(this._ethereumVaultStore().value);
+        return response;
+    }
+
+    @method()
+    @returns({ name: 'version', type: ABIDataTypes.UINT8 })
+    public activeAttestationVersion(_: Calldata): BytesWriter {
+        const response = new BytesWriter(1);
+        response.writeU8(this._activeAttestationVersion());
+        return response;
+    }
+
+    @method({ name: 'version', type: ABIDataTypes.UINT8 })
+    @returns({ name: 'accepted', type: ABIDataTypes.BOOL })
+    public isAttestationVersionAccepted(calldata: Calldata): BytesWriter {
+        const version = calldata.readU8();
+        const response = new BytesWriter(1);
+        response.writeBoolean(this._isAttestationVersionAccepted(version));
+        return response;
+    }
+
+    @method(
+        { name: 'version', type: ABIDataTypes.UINT8 },
+        { name: 'accepted', type: ABIDataTypes.BOOL },
+    )
+    @emit('AttestationVersionAcceptanceUpdated')
+    public setAttestationVersionAccepted(calldata: Calldata): BytesWriter {
+        this._onlyOwner();
+        this._requirePaused();
+
+        const version = calldata.readU8();
+        const accepted = calldata.readBoolean();
+        this._setAttestationVersionAccepted(version, accepted);
+        this.emitEvent(new AttestationVersionAcceptanceUpdatedEvent(version, accepted));
+        return new BytesWriter(0);
+    }
+
+    @method({ name: 'version', type: ABIDataTypes.UINT8 })
+    @emit('ActiveAttestationVersionUpdated')
+    public setActiveAttestationVersion(calldata: Calldata): BytesWriter {
+        this._onlyOwner();
+        this._requirePaused();
+
+        const nextVersion = calldata.readU8();
+        if (!this._isAttestationVersionAccepted(nextVersion)) {
+            throw new Revert('Attestation version not accepted');
+        }
+        const previousVersion = this._activeAttestationVersion();
+        this._attestationConfigStore().set(ATTESTATION_CONFIG_INDEX_ACTIVE_VERSION, nextVersion);
+        this._attestationConfigStore().save();
+        this.emitEvent(new ActiveAttestationVersionUpdatedEvent(previousVersion, nextVersion));
+        return new BytesWriter(0);
+    }
+
     @method()
     @returns({ name: 'owner', type: ABIDataTypes.ADDRESS })
     public owner(_: Calldata): BytesWriter {
@@ -571,18 +709,29 @@ export class HeptadBridge extends OP_NET {
 
     @method(
         { name: 'asset', type: ABIDataTypes.UINT8 },
+        { name: 'ethereumUser', type: ABIDataTypes.ADDRESS },
         { name: 'recipient', type: ABIDataTypes.ADDRESS },
         { name: 'amount', type: ABIDataTypes.UINT256 },
         { name: 'depositId', type: ABIDataTypes.UINT256 },
+        { name: 'attestationVersion', type: ABIDataTypes.UINT8 },
     )
     @returns({ name: 'messageHash', type: ABIDataTypes.BYTES32 })
     public computeMintAttestationHash(calldata: Calldata): BytesWriter {
         const asset = calldata.readU8();
+        const ethereumUser = calldata.readAddress();
         const recipient = calldata.readAddress();
         const amount = calldata.readU256();
         const depositId = calldata.readU256();
+        const attestationVersion = calldata.readU8();
 
-        const hash = this._mintAttestationHash(asset, recipient, amount, depositId);
+        const hash = this._mintAttestationHash(
+            attestationVersion,
+            asset,
+            ethereumUser,
+            recipient,
+            amount,
+            depositId,
+        );
         const response = new BytesWriter(32);
         response.writeBytes(hash);
         return response;
@@ -735,6 +884,15 @@ export class HeptadBridge extends OP_NET {
         relayPubKeyStore.save();
         const relayHash = Address.fromUint8Array(Blockchain.sha256(relayPubKey));
         this._requireValidAddress(relayHash, 'Invalid relay hash');
+        for (let i: u8 = 0; i < MAX_RELAY_COUNT; i++) {
+            if (i === relayIndex) {
+                continue;
+            }
+            const existingHash = this._relayPubKeyHash(i);
+            if (!existingHash.equals(Address.zero()) && existingHash.equals(relayHash)) {
+                throw new Revert('Duplicate relay pubkey');
+            }
+        }
         this._setRelayPubKeyHash(relayIndex, relayHash);
         this.emitEvent(new RelayUpdatedEvent(relayIndex, relayHash));
     }
@@ -758,14 +916,23 @@ export class HeptadBridge extends OP_NET {
         }
     }
 
-    private _mintAttestationHash(asset: u8, recipient: Address, amount: u256, depositId: u256): Uint8Array {
-        const payload = new BytesWriter(1 + 1 + 32 + 1 + 32 + 32 + 32);
-        payload.writeU8(ATTESTATION_VERSION);
-        payload.writeU8(DIRECTION_ETH_TO_OP_MINT);
+    private _mintAttestationHash(
+        attestationVersion: u8,
+        asset: u8,
+        ethereumUser: Address,
+        opnetUser: Address,
+        amount: u256,
+        depositId: u256,
+    ): Uint8Array {
+        const payload = new BytesWriter(1 + 32 + 32 + 32 + 32 + 1 + 32 + 1 + 32);
+        payload.writeU8(attestationVersion);
+        payload.writeAddress(this._ethereumVaultStore().value);
         payload.writeAddress(this.address);
+        payload.writeAddress(ethereumUser);
+        payload.writeAddress(opnetUser);
         payload.writeU8(asset);
-        payload.writeAddress(recipient);
         payload.writeU256(amount);
+        payload.writeU8(DIRECTION_ETH_TO_OP_MINT);
         payload.writeU256(depositId);
         return Blockchain.sha256(payload.getBuffer());
     }
@@ -857,6 +1024,19 @@ export class HeptadBridge extends OP_NET {
         }
 
         return configured;
+    }
+
+    private _activeAttestationVersion(): u8 {
+        return <u8>this._attestationConfigStore().get(ATTESTATION_CONFIG_INDEX_ACTIVE_VERSION);
+    }
+
+    private _isAttestationVersionAccepted(version: u8): bool {
+        return this._attestationAcceptedVersionsStore().get_physical(<u32>version) === 1;
+    }
+
+    private _setAttestationVersionAccepted(version: u8, accepted: bool): void {
+        this._attestationAcceptedVersionsStore().set_physical(<u32>version, accepted ? 1 : 0);
+        this._attestationAcceptedVersionsStore().save();
     }
 
     private _currentAssetCount(): u32 {
@@ -1088,6 +1268,8 @@ export class HeptadBridge extends OP_NET {
         if (this._currentAssetCount() === 0) {
             throw new Revert('Bridge assets not configured');
         }
+        this._requireValidAddress(this._ethereumVaultStore().value, 'Ethereum vault not configured');
+        this._requireAttestationVersionAccepted(this._activeAttestationVersion());
     }
 
     private _onlyOwner(): void {
@@ -1121,6 +1303,12 @@ export class HeptadBridge extends OP_NET {
     private _requireNonZeroAmount(value: u256): void {
         if (value.isZero()) {
             throw new Revert('Amount is zero');
+        }
+    }
+
+    private _requireAttestationVersionAccepted(version: u8): void {
+        if (!this._isAttestationVersionAccepted(version)) {
+            throw new Revert('Attestation version not accepted');
         }
     }
 }

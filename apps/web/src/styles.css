@@ -50,9 +50,9 @@ body {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 12px;
-  padding: 0.95rem;
+  padding: 1rem;
   display: grid;
-  gap: 0.7rem;
+  gap: 0.85rem;
 }
 
 .two-col {
@@ -73,12 +73,23 @@ label {
 
 input,
 select,
+textarea,
 button {
   height: 2.4rem;
   border-radius: 8px;
   border: 1px solid var(--line);
-  padding: 0 0.68rem;
+  padding: 0 0.7rem;
   font-size: 0.9rem;
+  background: #fff;
+  color: inherit;
+}
+
+textarea {
+  min-height: 5.6rem;
+  height: auto;
+  padding: 0.58rem 0.7rem;
+  line-height: 1.35;
+  resize: vertical;
 }
 
 button {
@@ -94,6 +105,40 @@ button:hover {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.stack {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.tabs {
+  gap: 0.35rem;
+}
+
+.tool-tabs button {
+  min-width: 180px;
+}
+
+.tab-active {
+  border-color: var(--accent);
+  background: #ebf5f2;
+}
+
+.action-group {
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  padding: 0.55rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.group-label {
+  margin: 0;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #235f53;
 }
 
 .inline-check {
@@ -134,5 +179,9 @@ button:hover {
 @media (max-width: 900px) {
   .two-col {
     grid-template-columns: 1fr;
+  }
+
+  .row button {
+    flex: 1 1 100%;
   }
 }

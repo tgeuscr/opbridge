@@ -29,6 +29,14 @@ export type RelayThresholdUpdatedEvent = {
 export type BridgePausedUpdatedEvent = {
     readonly paused: boolean;
 };
+export type AttestationVersionAcceptanceUpdatedEvent = {
+    readonly version: number;
+    readonly accepted: boolean;
+};
+export type ActiveAttestationVersionUpdatedEvent = {
+    readonly previousVersion: number;
+    readonly nextVersion: number;
+};
 export type OwnershipTransferredEvent = {
     readonly previousOwner: Address;
     readonly newOwner: Address;
@@ -172,6 +180,51 @@ export type SetRelayThreshold = CallResult<{}, OPNetEvent<RelayThresholdUpdatedE
 export type SetPaused = CallResult<{}, OPNetEvent<BridgePausedUpdatedEvent>[]>;
 
 /**
+ * @description Represents the result of the setEthereumVault function call.
+ */
+export type SetEthereumVault = CallResult<{}, OPNetEvent<never>[]>;
+
+/**
+ * @description Represents the result of the ethereumVault function call.
+ */
+export type EthereumVault = CallResult<
+    {
+        ethereumVault: Address;
+    },
+    OPNetEvent<never>[]
+>;
+
+/**
+ * @description Represents the result of the activeAttestationVersion function call.
+ */
+export type ActiveAttestationVersion = CallResult<
+    {
+        version: number;
+    },
+    OPNetEvent<never>[]
+>;
+
+/**
+ * @description Represents the result of the isAttestationVersionAccepted function call.
+ */
+export type IsAttestationVersionAccepted = CallResult<
+    {
+        accepted: boolean;
+    },
+    OPNetEvent<never>[]
+>;
+
+/**
+ * @description Represents the result of the setAttestationVersionAccepted function call.
+ */
+export type SetAttestationVersionAccepted = CallResult<{}, OPNetEvent<AttestationVersionAcceptanceUpdatedEvent>[]>;
+
+/**
+ * @description Represents the result of the setActiveAttestationVersion function call.
+ */
+export type SetActiveAttestationVersion = CallResult<{}, OPNetEvent<ActiveAttestationVersionUpdatedEvent>[]>;
+
+/**
  * @description Represents the result of the owner function call.
  */
 export type Owner = CallResult<
@@ -202,9 +255,11 @@ export type ComputeMintAttestationHash = CallResult<
 export interface IHeptadBridge extends IOP_NETContract {
     mintWithRelaySignatures(
         asset: number,
+        ethereumUser: Address,
         recipient: Address,
         amount: bigint,
         depositId: bigint,
+        attestationVersion: number,
         relayIndexesPacked: Uint8Array,
         relaySignaturesPacked: Uint8Array,
     ): Promise<MintWithRelaySignatures>;
@@ -226,12 +281,20 @@ export interface IHeptadBridge extends IOP_NETContract {
     setRelayCount(newRelayCount: number): Promise<SetRelayCount>;
     setRelayThreshold(newThreshold: number): Promise<SetRelayThreshold>;
     setPaused(paused: boolean): Promise<SetPaused>;
+    setEthereumVault(ethereumVault: Address): Promise<SetEthereumVault>;
+    ethereumVault(): Promise<EthereumVault>;
+    activeAttestationVersion(): Promise<ActiveAttestationVersion>;
+    isAttestationVersionAccepted(version: number): Promise<IsAttestationVersionAccepted>;
+    setAttestationVersionAccepted(version: number, accepted: boolean): Promise<SetAttestationVersionAccepted>;
+    setActiveAttestationVersion(version: number): Promise<SetActiveAttestationVersion>;
     owner(): Promise<Owner>;
     transferOwnership(newOwner: Address): Promise<TransferOwnership>;
     computeMintAttestationHash(
         asset: number,
+        ethereumUser: Address,
         recipient: Address,
         amount: bigint,
         depositId: bigint,
+        attestationVersion: number,
     ): Promise<ComputeMintAttestationHash>;
 }

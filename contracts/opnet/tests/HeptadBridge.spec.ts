@@ -1,1 +1,2 @@
-// TODO: replace with as-pect tests for src/bridge/HeptadBridge.ts.
+// Legacy placeholder.
+// Security invariants are currently enforced by tests/bridge-invariants.test.mjs.

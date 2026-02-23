@@ -106,3 +106,25 @@ export class OwnershipTransferredEvent extends NetEvent {
         super('OwnershipTransferred', data);
     }
 }
+
+@final
+export class ActiveAttestationVersionUpdatedEvent extends NetEvent {
+    constructor(previousVersion: u8, nextVersion: u8) {
+        const data: BytesWriter = new BytesWriter(U8_BYTE_LENGTH * 2);
+        data.writeU8(previousVersion);
+        data.writeU8(nextVersion);
+
+        super('ActiveAttestationVersionUpdated', data);
+    }
+}
+
+@final
+export class AttestationVersionAcceptanceUpdatedEvent extends NetEvent {
+    constructor(version: u8, accepted: boolean) {
+        const data: BytesWriter = new BytesWriter(U8_BYTE_LENGTH + 1);
+        data.writeU8(version);
+        data.writeBoolean(accepted);
+
+        super('AttestationVersionAcceptanceUpdated', data);
+    }
+}

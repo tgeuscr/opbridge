@@ -1,0 +1,44 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "deployedAt": "2026-02-19T19:23:30.135Z",
+  "deployer": "0xDBC112f28da61cA54e8F2A802866Dcc516Fa6D86",
+  "owner": "0xDBC112f28da61cA54e8F2A802866Dcc516Fa6D86",
+  "vaultAddress": "0xFf91431D413DE6cab5d34684b354D5Bd479b6DFd",
+  "assets": [
+    {
+      "assetId": 0,
+      "symbol": "USDT",
+      "decimals": 6,
+      "tokenAddress": "0x8484e7C0f4CF18329f3F01753DDA5E22584FC9D4"
+    },
+    {
+      "assetId": 1,
+      "symbol": "WBTC",
+      "decimals": 8,
+      "tokenAddress": "0xb05400278B5CBEaa6fD4971dDEFf4209FE45540b"
+    },
+    {
+      "assetId": 2,
+      "symbol": "WETH",
+      "decimals": 18,
+      "tokenAddress": "0xE223744e877Efa4f3eE2156a48c79aa12C537A8f"
+    },
+    {
+      "assetId": 3,
+      "symbol": "PAXG",
+      "decimals": 18,
+      "tokenAddress": "0x7be9a1f3F5eD295E6E48A98bBe48DcD57B0b76cB"
+    }
+  ],
+  "opnet": {
+    "network": "regtest",
+    "bridgeAddress": "",
+    "wrappedTokens": {
+      "USDT": "",
+      "WBTC": "",
+      "WETH": "",
+      "PAXG": ""
+    }
+  }
+}

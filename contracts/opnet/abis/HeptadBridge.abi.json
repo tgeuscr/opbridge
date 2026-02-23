@@ -11,6 +11,10 @@
                     "type": "UINT8"
                 },
                 {
+                    "name": "ethereumUser",
+                    "type": "ADDRESS"
+                },
+                {
                     "name": "recipient",
                     "type": "ADDRESS"
                 },
@@ -21,6 +25,10 @@
                 {
                     "name": "depositId",
                     "type": "UINT256"
+                },
+                {
+                    "name": "attestationVersion",
+                    "type": "UINT8"
                 },
                 {
                     "name": "relayIndexesPacked",
@@ -314,6 +322,93 @@
             "outputs": []
         },
         {
+            "name": "setEthereumVault",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "ethereumVault",
+                    "type": "ADDRESS"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "ethereumVault",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "ethereumVault",
+                    "type": "ADDRESS"
+                }
+            ]
+        },
+        {
+            "name": "activeAttestationVersion",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "version",
+                    "type": "UINT8"
+                }
+            ]
+        },
+        {
+            "name": "isAttestationVersionAccepted",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "version",
+                    "type": "UINT8"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "accepted",
+                    "type": "BOOL"
+                }
+            ]
+        },
+        {
+            "name": "setAttestationVersionAccepted",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "version",
+                    "type": "UINT8"
+                },
+                {
+                    "name": "accepted",
+                    "type": "BOOL"
+                }
+            ],
+            "outputs": []
+        },
+        {
+            "name": "setActiveAttestationVersion",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "version",
+                    "type": "UINT8"
+                }
+            ],
+            "outputs": []
+        },
+        {
             "name": "owner",
             "type": "Function",
             "payable": false,
@@ -350,6 +445,10 @@
                     "type": "UINT8"
                 },
                 {
+                    "name": "ethereumUser",
+                    "type": "ADDRESS"
+                },
+                {
                     "name": "recipient",
                     "type": "ADDRESS"
                 },
@@ -360,6 +459,10 @@
                 {
                     "name": "depositId",
                     "type": "UINT256"
+                },
+                {
+                    "name": "attestationVersion",
+                    "type": "UINT8"
                 }
             ],
             "outputs": [
@@ -455,6 +558,34 @@
                 {
                     "name": "paused",
                     "type": "BOOL"
+                }
+            ],
+            "type": "Event"
+        },
+        {
+            "name": "AttestationVersionAcceptanceUpdated",
+            "values": [
+                {
+                    "name": "version",
+                    "type": "UINT8"
+                },
+                {
+                    "name": "accepted",
+                    "type": "BOOL"
+                }
+            ],
+            "type": "Event"
+        },
+        {
+            "name": "ActiveAttestationVersionUpdated",
+            "values": [
+                {
+                    "name": "previousVersion",
+                    "type": "UINT8"
+                },
+                {
+                    "name": "nextVersion",
+                    "type": "UINT8"
                 }
             ],
             "type": "Event"

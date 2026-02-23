@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { networks } from '@btc-vision/bitcoin';
 import { SupportedWallets, useWalletConnect } from '@btc-vision/walletconnect';
 import {
@@ -13,6 +13,7 @@ import HeptadBridgeAbi from './abi/HeptadBridge.abi';
 import BridgeWrappedTokenAbi from './abi/BridgeWrappedToken.abi';
 import OP20ReadAbi from './abi/OP20Read.abi';
 import devRelayKeys from './dev-relay-keys.json';
+import defaultSepoliaDeployment from './dev-sepolia-latest.json';
 
 class OPWalletSigner extends UnisatSigner {
   public override get unisat() {
@@ -26,12 +27,29 @@ class OPWalletSigner extends UnisatSigner {
 }
 
 type NetworkMode = 'regtest' | 'mainnet';
+type DevToolTab = 'opnet' | 'ethereum';
+type EthereumProvider = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  isMetaMask?: boolean;
+  providers?: EthereumProvider[];
+  on?: (event: string, handler: (...args: unknown[]) => void) => void;
+  removeListener?: (event: string, handler: (...args: unknown[]) => void) => void;
+};
+type EthereumRpcError = {
+  code?: number;
+  message?: string;
+  data?: unknown;
+  cause?: unknown;
+};
 
 type BridgeState = {
   paused?: boolean;
   threshold?: number;
   relayCount?: number;
   owner?: string;
+  ethereumVault?: string;
+  activeAttestationVersion?: number;
+  activeAttestationVersionAccepted?: boolean;
 };
 
 type BridgeAssetConfig = {
@@ -39,6 +57,21 @@ type BridgeAssetConfig = {
   symbol: string;
   decimals: number;
   token: string;
+};
+
+type DeploymentJsonPayload = {
+  vaultAddress?: string;
+  rpcUrl?: string;
+  assets?: Array<{ symbol?: string; tokenAddress?: string }>;
+  ethereum?: {
+    vaultAddress?: string;
+    assets?: Array<{ symbol?: string; tokenAddress?: string }>;
+    rpcUrl?: string;
+  };
+  opnet?: {
+    bridgeAddress?: string;
+    wrappedTokens?: Record<string, string>;
+  };
 };
 
 type TxParams = {
@@ -69,15 +102,19 @@ type HeptadBridgeContract = {
   wrappedToken: (asset: number) => Promise<CallResult<{ token: string }>>;
   computeMintAttestationHash: (
     asset: number,
+    ethereumUser: unknown,
     recipient: unknown,
     amount: bigint,
     depositId: bigint,
+    attestationVersion: number,
   ) => Promise<CallResult<{ messageHash: Uint8Array }>>;
   mintWithRelaySignatures: (
     asset: number,
+    ethereumUser: unknown,
     recipient: unknown,
     amount: bigint,
     depositId: bigint,
+    attestationVersion: number,
     relayIndexesPacked: Uint8Array,
     relaySignaturesPacked: Uint8Array,
   ) => Promise<CallResult>;
@@ -97,6 +134,12 @@ type HeptadBridgeContract = {
   removeSupportedAsset: (asset: number) => Promise<CallResult>;
   removeSupportedAssetsPacked: (assetIdsPacked: Uint8Array) => Promise<CallResult>;
   setPaused: (paused: boolean) => Promise<CallResult>;
+  setEthereumVault: (ethereumVault: unknown) => Promise<CallResult>;
+  ethereumVault: () => Promise<CallResult<{ ethereumVault: string }>>;
+  activeAttestationVersion: () => Promise<CallResult<{ version: number }>>;
+  isAttestationVersionAccepted: (version: number) => Promise<CallResult<{ accepted: boolean }>>;
+  setAttestationVersionAccepted: (version: number, accepted: boolean) => Promise<CallResult>;
+  setActiveAttestationVersion: (version: number) => Promise<CallResult>;
   transferOwnership: (newOwner: unknown) => Promise<CallResult>;
 };
 
@@ -133,6 +176,9 @@ const DEFAULT_DEV_RELAY_KEY_SLOTS = 3;
 const ASSET_SYMBOL_BYTES = 16;
 const ATTESTATION_VERSION = 1;
 const DIRECTION_ETH_TO_OP_MINT = 1;
+const SEPOLIA_CHAIN_ID_HEX = '0xaa36a7';
+const ERC20_APPROVE_SELECTOR = '0x095ea7b3';
+const VAULT_DEPOSIT_ERC20_SELECTOR = '0x1eaa9083';
 
 function short(value: string | null | undefined): string {
   if (!value) return '-';
@@ -190,6 +236,78 @@ function formatHumanAmount(raw: bigint, decimals: number): string {
   return `${sign}${whole.toString()}.${fractionalText}`;
 }
 
+function padHexToBytes(hexWithoutPrefix: string, bytes: number): string {
+  if (hexWithoutPrefix.length > bytes * 2) {
+    throw new Error(`Hex value exceeds ${bytes} bytes.`);
+  }
+  return hexWithoutPrefix.padStart(bytes * 2, '0');
+}
+
+function normalizeEthereumAddress(raw: string, fieldName: string): string {
+  const value = raw.trim();
+  if (!value) {
+    throw new Error(`${fieldName} is required.`);
+  }
+  if (!/^0x[0-9a-fA-F]{40}$/.test(value)) {
+    throw new Error(`${fieldName} must be a valid 20-byte hex address. received="${value}"`);
+  }
+  return value;
+}
+
+function normalizeBytes32Hex(raw: string, fieldName: string): string {
+  const value = raw.trim();
+  const normalized = value.startsWith('0x') ? value.slice(2) : value;
+  if (!/^[0-9a-fA-F]{64}$/.test(normalized)) {
+    throw new Error(`${fieldName} must be a 32-byte hex value.`);
+  }
+  return `0x${normalized.toLowerCase()}`;
+}
+
+function encodeAddressWord(address: string): string {
+  return padHexToBytes(address.replace(/^0x/, '').toLowerCase(), 32);
+}
+
+function encodeUintWord(value: bigint | number): string {
+  const n = typeof value === 'number' ? BigInt(value) : value;
+  if (n < 0n) throw new Error('Unsigned integer cannot be negative.');
+  return padHexToBytes(n.toString(16), 32);
+}
+
+function encodeBytes32Word(value: string): string {
+  return normalizeBytes32Hex(value, 'bytes32').replace(/^0x/, '');
+}
+
+function buildApproveCalldata(spender: string, amount: bigint): string {
+  return `${ERC20_APPROVE_SELECTOR}${encodeAddressWord(spender)}${encodeUintWord(amount)}`;
+}
+
+function buildDepositErc20Calldata(assetId: number, amount: bigint, recipient: string): string {
+  if (!Number.isInteger(assetId) || assetId < 0 || assetId > 255) {
+    throw new Error('Asset ID must be an integer in [0,255].');
+  }
+  return `${VAULT_DEPOSIT_ERC20_SELECTOR}${encodeUintWord(assetId)}${encodeUintWord(amount)}${encodeBytes32Word(recipient)}`;
+}
+
+function buildBalanceOfCalldata(owner: string): string {
+  return `0x70a08231${encodeAddressWord(owner)}`;
+}
+
+function formatEthereumError(error: unknown): string {
+  const err = error as EthereumRpcError;
+  const message = err?.message || (error instanceof Error ? error.message : String(error));
+  const code = typeof err?.code === 'number' ? ` code=${err.code}` : '';
+  const data = typeof err?.data === 'undefined' ? '' : ` data=${JSON.stringify(err.data)}`;
+  const cause =
+    typeof err?.cause === 'undefined'
+      ? ''
+      : ` cause=${err.cause instanceof Error ? err.cause.message : String(err.cause)}`;
+
+  if (message === 'Failed to fetch') {
+    return `${message}${code}${data}${cause}. Hint: wallet/provider network call failed (extension locked, wallet RPC unavailable, blocked extension request, or browser privacy shield).`;
+  }
+  return `${message}${code}${data}${cause}`;
+}
+
 function parseDepositId(raw: string): bigint {
   const value = raw.trim();
   if (!/^\d+$/.test(value)) {
@@ -226,6 +344,39 @@ function hexToBytes(raw: string, expectedLength?: number): Uint8Array {
   }
 
   return result;
+}
+
+function leftPadTo32(bytes: Uint8Array, fieldName: string): Uint8Array {
+  if (bytes.length > 32) {
+    throw new Error(`${fieldName} exceeds 32 bytes.`);
+  }
+  if (bytes.length === 32) {
+    return bytes;
+  }
+  const padded = new Uint8Array(32);
+  padded.set(bytes, 32 - bytes.length);
+  return padded;
+}
+
+function resolveWord32Bytes(raw: string, fieldName: string): Uint8Array {
+  const value = raw.trim();
+  if (!value) {
+    throw new Error(`${fieldName} is required.`);
+  }
+
+  if (value.startsWith('0x')) {
+    const rawHex = hexToBytes(value);
+    if (rawHex.length !== 20 && rawHex.length !== 32) {
+      throw new Error(`${fieldName} must be 20 or 32 bytes.`);
+    }
+    return leftPadTo32(rawHex, fieldName);
+  }
+
+  return leftPadTo32(hexToBytes(parseHexAddress(value, fieldName).toHex(), 32), fieldName);
+}
+
+function bytesToAddressWord(bytes: Uint8Array, fieldName: string): Address {
+  return parseHexAddress(bytesToHex(leftPadTo32(bytes, fieldName)), fieldName);
 }
 
 function concatBytes(parts: Uint8Array[]): Uint8Array {
@@ -306,6 +457,7 @@ export function App() {
   } = useWalletConnect();
 
   const [networkMode, setNetworkMode] = useState<NetworkMode>('regtest');
+  const [devToolTab, setDevToolTab] = useState<DevToolTab>('opnet');
   const [bridgeAddress, setBridgeAddress] = useState('');
   const [asset, setAsset] = useState<string>(DEFAULT_ASSET);
   const [dummyAsset, setDummyAsset] = useState<string>(DEFAULT_ASSET);
@@ -317,6 +469,9 @@ export function App() {
   const [dummyDepositId, setDummyDepositId] = useState('1');
   const [mintDepositId, setMintDepositId] = useState('1');
   const [withdrawalId, setWithdrawalId] = useState('1');
+  const [dummyEthereumUserAddress, setDummyEthereumUserAddress] = useState('');
+  const [mintEthereumUserAddress, setMintEthereumUserAddress] = useState('');
+  const [mintAttestationVersionInput, setMintAttestationVersionInput] = useState(`${ATTESTATION_VERSION}`);
   const [dummyRecipientAddress, setDummyRecipientAddress] = useState('');
   const [mintRecipientAddress, setMintRecipientAddress] = useState('');
   const [assetTokenAddresses, setAssetTokenAddresses] = useState<Record<string, string>>(
@@ -346,10 +501,23 @@ export function App() {
   const [relayIndexInput, setRelayIndexInput] = useState('0');
   const [relayCountInput, setRelayCountInput] = useState('0');
   const [relayThresholdInput, setRelayThresholdInput] = useState('0');
+  const [attestationVersionInput, setAttestationVersionInput] = useState(`${ATTESTATION_VERSION}`);
+  const [attestationVersionAcceptedInput, setAttestationVersionAcceptedInput] = useState(true);
   const [removeAssetIdInput, setRemoveAssetIdInput] = useState('0');
   const [removeAssetIdsInput, setRemoveAssetIdsInput] = useState('[0]');
   const [relayPubKeyInput, setRelayPubKeyInput] = useState('');
   const [relayPubKeysPackedInput, setRelayPubKeysPackedInput] = useState('');
+  const [relayDataJsonInput, setRelayDataJsonInput] = useState(
+    JSON.stringify(
+      {
+        relayCount: 0,
+        relayPubKeysPacked: '',
+        relayPrivateKeys: [''],
+      },
+      null,
+      2,
+    ),
+  );
   const [tokenContractAddress, setTokenContractAddress] = useState('');
   const [tokenBridgeAuthorityAddress, setTokenBridgeAuthorityAddress] = useState('');
   const [tokenBridgeAuthorityRead, setTokenBridgeAuthorityRead] = useState('');
@@ -389,6 +557,34 @@ export function App() {
   const [selectedAssetBalanceRaw, setSelectedAssetBalanceRaw] = useState<string>('-');
   const [selectedAssetBalanceHuman, setSelectedAssetBalanceHuman] = useState<string>('-');
   const [selectedAssetBalanceLoading, setSelectedAssetBalanceLoading] = useState(false);
+  const [ethereumWalletAddress, setEthereumWalletAddress] = useState('');
+  const [ethereumChainId, setEthereumChainId] = useState('');
+  const [ethereumBalanceEth, setEthereumBalanceEth] = useState('-');
+  const [ethereumRpcUrl, setEthereumRpcUrl] = useState('https://eth-sepolia.g.alchemy.com/v2/<ALCHEMY_API_KEY>');
+  const [deploymentJsonInput, setDeploymentJsonInput] = useState('');
+  const relayJsonFileInputRef = useRef<HTMLInputElement | null>(null);
+  const deploymentJsonFileInputRef = useRef<HTMLInputElement | null>(null);
+  const mintCandidateJsonFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [mintCandidateJsonInput, setMintCandidateJsonInput] = useState('');
+  const [ethereumVaultAddress, setEthereumVaultAddress] = useState('');
+  const [ethereumTokenAddresses, setEthereumTokenAddresses] = useState<Record<string, string>>({
+    USDT: '',
+    WBTC: '',
+    WETH: '',
+    PAXG: '',
+  });
+  const [ethereumDepositAsset, setEthereumDepositAsset] = useState<'USDT' | 'WBTC' | 'WETH' | 'PAXG'>('USDT');
+  const [ethereumDepositAmount, setEthereumDepositAmount] = useState('1');
+  const [ethereumDepositRecipient, setEthereumDepositRecipient] = useState('');
+  const [ethereumDepositRunning, setEthereumDepositRunning] = useState(false);
+  const [ethereumDepositBalanceRaw, setEthereumDepositBalanceRaw] = useState('-');
+  const [ethereumDepositBalanceHuman, setEthereumDepositBalanceHuman] = useState('-');
+  const [opnetWrappedAddresses, setOpnetWrappedAddresses] = useState<Record<string, string>>({
+    USDT: '',
+    WBTC: '',
+    WETH: '',
+    PAXG: '',
+  });
   const bridgeAssetBySymbol = useMemo(
     () => new Map(bridgeAssets.map((entry) => [entry.symbol, entry])),
     [bridgeAssets],
@@ -555,34 +751,72 @@ export function App() {
 
   const buildMintAttestationHash = async (
     targetAsset: string,
+    ethereumUser: Address,
     recipient: Address,
     rawAmount: bigint,
     parsedDepositId: bigint,
+    attestationVersion: number,
   ): Promise<Uint8Array> => {
     if (!bridgeInput) {
       throw new Error('Bridge contract address is required. Set Bridge Contract Address first.');
     }
-
-    const bridgeHex = resolvedBridgeAddress ||
-      (bridgeInput.startsWith('op') ? '' : parseHexAddress(bridgeInput, 'bridge address').toHex());
-    if (!bridgeHex) {
-      throw new Error('Bridge contract hex is unresolved. Wait for address resolution and try again.');
+    if (!ethereumVaultAddress.trim()) {
+      throw new Error('Ethereum vault address is required. Set Ethereum Vault Address first.');
     }
 
-    const bridgeBytes = hexToBytes(bridgeHex, 32);
-    const recipientBytes = hexToBytes(recipient.toHex(), 32);
+    const ethereumVaultBytes = resolveWord32Bytes(ethereumVaultAddress, 'ethereum vault');
+    const opnetBridgeBytes = resolveWord32Bytes(
+      resolvedBridgeAddress || bridgeInput,
+      'bridge address',
+    );
+    const ethereumUserBytes = resolveWord32Bytes(ethereumUser.toHex(), 'ethereum user');
+    const recipientBytes = resolveWord32Bytes(recipient.toHex(), 'recipient');
 
     const payload = concatBytes([
-      new Uint8Array([ATTESTATION_VERSION]),
-      new Uint8Array([DIRECTION_ETH_TO_OP_MINT]),
-      bridgeBytes,
-      new Uint8Array([resolveAssetId(targetAsset)]),
+      new Uint8Array([attestationVersion]),
+      ethereumVaultBytes,
+      opnetBridgeBytes,
+      ethereumUserBytes,
       recipientBytes,
+      new Uint8Array([resolveAssetId(targetAsset)]),
       u256ToBytes(rawAmount),
+      new Uint8Array([DIRECTION_ETH_TO_OP_MINT]),
       u256ToBytes(parsedDepositId),
     ]);
 
     return sha256Bytes(payload);
+  };
+
+  const parseAttestationVersion = (raw: string): number => {
+    const value = raw.trim();
+    if (!/^\d+$/.test(value)) {
+      throw new Error('Attestation version must be a non-negative integer.');
+    }
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 255) {
+      throw new Error('Attestation version must be an integer in [0,255].');
+    }
+    return parsed;
+  };
+
+  const resolveEthereumUserAddress = (raw: string): Address => {
+    const value = raw.trim() || ethereumWalletAddress.trim();
+    if (!value) {
+      throw new Error('Ethereum user is required (set input or connect Ethereum wallet).');
+    }
+    return bytesToAddressWord(resolveWord32Bytes(value, 'ethereum user'), 'ethereum user');
+  };
+
+  const parseAttestationVersionAdminInput = (raw: string): number => {
+    const value = raw.trim();
+    if (!/^\d+$/.test(value)) {
+      throw new Error('Attestation version must be a non-negative integer.');
+    }
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 255) {
+      throw new Error('Attestation version must be an integer in [0,255].');
+    }
+    return parsed;
   };
 
   const resolveRecipientAddress = async (raw: string): Promise<Address | null> => {
@@ -832,6 +1066,10 @@ export function App() {
       const relayCountCall = await readBridge.relayCount();
       const supportedAssetCountCall = await readBridge.supportedAssetCount();
       const ownerCall = await readBridge.owner();
+      const ethereumVaultCall = await readBridge.ethereumVault();
+      const activeAttestationVersionCall = await readBridge.activeAttestationVersion();
+      const activeAttestationVersion = Number(activeAttestationVersionCall.properties.version);
+      const activeVersionAcceptedCall = await readBridge.isAttestationVersionAccepted(activeAttestationVersion);
       const assetCount = Number(supportedAssetCountCall.properties.count);
       const nextBridgeAssets: BridgeAssetConfig[] = [];
       for (let i = 0; i < assetCount; i++) {
@@ -849,6 +1087,9 @@ export function App() {
         threshold: Number(threshold.properties.requiredSignatures),
         relayCount: Number(relayCountCall.properties.relayCount),
         owner: String(ownerCall.properties.owner),
+        ethereumVault: String(ethereumVaultCall.properties.ethereumVault),
+        activeAttestationVersion,
+        activeAttestationVersionAccepted: Boolean(activeVersionAcceptedCall.properties.accepted),
       });
       setBridgeAssets(nextBridgeAssets);
       if (nextBridgeAssets.length > 0) {
@@ -874,6 +1115,8 @@ export function App() {
       }
       setRelayCountInput(String(relayCountCall.properties.relayCount));
       setRelayThresholdInput(String(threshold.properties.requiredSignatures));
+      setAttestationVersionInput(String(activeAttestationVersion));
+      setAttestationVersionAcceptedInput(Boolean(activeVersionAcceptedCall.properties.accepted));
 
       setOutput(
         JSON.stringify(
@@ -885,6 +1128,9 @@ export function App() {
             assetCount,
             assets: nextBridgeAssets,
             owner: ownerCall.properties.owner,
+            ethereumVault: ethereumVaultCall.properties.ethereumVault,
+            activeAttestationVersion,
+            activeAttestationVersionAccepted: activeVersionAcceptedCall.properties.accepted,
           },
           null,
           2,
@@ -1292,7 +1538,7 @@ export function App() {
 
   const copyValue = async (label: string, value: string | null): Promise<void> => {
     if (!value) {
-      setOutput(`${label} is not available. Connect OP_WALLET first.`);
+      setOutput(`${label} is not available.`);
       return;
     }
 
@@ -1304,46 +1550,67 @@ export function App() {
     }
   };
 
+  const applyRelayDataPayload = (payload: {
+    relayCount?: number;
+    relayPubKeysPacked?: string;
+    relayPrivateKeys?: string[];
+  }): void => {
+    const relayCount = payload.relayCount ?? payload.relayPrivateKeys?.length ?? DEFAULT_DEV_RELAY_KEY_SLOTS;
+    if (relayCount < activeRelayCount) {
+      throw new Error(
+        `Relay JSON has relayCount=${relayCount}, but current bridge relay count is ${activeRelayCount}.`,
+      );
+    }
+
+    const relayPubKeysPackedHex = (payload.relayPubKeysPacked ?? '').trim();
+    const privateKeys = payload.relayPrivateKeys ?? [];
+
+    if (privateKeys.length < activeRelayCount) {
+      throw new Error(
+        `Relay JSON has ${privateKeys.length} private keys, but current bridge relay count is ${activeRelayCount}.`,
+      );
+    }
+
+    // Validate payload shape before mutating form state.
+    const fullPacked = hexToBytes(relayPubKeysPackedHex, relayCount * 1312);
+    for (const rawKey of privateKeys) {
+      parseMldsaPrivateKey(rawKey);
+    }
+
+    const targetRelayCount = activeRelayCount > 0 ? activeRelayCount : DEFAULT_DEV_RELAY_KEY_SLOTS;
+    const packedForCurrentRelayCount = fullPacked.slice(0, targetRelayCount * 1312);
+    const keysForCurrentRelayCount = privateKeys.slice(0, targetRelayCount);
+    setRelayPubKeysPackedInput(bytesToHex(packedForCurrentRelayCount));
+    setRelayPrivateKeysInput(keysForCurrentRelayCount);
+    setOutput(
+      `Loaded relay JSON: ${keysForCurrentRelayCount.length} private keys and ${targetRelayCount} packed relay pubkeys for current bridge config.`,
+    );
+  };
+
   const loadRelayDataFromJson = (): void => {
+    try {
+      const payload = JSON.parse(relayDataJsonInput) as {
+        relayCount?: number;
+        relayPubKeysPacked?: string;
+        relayPrivateKeys?: string[];
+      };
+      applyRelayDataPayload(payload);
+    } catch (error) {
+      setOutput(`Failed to load relay JSON: ${(error as Error).message}`);
+    }
+  };
+
+  const loadBundledRelayData = (): void => {
     try {
       const payload = devRelayKeys as {
         relayCount?: number;
         relayPubKeysPacked?: string;
         relayPrivateKeys?: string[];
       };
-
-      const relayCount = payload.relayCount ?? payload.relayPrivateKeys?.length ?? DEFAULT_DEV_RELAY_KEY_SLOTS;
-      if (relayCount < activeRelayCount) {
-        throw new Error(
-          `Relay JSON has relayCount=${relayCount}, but current bridge relay count is ${activeRelayCount}.`,
-        );
-      }
-
-      const relayPubKeysPackedHex = (payload.relayPubKeysPacked ?? '').trim();
-      const privateKeys = payload.relayPrivateKeys ?? [];
-
-      if (privateKeys.length < activeRelayCount) {
-        throw new Error(
-          `Relay JSON has ${privateKeys.length} private keys, but current bridge relay count is ${activeRelayCount}.`,
-        );
-      }
-
-      // Validate payload shape before mutating form state.
-      const fullPacked = hexToBytes(relayPubKeysPackedHex, relayCount * 1312);
-      for (const rawKey of privateKeys) {
-        parseMldsaPrivateKey(rawKey);
-      }
-
-      const targetRelayCount = activeRelayCount > 0 ? activeRelayCount : DEFAULT_DEV_RELAY_KEY_SLOTS;
-      const packedForCurrentRelayCount = fullPacked.slice(0, targetRelayCount * 1312);
-      const keysForCurrentRelayCount = privateKeys.slice(0, targetRelayCount);
-      setRelayPubKeysPackedInput(bytesToHex(packedForCurrentRelayCount));
-      setRelayPrivateKeysInput(keysForCurrentRelayCount);
-      setOutput(
-        `Loaded relay JSON: ${keysForCurrentRelayCount.length} private keys and ${targetRelayCount} packed relay pubkeys for current bridge config.`,
-      );
+      setRelayDataJsonInput(JSON.stringify(payload, null, 2));
+      applyRelayDataPayload(payload);
     } catch (error) {
-      setOutput(`Failed to load relay JSON: ${(error as Error).message}`);
+      setOutput(`Failed to load bundled relay JSON: ${(error as Error).message}`);
     }
   };
 
@@ -1418,6 +1685,588 @@ export function App() {
       setMintSignatureCountInput(clamped.toString());
     }
   };
+  const renderAssetSelectOptions = () => (
+    <>
+      <option value="" disabled>
+        {availableAssets.length === 0 ? 'Refresh bridge state to load assets' : 'Select asset'}
+      </option>
+      {availableAssets.map((entry) => (
+        <option key={entry} value={entry}>
+          {entry}
+        </option>
+      ))}
+    </>
+  );
+
+  const getEthereumProvider = (): EthereumProvider | null => {
+    const scopedWindow = window as Window & {
+      ethereum?: EthereumProvider;
+      web3?: { currentProvider?: EthereumProvider };
+    };
+    const injected = scopedWindow.ethereum;
+    if (!injected) {
+      return scopedWindow.web3?.currentProvider ?? null;
+    }
+
+    const allProviders =
+      injected.providers && injected.providers.length > 0
+        ? injected.providers
+        : [injected];
+    const metamask = allProviders.find((provider) => provider.isMetaMask);
+    return metamask ?? allProviders[0] ?? null;
+  };
+
+  const refreshEthereumWalletState = async (): Promise<void> => {
+    const provider = getEthereumProvider();
+    if (!provider) {
+      setEthereumWalletAddress('');
+      setEthereumChainId('');
+      setEthereumBalanceEth('-');
+      return;
+    }
+
+    const chainId = (await provider.request({ method: 'eth_chainId' })) as string;
+    setEthereumChainId(chainId);
+    const accounts = (await provider.request({ method: 'eth_accounts' })) as string[];
+    const account = accounts[0] ?? '';
+    setEthereumWalletAddress(account);
+    if (!account) {
+      setEthereumBalanceEth('-');
+      return;
+    }
+
+    const balanceHex = (await provider.request({
+      method: 'eth_getBalance',
+      params: [account, 'latest'],
+    })) as string;
+    setEthereumBalanceEth(formatHumanAmount(BigInt(balanceHex), 18));
+  };
+
+  const connectEthereumWallet = async (): Promise<void> => {
+    const provider = getEthereumProvider();
+    if (!provider) {
+      const scopedWindow = window as Window & {
+        ethereum?: EthereumProvider;
+        web3?: { currentProvider?: EthereumProvider };
+      };
+      const hasEthereum = !!scopedWindow.ethereum;
+      const providerCount = scopedWindow.ethereum?.providers?.length ?? 0;
+      const hasLegacyWeb3 = !!scopedWindow.web3?.currentProvider;
+      setOutput(
+        `No Ethereum wallet found in page context. diagnostics: window.ethereum=${hasEthereum}, ethereum.providers=${providerCount}, window.web3.currentProvider=${hasLegacyWeb3}. If MetaMask is installed, reload tab, unlock wallet, and ensure extension access is enabled for this site.`,
+      );
+      return;
+    }
+
+    await provider.request({ method: 'eth_requestAccounts' });
+    await refreshEthereumWalletState();
+    setOutput('Ethereum wallet connected.');
+  };
+
+  const disconnectEthereumWallet = (): void => {
+    setEthereumWalletAddress('');
+    setEthereumBalanceEth('-');
+    setOutput('Ethereum wallet state cleared in UI.');
+  };
+
+  const ethereumAssetConfig: Record<'USDT' | 'WBTC' | 'WETH' | 'PAXG', { assetId: number; decimals: number }> = {
+    USDT: { assetId: 0, decimals: 6 },
+    WBTC: { assetId: 1, decimals: 8 },
+    WETH: { assetId: 2, decimals: 18 },
+    PAXG: { assetId: 3, decimals: 18 },
+  };
+
+  const waitForEthereumReceipt = async (
+    provider: EthereumProvider,
+    txHash: string,
+    label: string,
+  ): Promise<{ status?: string; blockNumber?: string; transactionHash?: string }> => {
+    const start = Date.now();
+    const timeoutMs = 180_000;
+    while (Date.now() - start < timeoutMs) {
+      const receipt = (await provider.request({
+        method: 'eth_getTransactionReceipt',
+        params: [txHash],
+      })) as { status?: string; blockNumber?: string; transactionHash?: string } | null;
+
+      if (receipt) {
+        return receipt;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    }
+    throw new Error(`${label} receipt timed out after ${timeoutMs / 1000}s.`);
+  };
+
+  const ensureSepoliaWalletSession = async (
+    provider: EthereumProvider,
+  ): Promise<{ account: string; chainId: string }> => {
+    const requested = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
+    const account = requested[0] ?? '';
+    if (!account) {
+      throw new Error('No Ethereum account returned from wallet.');
+    }
+
+    let chainId = (await provider.request({ method: 'eth_chainId' })) as string;
+    if (chainId.toLowerCase() !== SEPOLIA_CHAIN_ID_HEX) {
+      try {
+        await provider.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }],
+        });
+      } catch (error) {
+        throw new Error(`Failed to switch wallet to Sepolia: ${formatEthereumError(error)}`);
+      }
+      chainId = (await provider.request({ method: 'eth_chainId' })) as string;
+      if (chainId.toLowerCase() !== SEPOLIA_CHAIN_ID_HEX) {
+        throw new Error(`Wrong network. Expected Sepolia (${SEPOLIA_CHAIN_ID_HEX}), got ${chainId}.`);
+      }
+    }
+
+    return { account, chainId };
+  };
+
+  const runEthereumApproveAndDeposit = async (): Promise<void> => {
+    const provider = getEthereumProvider();
+    if (!provider) {
+      setOutput('No Ethereum wallet provider found. Connect MetaMask first.');
+      return;
+    }
+    if (!ethereumWalletAddress) {
+      setOutput('Connect Ethereum wallet first.');
+      return;
+    }
+
+    try {
+      setEthereumDepositRunning(true);
+
+      const { account, chainId } = await ensureSepoliaWalletSession(provider);
+      setEthereumWalletAddress(account);
+      setEthereumChainId(chainId);
+
+      const vaultAddress = normalizeEthereumAddress(ethereumVaultAddress, 'Vault address');
+      const tokenAddressRaw = ethereumTokenAddresses[ethereumDepositAsset];
+      const tokenAddress = normalizeEthereumAddress(tokenAddressRaw, `${ethereumDepositAsset} token`);
+      const recipient = normalizeBytes32Hex(
+        ethereumDepositRecipient || hashedMLDSAKey || '',
+        'OPNet recipient',
+      );
+      const { assetId, decimals } = ethereumAssetConfig[ethereumDepositAsset];
+      const amountRaw = parseHumanAmount(ethereumDepositAmount, decimals);
+      if (amountRaw <= 0n) {
+        throw new Error('Amount must be greater than zero.');
+      }
+
+      setOutput('Submitting ERC20 approve transaction...');
+      const approveData = buildApproveCalldata(vaultAddress, amountRaw);
+      let approveTxHash = '';
+      try {
+        approveTxHash = (await provider.request({
+          method: 'eth_sendTransaction',
+          params: [{ from: account, to: tokenAddress, data: approveData }],
+        })) as string;
+      } catch (error) {
+        throw new Error(`Approve send failed: ${formatEthereumError(error)}`);
+      }
+
+      let approveReceipt: { status?: string; blockNumber?: string; transactionHash?: string };
+      try {
+        approveReceipt = await waitForEthereumReceipt(provider, approveTxHash, 'Approve');
+      } catch (error) {
+        throw new Error(`Approve receipt failed: ${formatEthereumError(error)}`);
+      }
+      if (approveReceipt.status !== '0x1') {
+        throw new Error(`Approve transaction failed. tx=${approveTxHash}`);
+      }
+
+      setOutput('Approve confirmed. Submitting vault deposit transaction...');
+      const depositData = buildDepositErc20Calldata(assetId, amountRaw, recipient);
+      let depositTxHash = '';
+      try {
+        depositTxHash = (await provider.request({
+          method: 'eth_sendTransaction',
+          params: [{ from: account, to: vaultAddress, data: depositData }],
+        })) as string;
+      } catch (error) {
+        throw new Error(`Deposit send failed: ${formatEthereumError(error)}`);
+      }
+
+      let depositReceipt: { status?: string; blockNumber?: string; transactionHash?: string };
+      try {
+        depositReceipt = await waitForEthereumReceipt(provider, depositTxHash, 'Deposit');
+      } catch (error) {
+        throw new Error(`Deposit receipt failed: ${formatEthereumError(error)}`);
+      }
+      if (depositReceipt.status !== '0x1') {
+        throw new Error(`Deposit transaction failed. tx=${depositTxHash}`);
+      }
+
+      await refreshEthereumWalletState();
+      setOutput(
+        JSON.stringify(
+          {
+            action: 'ethereum/deposit/approve-and-deposit',
+            network: 'sepolia',
+            wallet: account,
+            vaultAddress,
+            tokenAddress,
+            asset: ethereumDepositAsset,
+            assetId,
+            decimals,
+            amountHuman: ethereumDepositAmount,
+            amountRaw: amountRaw.toString(),
+            recipient,
+            approveTxHash,
+            approveBlockNumber: approveReceipt.blockNumber ?? null,
+            depositTxHash,
+            depositBlockNumber: depositReceipt.blockNumber ?? null,
+          },
+          null,
+          2,
+        ),
+      );
+    } catch (error) {
+      setOutput(`Ethereum approve+deposit failed: ${formatEthereumError(error)}`);
+    } finally {
+      setEthereumDepositRunning(false);
+    }
+  };
+
+  const checkEthereumDepositAssetBalance = async (): Promise<void> => {
+    const provider = getEthereumProvider();
+    if (!provider) {
+      setOutput('No Ethereum wallet provider found. Connect MetaMask first.');
+      return;
+    }
+    if (!ethereumWalletAddress) {
+      setOutput('Connect Ethereum wallet first.');
+      return;
+    }
+
+    try {
+      const { account, chainId } = await ensureSepoliaWalletSession(provider);
+      setEthereumWalletAddress(account);
+      setEthereumChainId(chainId);
+
+      const tokenAddress = normalizeEthereumAddress(
+        ethereumTokenAddresses[ethereumDepositAsset],
+        `${ethereumDepositAsset} token`,
+      );
+      const calldata = buildBalanceOfCalldata(account);
+      const result = (await provider.request({
+        method: 'eth_call',
+        params: [{ to: tokenAddress, data: calldata }, 'latest'],
+      })) as string;
+
+      const raw = BigInt(result);
+      const decimals =
+        ethereumDepositAsset === 'USDT'
+          ? 6
+          : ethereumDepositAsset === 'WBTC'
+            ? 8
+            : 18;
+      const human = formatHumanAmount(raw, decimals);
+      setEthereumDepositBalanceRaw(raw.toString());
+      setEthereumDepositBalanceHuman(human);
+      setOutput(
+        JSON.stringify(
+          {
+            action: 'ethereum/deposit/check-balance',
+            network: 'sepolia',
+            wallet: account,
+            asset: ethereumDepositAsset,
+            tokenAddress,
+            balanceRaw: raw.toString(),
+            balanceHuman: human,
+            decimals,
+          },
+          null,
+          2,
+        ),
+      );
+    } catch (error) {
+      setOutput(`Ethereum balance check failed: ${(error as Error).message}`);
+    }
+  };
+
+  const applySepoliaDeploymentPayload = (parsed: DeploymentJsonPayload): void => {
+    const ethereumPayload = parsed.ethereum ?? parsed;
+    if (ethereumPayload.rpcUrl) {
+      setEthereumRpcUrl(ethereumPayload.rpcUrl);
+    }
+    if (ethereumPayload.vaultAddress) {
+      setEthereumVaultAddress(ethereumPayload.vaultAddress);
+    }
+    if (Array.isArray(ethereumPayload.assets)) {
+      setEthereumTokenAddresses((prev) => {
+        const next = { ...prev };
+        for (const asset of ethereumPayload.assets ?? []) {
+          const symbol = (asset.symbol ?? '').toUpperCase();
+          if (symbol === 'USDT' || symbol === 'WBTC' || symbol === 'WETH' || symbol === 'PAXG') {
+            next[symbol] = asset.tokenAddress ?? '';
+          }
+        }
+        return next;
+      });
+    }
+
+    if (parsed.opnet?.bridgeAddress) {
+      setBridgeAddress(parsed.opnet.bridgeAddress);
+    }
+    if (parsed.opnet?.wrappedTokens) {
+      setOpnetWrappedAddresses((prev) => ({
+        ...prev,
+        USDT: parsed.opnet?.wrappedTokens?.USDT ?? prev.USDT,
+        WBTC: parsed.opnet?.wrappedTokens?.WBTC ?? prev.WBTC,
+        WETH: parsed.opnet?.wrappedTokens?.WETH ?? prev.WETH,
+        PAXG: parsed.opnet?.wrappedTokens?.PAXG ?? prev.PAXG,
+      }));
+    }
+  };
+
+  const loadSepoliaDeploymentJson = (): void => {
+    try {
+      const parsed = JSON.parse(deploymentJsonInput) as DeploymentJsonPayload;
+      applySepoliaDeploymentPayload(parsed);
+      setOutput('Loaded Sepolia deployment JSON into Ethereum tooling fields.');
+    } catch (error) {
+      setOutput(`Failed to parse deployment JSON: ${(error as Error).message}`);
+    }
+  };
+
+  const loadBundledSepoliaDeployment = (): void => {
+    try {
+      const payload = defaultSepoliaDeployment as DeploymentJsonPayload;
+      setDeploymentJsonInput(JSON.stringify(payload, null, 2));
+      applySepoliaDeploymentPayload(payload);
+      setOutput('Loaded default bundled Sepolia deployment JSON into Ethereum tooling fields.');
+    } catch (error) {
+      setOutput(`Failed to load bundled Sepolia deployment JSON: ${(error as Error).message}`);
+    }
+  };
+
+  const loadJsonFileInto = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    target: 'relay' | 'deployment' | 'mintCandidate',
+  ): Promise<void> => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) {
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      setOutput(`Selected file is not a JSON file: ${file.name}`);
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      if (target === 'relay') {
+        setRelayDataJsonInput(text);
+      } else if (target === 'deployment') {
+        setDeploymentJsonInput(text);
+      } else {
+        setMintCandidateJsonInput(text);
+      }
+      const targetLabel =
+        target === 'relay' ? 'relay' : target === 'deployment' ? 'deployment' : 'mint candidate';
+      setOutput(`Loaded ${file.name} into ${targetLabel} JSON textarea.`);
+    } catch (error) {
+      setOutput(`Failed to read ${file.name}: ${(error as Error).message}`);
+    }
+  };
+
+  const resolveAssetSymbolById = (assetId: number): string => {
+    const fromBridge = bridgeAssets.find((entry) => entry.assetId === assetId)?.symbol;
+    if (fromBridge) {
+      return fromBridge;
+    }
+    const fromDefault = ASSET_CONFIGS.find((entry) => entry.assetId === assetId)?.symbol;
+    if (fromDefault) {
+      return fromDefault;
+    }
+    throw new Error(`Asset ID ${assetId} is not configured.`);
+  };
+
+  const applyMintCandidatePayload = (payload: unknown): void => {
+    const container = payload as {
+      candidates?: Array<{
+        ready?: boolean;
+        payloadHashHex?: string;
+        mintSubmission?: {
+          attestationVersion?: number;
+          ethereumUser?: string;
+          assetId?: number;
+          recipient?: string;
+          amount?: string;
+          nonce?: string;
+          relayIndexesPackedHex?: string;
+          relaySignaturesPackedHex?: string;
+        };
+      }>;
+      payloadHashHex?: string;
+      mintSubmission?: {
+        attestationVersion?: number;
+        ethereumUser?: string;
+        assetId?: number;
+        recipient?: string;
+        amount?: string;
+        nonce?: string;
+        relayIndexesPackedHex?: string;
+        relaySignaturesPackedHex?: string;
+      };
+    };
+
+    const candidate =
+      (Array.isArray(container.candidates)
+        ? container.candidates.find((entry) => entry.ready && entry.mintSubmission)
+        : null) ??
+      (container.mintSubmission ? container : null);
+    if (!candidate?.mintSubmission) {
+      throw new Error('Mint candidate JSON must contain a ready candidate with mintSubmission.');
+    }
+
+    const mint = candidate.mintSubmission;
+    const assetId = Number(mint.assetId);
+    if (!Number.isInteger(assetId) || assetId < 0 || assetId > 255) {
+      throw new Error(`Invalid mintSubmission.assetId: ${mint.assetId}`);
+    }
+    const symbol = resolveAssetSymbolById(assetId);
+    const relayIndexesPacked = hexToBytes(String(mint.relayIndexesPackedHex ?? ''));
+    const relaySignaturesPacked = hexToBytes(String(mint.relaySignaturesPackedHex ?? ''));
+    const signatureCount = relayIndexesPacked.length;
+    if (signatureCount < 1) {
+      throw new Error('relayIndexesPackedHex must contain at least one index.');
+    }
+    if (relaySignaturesPacked.length !== signatureCount * RELAY_SIGNATURE_BYTES) {
+      throw new Error(
+        `relaySignaturesPackedHex has invalid length ${relaySignaturesPacked.length}; expected ${
+          signatureCount * RELAY_SIGNATURE_BYTES
+        }.`,
+      );
+    }
+    if (activeRelayCount < 1) {
+      throw new Error('Bridge relay config not loaded. Click Refresh Bridge State first.');
+    }
+
+    const selectedIndexes = Array.from(relayIndexesPacked).map((value) => Number(value));
+    const maxSelected = Math.max(...selectedIndexes);
+    if (maxSelected >= activeRelayCount) {
+      throw new Error(
+        `Candidate references relay index ${maxSelected}, but bridge relay count is ${activeRelayCount}. Refresh Bridge State.`,
+      );
+    }
+
+    const nextSignatures: Uint8Array[] = Array.from({ length: activeRelayCount }, () => EMPTY_BYTES);
+    for (let i = 0; i < selectedIndexes.length; i++) {
+      const index = selectedIndexes[i];
+      nextSignatures[index] = relaySignaturesPacked.slice(
+        i * RELAY_SIGNATURE_BYTES,
+        (i + 1) * RELAY_SIGNATURE_BYTES,
+      );
+    }
+
+    const decimals = resolveAssetDecimals(symbol);
+    const amountRaw = BigInt(String(mint.amount ?? '0'));
+    const payloadHashHex = String(candidate.payloadHashHex ?? '').trim();
+    const candidateVersion =
+      typeof mint.attestationVersion === 'number' ? mint.attestationVersion : ATTESTATION_VERSION;
+
+    setMintAsset(symbol);
+    setMintAmount(formatHumanAmount(amountRaw, decimals));
+    setMintDepositId(String(mint.nonce ?? ''));
+    setMintEthereumUserAddress(String(mint.ethereumUser ?? ''));
+    setMintRecipientAddress(String(mint.recipient ?? ''));
+    setMintAttestationVersionInput(String(candidateVersion));
+    setMintAttestationHashInput(payloadHashHex);
+    setDummyBuiltMessageHash(payloadHashHex);
+    setMintRelaySignatures(nextSignatures);
+    setMintRelayIndexes(selectedIndexes);
+    setMintSelectedRelayIndexes(selectedIndexes);
+    setMintSignatureCountInput(signatureCount.toString());
+    setMintSignatureSource(payloadHashHex ? `candidate (${payloadHashHex})` : 'candidate');
+    setOutput(
+      `Loaded mint candidate: asset=${symbol} nonce=${mint.nonce} signatures=${signatureCount} relayIndexes=${selectedIndexes.join(',')}`,
+    );
+  };
+
+  const loadMintCandidateFromJson = (): void => {
+    try {
+      const parsed = JSON.parse(mintCandidateJsonInput);
+      applyMintCandidatePayload(parsed);
+    } catch (error) {
+      setOutput(`Failed to load mint candidate JSON: ${(error as Error).message}`);
+    }
+  };
+
+  const sepoliaToOpnetMapping = JSON.stringify(
+    {
+      ethereum: {
+        network: 'sepolia',
+        chainId: 11155111,
+        rpcUrl: ethereumRpcUrl.trim(),
+        vaultAddress: ethereumVaultAddress.trim(),
+        assets: [
+          { assetId: 0, symbol: 'USDT', decimals: 6, tokenAddress: ethereumTokenAddresses.USDT.trim() },
+          { assetId: 1, symbol: 'WBTC', decimals: 8, tokenAddress: ethereumTokenAddresses.WBTC.trim() },
+          { assetId: 2, symbol: 'WETH', decimals: 18, tokenAddress: ethereumTokenAddresses.WETH.trim() },
+          { assetId: 3, symbol: 'PAXG', decimals: 18, tokenAddress: ethereumTokenAddresses.PAXG.trim() },
+        ],
+      },
+      opnet: {
+        network: 'regtest',
+        bridgeAddress: bridgeAddress.trim(),
+        wrappedTokens: {
+          USDT: opnetWrappedAddresses.USDT.trim(),
+          WBTC: opnetWrappedAddresses.WBTC.trim(),
+          WETH: opnetWrappedAddresses.WETH.trim(),
+          PAXG: opnetWrappedAddresses.PAXG.trim(),
+        },
+      },
+    },
+    null,
+    2,
+  );
+  const ethereumDepositRawPreview = useMemo(() => {
+    try {
+      const decimals =
+        ethereumDepositAsset === 'USDT'
+          ? 6
+          : ethereumDepositAsset === 'WBTC'
+            ? 8
+            : 18;
+      return parseHumanAmount(ethereumDepositAmount, decimals).toString();
+    } catch {
+      return 'invalid';
+    }
+  }, [ethereumDepositAmount, ethereumDepositAsset]);
+
+  useEffect(() => {
+    const provider = getEthereumProvider();
+    if (!provider?.on || !provider.removeListener) {
+      return;
+    }
+
+    const handleAccountsChanged = () => {
+      void refreshEthereumWalletState();
+    };
+    const handleChainChanged = () => {
+      void refreshEthereumWalletState();
+    };
+
+    provider.on('accountsChanged', handleAccountsChanged);
+    provider.on('chainChanged', handleChainChanged);
+    return () => {
+      provider.removeListener?.('accountsChanged', handleAccountsChanged);
+      provider.removeListener?.('chainChanged', handleChainChanged);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!ethereumDepositRecipient && hashedMLDSAKey) {
+      setEthereumDepositRecipient(hashedMLDSAKey);
+    }
+  }, [ethereumDepositRecipient, hashedMLDSAKey]);
 
   return (
     <main className="page">
@@ -1429,7 +2278,25 @@ export function App() {
           and explicit debug output for fast iteration.
         </p>
       </header>
+      <section className="panel">
+        <div className="row tabs tool-tabs">
+          <button
+            className={devToolTab === 'opnet' ? 'tab-active' : ''}
+            onClick={() => setDevToolTab('opnet')}
+          >
+            OPNet Tooling
+          </button>
+          <button
+            className={devToolTab === 'ethereum' ? 'tab-active' : ''}
+            onClick={() => setDevToolTab('ethereum')}
+          >
+            Ethereum Tooling
+          </button>
+        </div>
+      </section>
 
+      {devToolTab === 'opnet' ? (
+        <>
       <section className="panel two-col">
         <div>
           <h2>Wallet</h2>
@@ -1479,10 +2346,25 @@ signerFallbackError: ${fallbackSignerError ?? '-'}`}
           <div className="row">
             <button onClick={refreshBridgeState}>Refresh Bridge State</button>
           </div>
-          <div className="row">
-            <button onClick={() => setBridgeStateTab('summary')}>Summary</button>
-            <button onClick={() => setBridgeStateTab('assets')}>Assets</button>
-            <button onClick={() => setBridgeStateTab('relays')}>Relays</button>
+          <div className="row tabs">
+            <button
+              className={bridgeStateTab === 'summary' ? 'tab-active' : ''}
+              onClick={() => setBridgeStateTab('summary')}
+            >
+              Summary
+            </button>
+            <button
+              className={bridgeStateTab === 'assets' ? 'tab-active' : ''}
+              onClick={() => setBridgeStateTab('assets')}
+            >
+              Assets
+            </button>
+            <button
+              className={bridgeStateTab === 'relays' ? 'tab-active' : ''}
+              onClick={() => setBridgeStateTab('relays')}
+            >
+              Relays
+            </button>
           </div>
           {bridgeStateTab === 'summary' ? (
             <pre className="status">
@@ -1492,6 +2374,9 @@ relayThreshold: ${bridgeState.threshold ?? '-'}
 relayCount: ${bridgeState.relayCount ?? '-'}
 supportedAssetCount: ${bridgeAssets.length}
 owner: ${bridgeState.owner ?? '-'}
+ethereumVault: ${bridgeState.ethereumVault ?? '-'}
+activeAttestationVersion: ${bridgeState.activeAttestationVersion ?? '-'}
+activeVersionAccepted: ${typeof bridgeState.activeAttestationVersionAccepted === 'boolean' ? String(bridgeState.activeAttestationVersionAccepted) : '-'}
 resolvedBridgeHex: ${resolvedBridgeAddress || '-'}`}
             </pre>
           ) : null}
@@ -1593,124 +2478,142 @@ Address format: use op... addresses (0x... also supported).`}
               placeholder="op..."
             />
           </label>
-          <div className="row">
-            <button onClick={refreshWrappedTokenBridgeAuthority}>Read bridgeAuthority</button>
-            <button
-              onClick={() => {
-                if (!tokenOwnerAddress.trim()) {
-                  setOutput('New token owner address is required.');
-                  return;
-                }
-                void runWrappedTokenAction(
-                  'transferOwnership/simulate',
-                  async (token) =>
-                    token.transferOwnership(
-                      await resolveAddressForAbi(tokenOwnerAddress.trim(), false),
-                    ),
-                  false,
-                );
-              }}
-            >
-              Simulate transferOwnership
-            </button>
-            <button
-              onClick={() => {
-                if (!tokenOwnerAddress.trim()) {
-                  setOutput('New token owner address is required.');
-                  return;
-                }
-                void runWrappedTokenAction(
-                  'transferOwnership/send',
-                  async (token) =>
-                    token.transferOwnership(
-                      await resolveAddressForAbi(tokenOwnerAddress.trim(), false),
-                    ),
-                  true,
-                );
-              }}
-            >
-              Simulate + Send transferOwnership
-            </button>
-            <button
-              onClick={() => {
-                if (!tokenBridgeAuthorityAddress.trim()) {
-                  setOutput('New bridge authority address is required.');
-                  return;
-                }
-                void runWrappedTokenAction(
-                  'setBridgeAuthority/simulate',
-                  async (token) =>
-                    token.setBridgeAuthority(
-                      await resolveAddressForAbi(tokenBridgeAuthorityAddress.trim(), true),
-                    ),
-                  false,
-                );
-              }}
-            >
-              Simulate setBridgeAuthority
-            </button>
-            <button
-              onClick={() => {
-                if (!tokenBridgeAuthorityAddress.trim()) {
-                  setOutput('New bridge authority address is required.');
-                  return;
-                }
-                void runWrappedTokenAction(
-                  'setBridgeAuthority/send',
-                  async (token) =>
-                    token.setBridgeAuthority(
-                      await resolveAddressForAbi(tokenBridgeAuthorityAddress.trim(), true),
-                    ),
-                  true,
-                );
-              }}
-            >
-              Simulate + Send setBridgeAuthority
-            </button>
-            <button
-              onClick={() => {
-                void runWrappedTokenAction(
-                  'setTokenPaused(true)/simulate',
-                  (token) => token.setPaused(true),
-                  false,
-                );
-              }}
-            >
-              Simulate pause token
-            </button>
-            <button
-              onClick={() => {
-                void runWrappedTokenAction(
-                  'setTokenPaused(true)/send',
-                  (token) => token.setPaused(true),
-                  true,
-                );
-              }}
-            >
-              Simulate + Send pause token
-            </button>
-            <button
-              onClick={() => {
-                void runWrappedTokenAction(
-                  'setTokenPaused(false)/simulate',
-                  (token) => token.setPaused(false),
-                  false,
-                );
-              }}
-            >
-              Simulate unpause token
-            </button>
-            <button
-              onClick={() => {
-                void runWrappedTokenAction(
-                  'setTokenPaused(false)/send',
-                  (token) => token.setPaused(false),
-                  true,
-                );
-              }}
-            >
-              Simulate + Send unpause token
-            </button>
+          <div className="action-group">
+            <p className="group-label">Read</p>
+            <div className="row">
+              <button onClick={refreshWrappedTokenBridgeAuthority}>Read bridgeAuthority</button>
+            </div>
+          </div>
+          <div className="action-group">
+            <p className="group-label">Ownership</p>
+            <div className="row">
+              <button
+                onClick={() => {
+                  if (!tokenOwnerAddress.trim()) {
+                    setOutput('New token owner address is required.');
+                    return;
+                  }
+                  void runWrappedTokenAction(
+                    'transferOwnership/simulate',
+                    async (token) =>
+                      token.transferOwnership(
+                        await resolveAddressForAbi(tokenOwnerAddress.trim(), false),
+                      ),
+                    false,
+                  );
+                }}
+              >
+                Simulate transferOwnership
+              </button>
+              <button
+                onClick={() => {
+                  if (!tokenOwnerAddress.trim()) {
+                    setOutput('New token owner address is required.');
+                    return;
+                  }
+                  void runWrappedTokenAction(
+                    'transferOwnership/send',
+                    async (token) =>
+                      token.transferOwnership(
+                        await resolveAddressForAbi(tokenOwnerAddress.trim(), false),
+                      ),
+                    true,
+                  );
+                }}
+              >
+                Simulate + Send transferOwnership
+              </button>
+            </div>
+          </div>
+          <div className="action-group">
+            <p className="group-label">Bridge Authority</p>
+            <div className="row">
+              <button
+                onClick={() => {
+                  if (!tokenBridgeAuthorityAddress.trim()) {
+                    setOutput('New bridge authority address is required.');
+                    return;
+                  }
+                  void runWrappedTokenAction(
+                    'setBridgeAuthority/simulate',
+                    async (token) =>
+                      token.setBridgeAuthority(
+                        await resolveAddressForAbi(tokenBridgeAuthorityAddress.trim(), true),
+                      ),
+                    false,
+                  );
+                }}
+              >
+                Simulate setBridgeAuthority
+              </button>
+              <button
+                onClick={() => {
+                  if (!tokenBridgeAuthorityAddress.trim()) {
+                    setOutput('New bridge authority address is required.');
+                    return;
+                  }
+                  void runWrappedTokenAction(
+                    'setBridgeAuthority/send',
+                    async (token) =>
+                      token.setBridgeAuthority(
+                        await resolveAddressForAbi(tokenBridgeAuthorityAddress.trim(), true),
+                      ),
+                    true,
+                  );
+                }}
+              >
+                Simulate + Send setBridgeAuthority
+              </button>
+            </div>
+          </div>
+          <div className="action-group">
+            <p className="group-label">Pause Control</p>
+            <div className="row">
+              <button
+                onClick={() => {
+                  void runWrappedTokenAction(
+                    'setTokenPaused(true)/simulate',
+                    (token) => token.setPaused(true),
+                    false,
+                  );
+                }}
+              >
+                Simulate pause token
+              </button>
+              <button
+                onClick={() => {
+                  void runWrappedTokenAction(
+                    'setTokenPaused(true)/send',
+                    (token) => token.setPaused(true),
+                    true,
+                  );
+                }}
+              >
+                Simulate + Send pause token
+              </button>
+              <button
+                onClick={() => {
+                  void runWrappedTokenAction(
+                    'setTokenPaused(false)/simulate',
+                    (token) => token.setPaused(false),
+                    false,
+                  );
+                }}
+              >
+                Simulate unpause token
+              </button>
+              <button
+                onClick={() => {
+                  void runWrappedTokenAction(
+                    'setTokenPaused(false)/send',
+                    (token) => token.setPaused(false),
+                    true,
+                  );
+                }}
+              >
+                Simulate + Send unpause token
+              </button>
+            </div>
           </div>
           <pre className="status">
 {`resolvedTokenHex: ${resolvedTokenContractAddress || '-'}
@@ -1727,14 +2630,7 @@ owner: ${tokenOwnerRead || '-'}`}
           <label>
             Asset
             <select value={dummyAsset} onChange={(e) => setDummyAsset(e.target.value as string)}>
-              <option value="" disabled>
-                {availableAssets.length === 0 ? 'Refresh bridge state to load assets' : 'Select asset'}
-              </option>
-              {availableAssets.map((entry) => (
-                <option key={entry} value={entry}>
-                  {entry}
-                </option>
-              ))}
+              {renderAssetSelectOptions()}
             </select>
           </label>
           <label>
@@ -1748,6 +2644,14 @@ rawAmount: ${dummyRawAmountPreview}`}
           <label>
             Deposit ID (uint256)
             <input value={dummyDepositId} onChange={(e) => setDummyDepositId(e.target.value)} />
+          </label>
+          <label>
+            Ethereum User (0x...; defaults to connected Ethereum wallet)
+            <input
+              value={dummyEthereumUserAddress}
+              onChange={(e) => setDummyEthereumUserAddress(e.target.value)}
+              placeholder="0x..."
+            />
           </label>
           <label>
             Destination Address (bc1... / op... / 0x...)
@@ -1784,14 +2688,35 @@ rawAmount: ${dummyRawAmountPreview}`}
               ))}
             </div>
           </label>
+          <label>
+            Relay Data JSON (paste test-only data; never commit private keys)
+            <textarea
+              value={relayDataJsonInput}
+              onChange={(e) => setRelayDataJsonInput(e.target.value)}
+              rows={6}
+              placeholder='{"relayCount":0,"relayPubKeysPacked":"0x...","relayPrivateKeys":["0x..."]}'
+            />
+          </label>
           <div className="row">
-            <button onClick={loadRelayDataFromJson}>Load Relay Data JSON</button>
+            <input
+              ref={relayJsonFileInputRef}
+              type="file"
+              accept=".json,application/json"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                void loadJsonFileInto(e, 'relay');
+              }}
+            />
+            <button onClick={() => relayJsonFileInputRef.current?.click()}>Upload Relay JSON</button>
+            <button onClick={loadBundledRelayData}>Load Default Relay JSON</button>
+            <button onClick={loadRelayDataFromJson}>Load Relay Data JSON From Textarea</button>
           </div>
           <div className="row">
             <button
               onClick={() => {
                 void (async () => {
                   try {
+                    const ethereumUser = resolveEthereumUserAddress(dummyEthereumUserAddress);
                     const recipient = await resolveRecipientAddress(dummyRecipientAddress);
                     if (!recipient) {
                       setOutput('Destination address missing. Set destination input or connect OP_WALLET.');
@@ -1800,7 +2725,15 @@ rawAmount: ${dummyRawAmountPreview}`}
 
                     const rawAmount = parseHumanAmount(dummyAmount, resolveAssetDecimals(dummyAsset));
                     const parsedDepositId = parseDepositId(dummyDepositId);
-                    const hash = await buildMintAttestationHash(dummyAsset, recipient, rawAmount, parsedDepositId);
+                    const attestationVersion = parseAttestationVersion(mintAttestationVersionInput);
+                    const hash = await buildMintAttestationHash(
+                      dummyAsset,
+                      ethereumUser,
+                      recipient,
+                      rawAmount,
+                      parsedDepositId,
+                      attestationVersion,
+                    );
                     const hashHex = bytesToHex(hash);
                     setDummyAttestationHashInput(hashHex);
                     setDummyBuiltMessageHash(hashHex);
@@ -1809,6 +2742,8 @@ rawAmount: ${dummyRawAmountPreview}`}
                         {
                           action: 'dummy/attestation/build',
                           asset: dummyAsset,
+                          attestationVersion,
+                          ethereumUser: ethereumUser.toHex(),
                           recipient: recipient.toHex(),
                           rawAmount: rawAmount.toString(),
                           depositId: parsedDepositId.toString(),
@@ -1831,6 +2766,7 @@ rawAmount: ${dummyRawAmountPreview}`}
               onClick={() => {
                 void (async () => {
                   try {
+                    const ethereumUser = resolveEthereumUserAddress(dummyEthereumUserAddress);
                     const recipient = await resolveRecipientAddress(dummyRecipientAddress);
                     if (!recipient) {
                       setOutput('Destination address missing. Set destination input or connect OP_WALLET.');
@@ -1839,9 +2775,17 @@ rawAmount: ${dummyRawAmountPreview}`}
 
                     const rawAmount = parseHumanAmount(dummyAmount, resolveAssetDecimals(dummyAsset));
                     const parsedDepositId = parseDepositId(dummyDepositId);
+                    const attestationVersion = parseAttestationVersion(mintAttestationVersionInput);
                     const messageHash = dummyAttestationHashInput.trim()
                       ? hexToBytes(dummyAttestationHashInput.trim(), 32)
-                      : await buildMintAttestationHash(dummyAsset, recipient, rawAmount, parsedDepositId);
+                      : await buildMintAttestationHash(
+                          dummyAsset,
+                          ethereumUser,
+                          recipient,
+                          rawAmount,
+                          parsedDepositId,
+                          attestationVersion,
+                        );
                     const messageHashHex = bytesToHex(messageHash);
                     const bundle = buildRelaySignatureBundle(messageHash);
                     setDummyRelaySignatures(bundle.signatures);
@@ -1878,6 +2822,7 @@ rawAmount: ${dummyRawAmountPreview}`}
                 setMintAsset(dummyAsset);
                 setMintAmount(dummyAmount);
                 setMintDepositId(dummyDepositId);
+                setMintEthereumUserAddress(dummyEthereumUserAddress);
                 setMintRecipientAddress(dummyRecipientAddress);
                 setMintAttestationHashInput(dummyBuiltMessageHash || dummyAttestationHashInput);
                 setMintRelaySignatures(dummyRelaySignatures);
@@ -1902,16 +2847,36 @@ note: build relay signatures, then click "Use In Mint Panel".`}
         <div>
           <h2>Mint From Attestation</h2>
           <label>
+            Mint Candidate JSON (single candidate or mint-submission-candidates.json)
+            <textarea
+              value={mintCandidateJsonInput}
+              onChange={(e) => setMintCandidateJsonInput(e.target.value)}
+              rows={7}
+              placeholder='{"candidates":[{"ready":true,"mintSubmission":{...}}]}'
+            />
+          </label>
+          <div className="row">
+            <input
+              ref={mintCandidateJsonFileInputRef}
+              type="file"
+              accept=".json,application/json"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                void loadJsonFileInto(e, 'mintCandidate');
+              }}
+            />
+            <button onClick={() => mintCandidateJsonFileInputRef.current?.click()}>
+              Upload Mint Candidate JSON
+            </button>
+            <button onClick={loadMintCandidateFromJson}>Load Candidate Into Mint Panel</button>
+            <button onClick={() => void copyValue('mint candidate json', mintCandidateJsonInput || null)}>
+              Copy Mint Candidate JSON
+            </button>
+          </div>
+          <label>
             Asset
             <select value={mintAsset} onChange={(e) => setMintAsset(e.target.value as string)}>
-              <option value="" disabled>
-                {availableAssets.length === 0 ? 'Refresh bridge state to load assets' : 'Select asset'}
-              </option>
-              {availableAssets.map((entry) => (
-                <option key={entry} value={entry}>
-                  {entry}
-                </option>
-              ))}
+              {renderAssetSelectOptions()}
             </select>
           </label>
           <label>
@@ -1939,11 +2904,26 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
             <input value={mintDepositId} onChange={(e) => setMintDepositId(e.target.value)} />
           </label>
           <label>
+            Ethereum User (0x...; defaults to connected Ethereum wallet)
+            <input
+              value={mintEthereumUserAddress}
+              onChange={(e) => setMintEthereumUserAddress(e.target.value)}
+              placeholder="0x..."
+            />
+          </label>
+          <label>
             Destination Address (bc1... / op... / 0x...)
             <input
               value={mintRecipientAddress}
               onChange={(e) => setMintRecipientAddress(e.target.value)}
               placeholder="defaults to connected wallet"
+            />
+          </label>
+          <label>
+            Attestation Version (uint8)
+            <input
+              value={mintAttestationVersionInput}
+              onChange={(e) => setMintAttestationVersionInput(e.target.value)}
             />
           </label>
           <label>
@@ -2021,6 +3001,7 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
               onClick={() => {
                 void (async () => {
                   try {
+                    const ethereumUser = resolveEthereumUserAddress(mintEthereumUserAddress);
                     const recipient = await resolveRecipientAddress(mintRecipientAddress);
                     if (!recipient) {
                       setOutput('Recipient address missing. Set recipient input or connect OP_WALLET.');
@@ -2029,9 +3010,17 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
 
                     const rawAmount = parseHumanAmount(mintAmount, resolveAssetDecimals(mintAsset));
                     const parsedDepositId = parseDepositId(mintDepositId);
+                    const attestationVersion = parseAttestationVersion(mintAttestationVersionInput);
                     const messageHash = mintAttestationHashInput.trim()
                       ? hexToBytes(mintAttestationHashInput.trim(), 32)
-                      : await buildMintAttestationHash(mintAsset, recipient, rawAmount, parsedDepositId);
+                      : await buildMintAttestationHash(
+                          mintAsset,
+                          ethereumUser,
+                          recipient,
+                          rawAmount,
+                          parsedDepositId,
+                          attestationVersion,
+                        );
                     const messageHashHex = bytesToHex(messageHash);
                     if (!dummyBuiltMessageHash || dummyBuiltMessageHash !== messageHashHex) {
                       setOutput(
@@ -2046,9 +3035,11 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
                       (bridge) =>
                         bridge.mintWithRelaySignatures(
                           resolveAssetId(mintAsset),
+                          ethereumUser,
                           recipient,
                           rawAmount,
                           parsedDepositId,
+                          attestationVersion,
                           selected.relayIndexesPacked,
                           selected.relaySignaturesPacked,
                         ),
@@ -2066,6 +3057,7 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
               onClick={() => {
                 void (async () => {
                   try {
+                    const ethereumUser = resolveEthereumUserAddress(mintEthereumUserAddress);
                     const recipient = await resolveRecipientAddress(mintRecipientAddress);
                     if (!recipient) {
                       setOutput('Recipient address missing.');
@@ -2074,9 +3066,17 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
 
                     const rawAmount = parseHumanAmount(mintAmount, resolveAssetDecimals(mintAsset));
                     const parsedDepositId = parseDepositId(mintDepositId);
+                    const attestationVersion = parseAttestationVersion(mintAttestationVersionInput);
                     const messageHash = mintAttestationHashInput.trim()
                       ? hexToBytes(mintAttestationHashInput.trim(), 32)
-                      : await buildMintAttestationHash(mintAsset, recipient, rawAmount, parsedDepositId);
+                      : await buildMintAttestationHash(
+                          mintAsset,
+                          ethereumUser,
+                          recipient,
+                          rawAmount,
+                          parsedDepositId,
+                          attestationVersion,
+                        );
                     const messageHashHex = bytesToHex(messageHash);
                     if (!dummyBuiltMessageHash || dummyBuiltMessageHash !== messageHashHex) {
                       setOutput(
@@ -2099,9 +3099,11 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
                       (bridge) =>
                         bridge.mintWithRelaySignatures(
                           resolveAssetId(mintAsset),
+                          ethereumUser,
                           recipient,
                           rawAmount,
                           parsedDepositId,
+                          attestationVersion,
                           selected.relayIndexesPacked,
                           selected.relaySignaturesPacked,
                         ),
@@ -2168,14 +3170,7 @@ availableSignatures: ${mintRelaySignatures
           <label>
             Asset
             <select value={asset} onChange={(e) => setAsset(e.target.value as string)}>
-              <option value="" disabled>
-                {availableAssets.length === 0 ? 'Refresh bridge state to load assets' : 'Select asset'}
-              </option>
-              {availableAssets.map((entry) => (
-                <option key={entry} value={entry}>
-                  {entry}
-                </option>
-              ))}
+              {renderAssetSelectOptions()}
             </select>
           </label>
           <label>
@@ -2273,14 +3268,7 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
           <label>
             Asset For setWrappedToken
             <select value={asset} onChange={(e) => setAsset(e.target.value as string)}>
-              <option value="" disabled>
-                {availableAssets.length === 0 ? 'Refresh bridge state to load assets' : 'Select asset'}
-              </option>
-              {availableAssets.map((entry) => (
-                <option key={entry} value={entry}>
-                  {entry}
-                </option>
-              ))}
+              {renderAssetSelectOptions()}
             </select>
           </label>
           <label>
@@ -2339,6 +3327,157 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
               }}
             >
               Simulate + Send setWrappedToken
+            </button>
+          </div>
+          <label>
+            Ethereum Vault Address (Sepolia `0x...`)
+            <input
+              value={ethereumVaultAddress}
+              onChange={(e) => setEthereumVaultAddress(e.target.value)}
+              placeholder="0x..."
+            />
+          </label>
+          <div className="row">
+            <button
+              onClick={() => {
+                if (!ethereumVaultAddress.trim()) {
+                  setOutput('Ethereum vault address is required.');
+                  return;
+                }
+                void (async () => {
+                  try {
+                    const vault = bytesToAddressWord(
+                      resolveWord32Bytes(ethereumVaultAddress, 'ethereum vault'),
+                      'ethereum vault',
+                    );
+                    await runAction(
+                      'setEthereumVault/simulate',
+                      (bridge) => bridge.setEthereumVault(vault),
+                      false,
+                    );
+                  } catch (error) {
+                    setOutput(`Invalid ethereum vault address: ${(error as Error).message}`);
+                  }
+                })();
+              }}
+            >
+              Simulate setEthereumVault
+            </button>
+            <button
+              onClick={() => {
+                if (!ethereumVaultAddress.trim()) {
+                  setOutput('Ethereum vault address is required.');
+                  return;
+                }
+                void (async () => {
+                  try {
+                    const vault = bytesToAddressWord(
+                      resolveWord32Bytes(ethereumVaultAddress, 'ethereum vault'),
+                      'ethereum vault',
+                    );
+                    await runAction(
+                      'setEthereumVault/send',
+                      (bridge) => bridge.setEthereumVault(vault),
+                      true,
+                    );
+                  } catch (error) {
+                    setOutput(`Invalid ethereum vault address: ${(error as Error).message}`);
+                  }
+                })();
+              }}
+            >
+              Simulate + Send setEthereumVault
+            </button>
+          </div>
+          <label>
+            Attestation Version (uint8)
+            <input
+              value={attestationVersionInput}
+              onChange={(e) => setAttestationVersionInput(e.target.value)}
+            />
+          </label>
+          <label className="inline-check">
+            <input
+              type="checkbox"
+              checked={attestationVersionAcceptedInput}
+              onChange={(e) => setAttestationVersionAcceptedInput(e.target.checked)}
+            />
+            Accepted For Selected Version
+          </label>
+          <div className="row">
+            <button
+              onClick={() => {
+                void (async () => {
+                  try {
+                    const version = parseAttestationVersionAdminInput(attestationVersionInput);
+                    await runAction(
+                      'setAttestationVersionAccepted/simulate',
+                      (bridge) => bridge.setAttestationVersionAccepted(version, attestationVersionAcceptedInput),
+                      false,
+                    );
+                  } catch (error) {
+                    setOutput(`Invalid attestation version controls: ${(error as Error).message}`);
+                  }
+                })();
+              }}
+            >
+              Simulate setAttestationVersionAccepted
+            </button>
+            <button
+              onClick={() => {
+                void (async () => {
+                  try {
+                    const version = parseAttestationVersionAdminInput(attestationVersionInput);
+                    await runAction(
+                      'setAttestationVersionAccepted/send',
+                      (bridge) => bridge.setAttestationVersionAccepted(version, attestationVersionAcceptedInput),
+                      true,
+                    );
+                  } catch (error) {
+                    setOutput(`Invalid attestation version controls: ${(error as Error).message}`);
+                  }
+                })();
+              }}
+            >
+              Simulate + Send setAttestationVersionAccepted
+            </button>
+          </div>
+          <div className="row">
+            <button
+              onClick={() => {
+                void (async () => {
+                  try {
+                    const version = parseAttestationVersionAdminInput(attestationVersionInput);
+                    await runAction(
+                      'setActiveAttestationVersion/simulate',
+                      (bridge) => bridge.setActiveAttestationVersion(version),
+                      false,
+                    );
+                  } catch (error) {
+                    setOutput(`Invalid active attestation version: ${(error as Error).message}`);
+                  }
+                })();
+              }}
+            >
+              Simulate setActiveAttestationVersion
+            </button>
+            <button
+              onClick={() => {
+                void (async () => {
+                  try {
+                    const version = parseAttestationVersionAdminInput(attestationVersionInput);
+                    await runAction(
+                      'setActiveAttestationVersion/send',
+                      (bridge) => bridge.setActiveAttestationVersion(version),
+                      true,
+                    );
+                  } catch (error) {
+                    setOutput(`Invalid active attestation version: ${(error as Error).message}`);
+                  }
+                })();
+              }}
+            >
+              Simulate + Send setActiveAttestationVersion
             </button>
           </div>
           <label>
@@ -2758,7 +3897,7 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
             </button>
           </div>
           <div className="row">
-            <button onClick={loadRelayDataFromJson}>Load Relay Data JSON</button>
+            <button onClick={loadRelayDataFromJson}>Load Relay Data JSON From Textarea</button>
           </div>
           <label>
             Packed Relay PubKeys (hex: {activeRelayCount} * 1312 bytes)
@@ -2877,6 +4016,268 @@ note: all sends run simulate-first and only send if simulation succeeds.`}
           </pre>
         </div>
       </section>
+        </>
+      ) : (
+        <>
+          <section className="panel two-col">
+            <div>
+              <h2>Ethereum Wallet</h2>
+              <div className="row">
+                <button onClick={() => void connectEthereumWallet()}>Connect Ethereum Wallet</button>
+                <button onClick={() => void refreshEthereumWalletState()}>Refresh Wallet State</button>
+                <button onClick={disconnectEthereumWallet}>Clear Wallet State</button>
+              </div>
+              <pre className="status">
+{`wallet: ${ethereumWalletAddress || '-'}
+chainId: ${ethereumChainId || '-'} ${ethereumChainId === SEPOLIA_CHAIN_ID_HEX ? '(Sepolia)' : ethereumChainId ? '(not Sepolia)' : ''}
+balanceEth: ${ethereumBalanceEth}`}
+              </pre>
+            </div>
+            <div>
+              <h2>Paste Deployment JSON</h2>
+              <label>
+                Deployment JSON (`sepolia-latest.json` or mapping payload)
+                <textarea
+                  value={deploymentJsonInput}
+                  onChange={(e) => setDeploymentJsonInput(e.target.value)}
+                  rows={8}
+                  placeholder='{"ethereum":{"vaultAddress":"0x...","assets":[...]}, "opnet":{"bridgeAddress":"op..."}}'
+                />
+              </label>
+              <div className="row">
+                <input
+                  ref={deploymentJsonFileInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    void loadJsonFileInto(e, 'deployment');
+                  }}
+                />
+                <button onClick={() => deploymentJsonFileInputRef.current?.click()}>
+                  Upload Deployment JSON
+                </button>
+                <button onClick={loadBundledSepoliaDeployment}>Load Default Sepolia JSON</button>
+                <button onClick={loadSepoliaDeploymentJson}>Load Deployment JSON Into Fields</button>
+                <button onClick={() => void copyValue('deployment json', deploymentJsonInput || null)}>
+                  Copy Deployment JSON
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel two-col">
+            <div>
+              <h2>Sepolia Deployment Steps</h2>
+              <pre className="status">
+{`1. Set env vars:
+   SEPOLIA_RPC_URL
+   SEPOLIA_DEPLOYER_PRIVATE_KEY
+   ETH_VAULT_OWNER (optional)
+2. Deploy vault + 4 test tokens:
+   npm run deploy:sepolia --workspace @heptad/ethereum-contracts
+3. If owner != deployer, configure assets:
+   npm run configure:sepolia --workspace @heptad/ethereum-contracts
+4. Paste deployed addresses in this tab, then export mapping JSON for relayer.`}
+              </pre>
+              <label>
+                Sepolia RPC URL
+                <input
+                  value={ethereumRpcUrl}
+                  onChange={(e) => setEthereumRpcUrl(e.target.value)}
+                  placeholder="https://eth-sepolia.g.alchemy.com/v2/..."
+                />
+              </label>
+              <label>
+                HeptadVault (Sepolia)
+                <input
+                  value={ethereumVaultAddress}
+                  onChange={(e) => setEthereumVaultAddress(e.target.value)}
+                  placeholder="0x..."
+                />
+              </label>
+            </div>
+            <div>
+              <h2>Sepolia Token Addresses</h2>
+              <label>
+                USDT (assetId 0)
+                <input
+                  value={ethereumTokenAddresses.USDT}
+                  onChange={(e) =>
+                    setEthereumTokenAddresses((prev) => ({ ...prev, USDT: e.target.value }))
+                  }
+                  placeholder="0x..."
+                />
+              </label>
+              <label>
+                WBTC (assetId 1)
+                <input
+                  value={ethereumTokenAddresses.WBTC}
+                  onChange={(e) =>
+                    setEthereumTokenAddresses((prev) => ({ ...prev, WBTC: e.target.value }))
+                  }
+                  placeholder="0x..."
+                />
+              </label>
+              <label>
+                WETH (assetId 2)
+                <input
+                  value={ethereumTokenAddresses.WETH}
+                  onChange={(e) =>
+                    setEthereumTokenAddresses((prev) => ({ ...prev, WETH: e.target.value }))
+                  }
+                  placeholder="0x..."
+                />
+              </label>
+              <label>
+                PAXG (assetId 3)
+                <input
+                  value={ethereumTokenAddresses.PAXG}
+                  onChange={(e) =>
+                    setEthereumTokenAddresses((prev) => ({ ...prev, PAXG: e.target.value }))
+                  }
+                  placeholder="0x..."
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="panel two-col">
+            <div>
+              <h2>Deposit To Vault</h2>
+              <label>
+                Asset
+                <select
+                  value={ethereumDepositAsset}
+                  onChange={(e) =>
+                    setEthereumDepositAsset(e.target.value as 'USDT' | 'WBTC' | 'WETH' | 'PAXG')
+                  }
+                >
+                  <option value="USDT">USDT (assetId 0, 6 decimals)</option>
+                  <option value="WBTC">WBTC (assetId 1, 8 decimals)</option>
+                  <option value="WETH">WETH (assetId 2, 18 decimals)</option>
+                  <option value="PAXG">PAXG (assetId 3, 18 decimals)</option>
+                </select>
+              </label>
+              <label>
+                Amount
+                <input
+                  value={ethereumDepositAmount}
+                  onChange={(e) => setEthereumDepositAmount(e.target.value)}
+                  placeholder="1"
+                />
+              </label>
+              <label>
+                OPNet Recipient (bytes32 hex)
+                <input
+                  value={ethereumDepositRecipient}
+                  onChange={(e) => setEthereumDepositRecipient(e.target.value)}
+                  placeholder="0x..."
+                />
+              </label>
+              <div className="row">
+                <button onClick={() => void checkEthereumDepositAssetBalance()}>Check Balance</button>
+                <button onClick={() => void runEthereumApproveAndDeposit()} disabled={ethereumDepositRunning}>
+                  {ethereumDepositRunning ? 'Processing...' : 'Approve + Deposit'}
+                </button>
+              </div>
+            </div>
+            <div>
+              <h2>Deposit Preview</h2>
+              <pre className="status">
+{`network: ${ethereumChainId === SEPOLIA_CHAIN_ID_HEX ? 'sepolia' : ethereumChainId || '-'}
+wallet: ${ethereumWalletAddress || '-'}
+vault: ${ethereumVaultAddress || '-'}
+token (${ethereumDepositAsset}): ${ethereumTokenAddresses[ethereumDepositAsset] || '-'}
+amountRaw: ${ethereumDepositRawPreview}
+balanceRaw: ${ethereumDepositBalanceRaw}
+balanceHuman: ${ethereumDepositBalanceHuman}
+recipient: ${(ethereumDepositRecipient || hashedMLDSAKey || '-').trim()}
+flow: approve(token -> vault) then depositERC20(assetId, amount, recipient)`}
+              </pre>
+            </div>
+          </section>
+
+          <section className="panel two-col">
+            <div>
+              <h2>OPNet Regtest Mapping</h2>
+              <label>
+                Bridge Contract (regtest)
+                <input
+                  value={bridgeAddress}
+                  onChange={(e) => setBridgeAddress(e.target.value)}
+                  placeholder="op..."
+                />
+              </label>
+              <label>
+                hUSDT (assetId 0)
+                <input
+                  value={opnetWrappedAddresses.USDT}
+                  onChange={(e) =>
+                    setOpnetWrappedAddresses((prev) => ({ ...prev, USDT: e.target.value }))
+                  }
+                  placeholder="op..."
+                />
+              </label>
+              <label>
+                hWBTC (assetId 1)
+                <input
+                  value={opnetWrappedAddresses.WBTC}
+                  onChange={(e) =>
+                    setOpnetWrappedAddresses((prev) => ({ ...prev, WBTC: e.target.value }))
+                  }
+                  placeholder="op..."
+                />
+              </label>
+              <label>
+                hWETH (assetId 2)
+                <input
+                  value={opnetWrappedAddresses.WETH}
+                  onChange={(e) =>
+                    setOpnetWrappedAddresses((prev) => ({ ...prev, WETH: e.target.value }))
+                  }
+                  placeholder="op..."
+                />
+              </label>
+              <label>
+                hPAXG (assetId 3)
+                <input
+                  value={opnetWrappedAddresses.PAXG}
+                  onChange={(e) =>
+                    setOpnetWrappedAddresses((prev) => ({ ...prev, PAXG: e.target.value }))
+                  }
+                  placeholder="op..."
+                />
+              </label>
+            </div>
+            <div>
+              <h2>Export Mapping JSON</h2>
+              <pre className="status">{sepoliaToOpnetMapping}</pre>
+              <div className="row">
+                <button onClick={() => void copyValue('sepolia-opnet mapping json', sepoliaToOpnetMapping)}>
+                  Copy Mapping JSON
+                </button>
+                <button
+                  onClick={() =>
+                    setOutput(
+                      JSON.stringify(
+                        {
+                          action: 'ethereum/mapping/export',
+                          mapping: JSON.parse(sepoliaToOpnetMapping),
+                        },
+                        null,
+                        2,
+                      ),
+                    )
+                  }
+                >
+                  Send Mapping To Output
+                </button>
+              </div>
+            </div>
+          </section>
+        </>
+      )}
 
       <section className="panel">
         <h2>Output</h2>

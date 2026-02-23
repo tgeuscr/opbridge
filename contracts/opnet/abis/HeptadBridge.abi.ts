@@ -45,6 +45,22 @@ export const HeptadBridgeEvents = [
         type: BitcoinAbiTypes.Event,
     },
     {
+        name: 'AttestationVersionAcceptanceUpdated',
+        values: [
+            { name: 'version', type: ABIDataTypes.UINT8 },
+            { name: 'accepted', type: ABIDataTypes.BOOL },
+        ],
+        type: BitcoinAbiTypes.Event,
+    },
+    {
+        name: 'ActiveAttestationVersionUpdated',
+        values: [
+            { name: 'previousVersion', type: ABIDataTypes.UINT8 },
+            { name: 'nextVersion', type: ABIDataTypes.UINT8 },
+        ],
+        type: BitcoinAbiTypes.Event,
+    },
+    {
         name: 'OwnershipTransferred',
         values: [
             { name: 'previousOwner', type: ABIDataTypes.ADDRESS },
@@ -59,9 +75,11 @@ export const HeptadBridgeAbi = [
         name: 'mintWithRelaySignatures',
         inputs: [
             { name: 'asset', type: ABIDataTypes.UINT8 },
+            { name: 'ethereumUser', type: ABIDataTypes.ADDRESS },
             { name: 'recipient', type: ABIDataTypes.ADDRESS },
             { name: 'amount', type: ABIDataTypes.UINT256 },
             { name: 'depositId', type: ABIDataTypes.UINT256 },
+            { name: 'attestationVersion', type: ABIDataTypes.UINT8 },
             { name: 'relayIndexesPacked', type: ABIDataTypes.BYTES },
             { name: 'relaySignaturesPacked', type: ABIDataTypes.BYTES },
         ],
@@ -196,6 +214,45 @@ export const HeptadBridgeAbi = [
         type: BitcoinAbiTypes.Function,
     },
     {
+        name: 'setEthereumVault',
+        inputs: [{ name: 'ethereumVault', type: ABIDataTypes.ADDRESS }],
+        outputs: [],
+        type: BitcoinAbiTypes.Function,
+    },
+    {
+        name: 'ethereumVault',
+        inputs: [],
+        outputs: [{ name: 'ethereumVault', type: ABIDataTypes.ADDRESS }],
+        type: BitcoinAbiTypes.Function,
+    },
+    {
+        name: 'activeAttestationVersion',
+        inputs: [],
+        outputs: [{ name: 'version', type: ABIDataTypes.UINT8 }],
+        type: BitcoinAbiTypes.Function,
+    },
+    {
+        name: 'isAttestationVersionAccepted',
+        inputs: [{ name: 'version', type: ABIDataTypes.UINT8 }],
+        outputs: [{ name: 'accepted', type: ABIDataTypes.BOOL }],
+        type: BitcoinAbiTypes.Function,
+    },
+    {
+        name: 'setAttestationVersionAccepted',
+        inputs: [
+            { name: 'version', type: ABIDataTypes.UINT8 },
+            { name: 'accepted', type: ABIDataTypes.BOOL },
+        ],
+        outputs: [],
+        type: BitcoinAbiTypes.Function,
+    },
+    {
+        name: 'setActiveAttestationVersion',
+        inputs: [{ name: 'version', type: ABIDataTypes.UINT8 }],
+        outputs: [],
+        type: BitcoinAbiTypes.Function,
+    },
+    {
         name: 'owner',
         inputs: [],
         outputs: [{ name: 'owner', type: ABIDataTypes.ADDRESS }],
@@ -211,9 +268,11 @@ export const HeptadBridgeAbi = [
         name: 'computeMintAttestationHash',
         inputs: [
             { name: 'asset', type: ABIDataTypes.UINT8 },
+            { name: 'ethereumUser', type: ABIDataTypes.ADDRESS },
             { name: 'recipient', type: ABIDataTypes.ADDRESS },
             { name: 'amount', type: ABIDataTypes.UINT256 },
             { name: 'depositId', type: ABIDataTypes.UINT256 },
+            { name: 'attestationVersion', type: ABIDataTypes.UINT8 },
         ],
         outputs: [{ name: 'messageHash', type: ABIDataTypes.BYTES32 }],
         type: BitcoinAbiTypes.Function,

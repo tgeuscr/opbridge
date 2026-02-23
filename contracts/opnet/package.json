@@ -10,7 +10,7 @@
     "build:hwbtc": "asc src/wrapped/hwbtc/index.ts --target hwbtc --measure --uncheckedBehavior never",
     "build:heth": "asc src/wrapped/heth/index.ts --target heth --measure --uncheckedBehavior never",
     "build:hpaxg": "asc src/wrapped/hpaxg/index.ts --target hpaxg --measure --uncheckedBehavior never",
-    "test": "echo 'TODO: add OP_NET unit tests'",
+    "test": "node tests/bridge-invariants.test.mjs",
     "typecheck": "echo 'TODO: add OP_NET-compatible type/lint checks'"
   },
   "dependencies": {

@@ -14,8 +14,10 @@ This package contains the OP_NET side of Heptad:
 - Deploys paused with no default relays/assets configured.
 - Minting uses relay attestations only: `mintWithRelaySignatures`.
 - Burn path: `requestBurn`.
+- Burn requests require `from == tx.sender`.
 - Owner-only admin methods; bridge-state mutation is pause-gated.
 - Relay config supports `1..32` relays and threshold `1..relayCount`.
+- Duplicate relay pubkeys are rejected across relay slots.
 - Replay protection via `depositId` / `withdrawalId`.
 - Ownership is transferable via `transferOwnership`.
 

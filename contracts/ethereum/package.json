@@ -1,0 +1,18 @@
+{
+  "name": "@heptad/ethereum-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/compile-local.mjs",
+    "test": "HOME=/tmp hardhat test --no-compile",
+    "clean": "hardhat clean",
+    "deploy:sepolia": "node scripts/deploy-sepolia.mjs",
+    "configure:sepolia": "node scripts/configure-vault-sepolia.mjs",
+    "deposit:sepolia": "node scripts/deposit-sepolia.mjs"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.26.3",
+    "solc": "^0.8.24"
+  }
+}
