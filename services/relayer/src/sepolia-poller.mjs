@@ -165,7 +165,7 @@ function parseMldsaPrivateKey(raw) {
 }
 
 function resolveOPNetNetwork(name) {
-  const normalized = String(name ?? "testnet").trim().toLowerCase();
+  const normalized = String(name ?? "regtest").trim().toLowerCase();
   if (normalized === "testnet") return networks.testnet;
   if (normalized === "regtest") return networks.regtest;
   if (normalized === "mainnet") return networks.bitcoin;
@@ -305,7 +305,7 @@ function parseMapping(raw, options = {}) {
     opnet.bridgeHex = opnet.bridgeAddress;
   }
   if (!opnet.network) {
-    opnet.network = "testnet";
+    opnet.network = "regtest";
   }
   if (!Array.isArray(ethereum.assets) || ethereum.assets.length === 0) {
     throw new Error("Mapping ethereum.assets must be a non-empty array.");

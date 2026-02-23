@@ -457,7 +457,7 @@ export function App() {
     connecting,
   } = useWalletConnect();
 
-  const [networkMode, setNetworkMode] = useState<NetworkMode>('testnet');
+  const [networkMode, setNetworkMode] = useState<NetworkMode>('regtest');
   const [devToolTab, setDevToolTab] = useState<DevToolTab>('opnet');
   const [bridgeAddress, setBridgeAddress] = useState('');
   const [asset, setAsset] = useState<string>(DEFAULT_ASSET);
