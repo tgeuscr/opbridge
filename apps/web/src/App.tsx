@@ -3219,11 +3219,14 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
                   return;
                 }
                 let rawAmount: bigint;
-                let ethereumRecipient: string;
+                let ethereumRecipient: Address;
                 try {
                   rawAmount = parseHumanAmount(amount, resolveAssetDecimals(asset));
-                  ethereumRecipient = normalizeEthereumAddress(
-                    burnEthereumRecipientAddress,
+                  ethereumRecipient = bytesToAddressWord(
+                    resolveWord32Bytes(
+                      normalizeEthereumAddress(burnEthereumRecipientAddress, 'Ethereum burn recipient'),
+                      'Ethereum burn recipient',
+                    ),
                     'Ethereum burn recipient',
                   );
                 } catch (error) {
@@ -3254,11 +3257,14 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
                   return;
                 }
                 let rawAmount: bigint;
-                let ethereumRecipient: string;
+                let ethereumRecipient: Address;
                 try {
                   rawAmount = parseHumanAmount(amount, resolveAssetDecimals(asset));
-                  ethereumRecipient = normalizeEthereumAddress(
-                    burnEthereumRecipientAddress,
+                  ethereumRecipient = bytesToAddressWord(
+                    resolveWord32Bytes(
+                      normalizeEthereumAddress(burnEthereumRecipientAddress, 'Ethereum burn recipient'),
+                      'Ethereum burn recipient',
+                    ),
                     'Ethereum burn recipient',
                   );
                 } catch (error) {
