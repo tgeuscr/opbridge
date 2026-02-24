@@ -242,6 +242,7 @@ Use the UI mint panel (load candidate -> send) or terminal:
 
 ```bash
 OPNET_RPC_URL=https://regtest.opnet.org \
+HTTPS_PROXY=http://proxy.example.corp:8080 \
 OPNET_NETWORK=regtest \
 OPNET_WALLET_MNEMONIC="..." \
 MINT_CANDIDATES_FILE=services/relayer/.data/mint-submission-candidates.json \
@@ -271,6 +272,7 @@ Run one process per relay index:
 
 ```bash
 OPNET_RPC_URL=https://regtest.opnet.org \
+HTTPS_PROXY=http://proxy.example.corp:8080 \
 OPNET_NETWORK=regtest \
 RELAYER_ID=relayer-a \
 RELAYER_INDEX=0 \
@@ -280,6 +282,12 @@ RELAYER_OUTPUT_FILE=services/relayer/.data/release-attestations/relayer-a.json \
 RELAYER_POLL_INTERVAL_MS=30000 \
 npm run run:opnet-burn --workspace @heptad/relayer
 ```
+
+Proxy options for OPNet scripts:
+- Standard env proxy mode (default on): `HTTPS_PROXY`, `HTTP_PROXY`, optional `NO_PROXY`
+- Explicit per-script proxy override: `OPNET_RPC_PROXY_URL=http://proxy.example.corp:8080`
+- If proxy auth is required, add `OPNET_RPC_PROXY_AUTH_TOKEN='Basic ...'` (or other `Proxy-Authorization` value)
+- Disable env proxy for OPNet only: `OPNET_RPC_USE_ENV_PROXY=false`
 
 Repeat with:
 - `RELAYER_ID=relayer-b`, `RELAYER_INDEX=1`, output `relayer-b.json`

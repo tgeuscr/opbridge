@@ -5,8 +5,9 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { networks } from "@btc-vision/bitcoin";
 import { Address } from "@btc-vision/transaction";
-import { ABIDataTypes, BitcoinAbiTypes, JSONRpcProvider, getContract } from "opnet";
+import { ABIDataTypes, BitcoinAbiTypes, getContract } from "opnet";
 import { ethers } from "ethers";
+import { createOpnetJsonRpcProvider, describeOpnetRpcTransport } from "./opnet-rpc-provider.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
@@ -144,6 +145,58 @@ function normalizeOpnetAddressHex32(value) {
   return bytesToHex(leftPadTo32(hexToBytes(Address.fromString(raw).toHex()), "opnetUser")).toLowerCase();
 }
 
+function isLikelyHex(value) {
+  const raw = String(value ?? "").trim();
+  const normalized = raw.startsWith("0x") ? raw.slice(2) : raw;
+  return normalized.length > 0 && /^[0-9a-fA-F]+$/.test(normalized) && normalized.length % 2 === 0;
+}
+
+function pickPublicKeyHexFromRpcInfo(rawInfo) {
+  if (!rawInfo || typeof rawInfo !== "object") return null;
+  for (const candidate of [rawInfo.originalPubKey, rawInfo.tweakedPubkey, rawInfo.mldsaHashedPublicKey]) {
+    if (typeof candidate === "string" && isLikelyHex(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+async function resolveOpnetAddressViaRpcToHex32(raw, provider) {
+  if (typeof provider.getPublicKeysInfoRaw === "function") {
+    const rpcInfoMap = await provider.getPublicKeysInfoRaw([raw]);
+    const candidates = [];
+    if (rpcInfoMap && typeof rpcInfoMap === "object") {
+      if (Object.hasOwn(rpcInfoMap, raw)) candidates.push(rpcInfoMap[raw]);
+      for (const value of Object.values(rpcInfoMap)) candidates.push(value);
+    }
+
+    for (const info of candidates) {
+      if (!info || typeof info !== "object" || Object.hasOwn(info, "error")) continue;
+      const pubKeyHex = pickPublicKeyHexFromRpcInfo(info);
+      if (pubKeyHex) return normalizeOpnetAddressHex32(pubKeyHex);
+    }
+  }
+
+  // Fallback for SDKs without getPublicKeysInfoRaw exposed on the provider instance.
+  const resolved = await provider.getPublicKeyInfo(raw, false);
+  return normalizeOpnetAddressHex32(resolved);
+}
+
+async function normalizeOpnetAddressHex32Resolved(value, provider) {
+  try {
+    return normalizeOpnetAddressHex32(value);
+  } catch (originalError) {
+    const raw = typeof value === "string" ? value.trim() : "";
+    if (!raw) {
+      throw originalError;
+    }
+    if (raw.startsWith("0x")) {
+      throw originalError;
+    }
+    return resolveOpnetAddressViaRpcToHex32(raw, provider);
+  }
+}
+
 function normalizeEthereumRecipientHex20(value) {
   let raw = "";
   if (value && typeof value.toHex === "function") {
@@ -160,10 +213,11 @@ function normalizeEthereumRecipientHex20(value) {
 }
 
 function encodeReleaseAttestationHash(message) {
+  const normalizedBridgeHex32 = normalizeOpnetAddressHex32(message.opnetBridgeHex ?? message.opnetBridge);
   const payload = concatBytes([
     new Uint8Array([Number(message.version)]),
     leftPadTo32(hexToBytes(message.ethereumVault), "ethereumVault"),
-    leftPadTo32(hexToBytes(message.opnetBridgeHex ?? message.opnetBridge), "opnetBridge"),
+    leftPadTo32(hexToBytes(normalizedBridgeHex32), "opnetBridge"),
     leftPadTo32(hexToBytes(message.ethereumUser), "ethereumUser"),
     leftPadTo32(hexToBytes(message.opnetUser), "opnetUser"),
     new Uint8Array([Number(message.assetId)]),
@@ -264,6 +318,10 @@ Required:
 
 Optional:
   OPNET_NETWORK (default: regtest; regtest|testnet|mainnet)
+  OPNET_RPC_PROXY_URL (optional explicit HTTP(S) proxy URL for OPNet RPC)
+  OPNET_RPC_PROXY_AUTH_TOKEN (optional raw Proxy-Authorization header value for explicit proxy mode)
+  OPNET_RPC_USE_ENV_PROXY (default: true; honor HTTP_PROXY/HTTPS_PROXY for OPNet RPC)
+  OPNET_RPC_NO_PROXY (optional override for NO_PROXY when using env proxy mode)
   RELAYER_ID (default: relayer-opnet)
   RELAYER_MAPPING_FILE (default: ${DEFAULT_MAPPING_FILE})
   ATTESTATION_VERSION (default: ${DEFAULT_ATTESTATION_VERSION})
@@ -302,7 +360,10 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
     throw new Error("RELAYER_MAX_BLOCK_RANGE must be >= 1.");
   }
 
-  const provider = new JSONRpcProvider({ url: rpcUrl, network: opnetNetwork });
+  const provider = createOpnetJsonRpcProvider({ url: rpcUrl, network: opnetNetwork });
+  if (!isLikelyHex(mapping.opnet.bridgeHex)) {
+    mapping.opnet.bridgeHex = await resolveOpnetAddressViaRpcToHex32(String(mapping.opnet.bridgeAddress), provider);
+  }
   const bridge = getContract(mapping.opnet.bridgeAddress, BRIDGE_EVENTS_ABI, provider, opnetNetwork);
   const relaySigners = loadRelaySigners(relayerId);
 
@@ -319,6 +380,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
     `OP_NET burn poller started. id=${relayerId} bridge=${mapping.opnet.bridgeAddress} fromBlock=${nextFromBlock} intervalMs=${pollIntervalMs} maxBlockRange=${maxBlockRange} signers=${relaySigners.length}`,
   );
   console.log(`Output file: ${outputFile}`);
+  console.log(`OP_NET RPC transport: ${describeOpnetRpcTransport()} -> ${rpcUrl}`);
   if (relaySigners.length === 0) {
     console.log("[opnet-burn-poller] no ECDSA relay signer keys configured; pending release attestations will be unsigned.");
   }
@@ -354,7 +416,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                   opnetBridge: String(mapping.opnet.bridgeAddress),
                   opnetBridgeHex: String(mapping.opnet.bridgeHex),
                   ethereumUser: normalizeEthereumRecipientHex20(props.ethereumRecipient),
-                  opnetUser: normalizeOpnetAddressHex32(props.from),
+                  opnetUser: await normalizeOpnetAddressHex32Resolved(props.from, provider),
                   assetId: Number(props.assetId),
                   amount: String(props.amount),
                   nonce: String(props.withdrawalId),

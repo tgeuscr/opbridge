@@ -4,7 +4,8 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { networks } from "@btc-vision/bitcoin";
 import { Address, Mnemonic, Wallet } from "@btc-vision/transaction";
-import { ABIDataTypes, BitcoinAbiTypes, JSONRpcProvider, getContract } from "opnet";
+import { ABIDataTypes, BitcoinAbiTypes, getContract } from "opnet";
+import { createOpnetJsonRpcProvider, describeOpnetRpcTransport } from "./opnet-rpc-provider.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
@@ -150,6 +151,10 @@ Optional:
   MINT_CANDIDATE_NONCE (select specific ready candidate by nonce)
   OPNET_BRIDGE_ADDRESS (fallback if candidate message.opnetBridge missing)
   OPNET_RPC_URL (default: ${DEFAULT_OPNET_RPC_URL})
+  OPNET_RPC_PROXY_URL (optional explicit HTTP(S) proxy URL for OPNet RPC)
+  OPNET_RPC_PROXY_AUTH_TOKEN (optional raw Proxy-Authorization header value for explicit proxy mode)
+  OPNET_RPC_USE_ENV_PROXY (default: true; honor HTTP_PROXY/HTTPS_PROXY for OPNet RPC)
+  OPNET_RPC_NO_PROXY (optional override for NO_PROXY when using env proxy mode)
   OPNET_NETWORK (default: regtest; allowed: testnet|regtest|mainnet)
   OPNET_MAX_SAT_SPEND (default: 20000)
   OPNET_FEE_RATE (default: 2)
@@ -191,7 +196,7 @@ Optional:
   }
 
   const { wallet, walletSource, walletMeta } = buildWalletFromEnv(opnetNetwork);
-  const provider = new JSONRpcProvider({ url: opnetRpcUrl, network: opnetNetwork });
+  const provider = createOpnetJsonRpcProvider({ url: opnetRpcUrl, network: opnetNetwork });
 
   const bridge = getContract(bridgeAddress, BRIDGE_MINT_ABI, provider, opnetNetwork);
   const recipient = Address.fromString(String(mintSubmission.recipient));
@@ -206,6 +211,7 @@ Optional:
   console.log(
     `Submitting mint candidate payloadHash=${selected.payloadHashHex} asset=${mintSubmission.assetId} nonce=${mintSubmission.nonce}`,
   );
+  console.log(`OP_NET RPC transport: ${describeOpnetRpcTransport()} -> ${opnetRpcUrl}`);
 
   const simulation = await bridge.mintWithRelaySignatures(
     Number(mintSubmission.assetId),
@@ -238,6 +244,7 @@ Optional:
         candidatePayloadHash: selected.payloadHashHex,
         bridgeAddress,
         rpcUrl: opnetRpcUrl,
+        rpcTransport: describeOpnetRpcTransport(),
         network: process.env.OPNET_NETWORK?.trim() || "regtest",
         walletSource,
         walletMeta,
