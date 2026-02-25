@@ -15,6 +15,7 @@
     "run:sepolia": "node src/sepolia-poller.mjs",
     "run:opnet-burn": "node src/opnet-burn-poller.mjs",
     "diag:opnet-rpc": "node src/opnet-rpc-diagnose.mjs",
+    "sdk:opnet-testnet-smoke": "node src/opnet-sdk-testnet-smoke.mjs",
     "keys:generate": "node src/generate-relay-keys.mjs",
     "keys:verify": "node src/verify-relay-keys.mjs",
     "aggregate:sepolia": "node src/aggregate-attestations.mjs",
