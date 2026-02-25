@@ -11,6 +11,7 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
 const DEFAULT_CANDIDATES_FILE = path.resolve(REPO_ROOT, "services/relayer/.data/mint-submission-candidates.json");
 const DEFAULT_OPNET_RPC_URL = "https://regtest.opnet.org";
+const TESTNET_OPNET_RPC_URL = "https://testnet.opnet.org";
 
 const BRIDGE_MINT_ABI = [
   {
@@ -52,12 +53,20 @@ function hexToBytes(raw) {
   return bytes;
 }
 
+function normalizeNetworkName(name) {
+  return String(name || "regtest").trim().toLowerCase();
+}
+
 function resolveNetwork(name) {
-  const normalized = (name || "regtest").toLowerCase();
-  if (normalized === "testnet") return networks.testnet;
+  const normalized = normalizeNetworkName(name);
+  if (normalized === "testnet") return networks.opnetTestnet;
   if (normalized === "regtest") return networks.regtest;
   if (normalized === "mainnet") return networks.bitcoin;
   throw new Error(`Unsupported OPNET_NETWORK=${name}. Expected testnet, regtest, or mainnet.`);
+}
+
+function defaultOpnetRpcUrlForNetwork(name) {
+  return normalizeNetworkName(name) === "testnet" ? TESTNET_OPNET_RPC_URL : DEFAULT_OPNET_RPC_URL;
 }
 
 function selectCandidate(parsed) {
@@ -150,7 +159,7 @@ Optional:
   MINT_CANDIDATE_PAYLOAD_HASH (select specific ready candidate)
   MINT_CANDIDATE_NONCE (select specific ready candidate by nonce)
   OPNET_BRIDGE_ADDRESS (fallback if candidate message.opnetBridge missing)
-  OPNET_RPC_URL (default: ${DEFAULT_OPNET_RPC_URL})
+  OPNET_RPC_URL (default: derived from OPNET_NETWORK; regtest=${DEFAULT_OPNET_RPC_URL}, testnet=${TESTNET_OPNET_RPC_URL})
   OPNET_RPC_PROXY_URL (optional explicit HTTP(S) proxy URL for OPNet RPC)
   OPNET_RPC_PROXY_AUTH_TOKEN (optional raw Proxy-Authorization header value for explicit proxy mode)
   OPNET_RPC_USE_ENV_PROXY (default: true; honor HTTP_PROXY/HTTPS_PROXY for OPNet RPC)
@@ -163,8 +172,9 @@ Optional:
   }
 
   const candidatesFile = process.env.MINT_CANDIDATES_FILE?.trim() || DEFAULT_CANDIDATES_FILE;
-  const opnetRpcUrl = process.env.OPNET_RPC_URL?.trim() || DEFAULT_OPNET_RPC_URL;
-  const opnetNetwork = resolveNetwork(process.env.OPNET_NETWORK);
+  const opnetNetworkName = process.env.OPNET_NETWORK;
+  const opnetNetwork = resolveNetwork(opnetNetworkName);
+  const opnetRpcUrl = process.env.OPNET_RPC_URL?.trim() || defaultOpnetRpcUrlForNetwork(opnetNetworkName);
   const maxSatSpend = BigInt(process.env.OPNET_MAX_SAT_SPEND?.trim() || "20000");
   const feeRate = Number(process.env.OPNET_FEE_RATE?.trim() || "2");
   if (!Number.isFinite(feeRate) || feeRate <= 0) {

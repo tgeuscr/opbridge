@@ -241,9 +241,9 @@ npm run aggregate:sepolia --workspace @heptad/relayer
 Use the UI mint panel (load candidate -> send) or terminal:
 
 ```bash
-OPNET_RPC_URL=https://regtest.opnet.org \
+OPNET_RPC_URL=https://testnet.opnet.org \
 HTTPS_PROXY=http://proxy.example.corp:8080 \
-OPNET_NETWORK=regtest \
+OPNET_NETWORK=testnet \
 OPNET_WALLET_MNEMONIC="..." \
 MINT_CANDIDATES_FILE=services/relayer/.data/mint-submission-candidates.json \
 npm run submit:opnet --workspace @heptad/relayer
@@ -271,9 +271,9 @@ This emits:
 Run one process per relay index:
 
 ```bash
-OPNET_RPC_URL=https://regtest.opnet.org \
+OPNET_RPC_URL=https://testnet.opnet.org \
 HTTPS_PROXY=http://proxy.example.corp:8080 \
-OPNET_NETWORK=regtest \
+OPNET_NETWORK=testnet \
 RELAYER_ID=relayer-a \
 RELAYER_INDEX=0 \
 RELAYER_EVM_KEYS_FILE=services/relayer/.data/relay-keys.json \

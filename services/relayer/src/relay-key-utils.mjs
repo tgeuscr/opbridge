@@ -34,7 +34,7 @@ export function requireMnemonicFromEnv() {
 export function resolveOPNetNetwork(name) {
   const normalized = String(name ?? "regtest").trim().toLowerCase();
   if (normalized === "regtest") return networks.regtest;
-  if (normalized === "testnet") return networks.testnet;
+  if (normalized === "testnet") return networks.opnetTestnet;
   if (normalized === "mainnet") return networks.bitcoin;
   throw new Error(`Unsupported RELAYER_KEYS_OPNET_NETWORK=${name}. Expected regtest, testnet, or mainnet.`);
 }

@@ -186,7 +186,7 @@ Optional env vars:
 - `MINT_CANDIDATE_PAYLOAD_HASH` (choose a specific candidate)
 - `MINT_CANDIDATE_NONCE` (choose a specific candidate by nonce)
 - `OPNET_BRIDGE_ADDRESS` (fallback if missing in candidate)
-- `OPNET_RPC_URL` (default: `https://regtest.opnet.org`)
+- `OPNET_RPC_URL` (default derived from `OPNET_NETWORK`: `regtest` -> `https://regtest.opnet.org`, `testnet` -> `https://testnet.opnet.org`)
 - `OPNET_RPC_PROXY_URL` (optional explicit HTTP(S) proxy URL for OPNet RPC)
 - `OPNET_RPC_PROXY_AUTH_TOKEN` (optional raw `Proxy-Authorization` header value, explicit proxy mode only)
 - `OPNET_RPC_USE_ENV_PROXY` (default: `true`; uses `HTTPS_PROXY` / `HTTP_PROXY` when present)

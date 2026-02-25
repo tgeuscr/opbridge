@@ -166,7 +166,7 @@ function parseMldsaPrivateKey(raw) {
 
 function resolveOPNetNetwork(name) {
   const normalized = String(name ?? "regtest").trim().toLowerCase();
-  if (normalized === "testnet") return networks.testnet;
+  if (normalized === "testnet") return networks.opnetTestnet;
   if (normalized === "regtest") return networks.regtest;
   if (normalized === "mainnet") return networks.bitcoin;
   throw new Error(`Unsupported opnet.network=${name}. Expected testnet, regtest, or mainnet.`);

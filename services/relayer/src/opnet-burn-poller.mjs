@@ -17,6 +17,7 @@ const DEFAULT_KEYS_FILE = path.resolve(REPO_ROOT, "services/relayer/.data/relay-
 const DIRECTION_OP_TO_ETH_RELEASE = 2;
 const DEFAULT_ATTESTATION_VERSION = 1;
 const DEFAULT_OPNET_RPC_URL = "https://regtest.opnet.org";
+const TESTNET_OPNET_RPC_URL = "https://testnet.opnet.org";
 
 const BRIDGE_EVENTS_ABI = [
   {
@@ -124,12 +125,20 @@ function parseMapping(raw) {
   return mapping;
 }
 
+function normalizeOPNetNetworkName(name) {
+  return String(name ?? "regtest").trim().toLowerCase();
+}
+
 function resolveOPNetNetwork(name) {
-  const normalized = String(name ?? "regtest").trim().toLowerCase();
+  const normalized = normalizeOPNetNetworkName(name);
   if (normalized === "regtest") return networks.regtest;
-  if (normalized === "testnet") return networks.testnet;
+  if (normalized === "testnet") return networks.opnetTestnet;
   if (normalized === "mainnet") return networks.bitcoin;
   throw new Error(`Unsupported OPNET_NETWORK=${name}. Expected regtest, testnet, or mainnet.`);
+}
+
+function defaultOpnetRpcUrlForNetwork(name) {
+  return normalizeOPNetNetworkName(name) === "testnet" ? TESTNET_OPNET_RPC_URL : DEFAULT_OPNET_RPC_URL;
 }
 
 function normalizeOpnetAddressHex32(value) {
@@ -314,7 +323,7 @@ async function main() {
     console.log(`OP_NET Burn Poller (OP_NET -> ETH release attestations)
 
 Required:
-  OPNET_RPC_URL (default: ${DEFAULT_OPNET_RPC_URL})
+  OPNET_RPC_URL (default: derived from OPNET_NETWORK; regtest=${DEFAULT_OPNET_RPC_URL}, testnet=${TESTNET_OPNET_RPC_URL})
 
 Optional:
   OPNET_NETWORK (default: regtest; regtest|testnet|mainnet)
@@ -341,8 +350,9 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
 
   const mappingFile = process.env.RELAYER_MAPPING_FILE?.trim() || DEFAULT_MAPPING_FILE;
   const mapping = parseMapping(fs.readFileSync(mappingFile, "utf8"));
-  const rpcUrl = process.env.OPNET_RPC_URL?.trim() || DEFAULT_OPNET_RPC_URL;
-  const opnetNetwork = resolveOPNetNetwork(process.env.OPNET_NETWORK || mapping.opnet.network);
+  const opnetNetworkName = process.env.OPNET_NETWORK || mapping.opnet.network;
+  const opnetNetwork = resolveOPNetNetwork(opnetNetworkName);
+  const rpcUrl = process.env.OPNET_RPC_URL?.trim() || defaultOpnetRpcUrlForNetwork(opnetNetworkName);
   const relayerId = process.env.RELAYER_ID?.trim() || "relayer-opnet";
   const outputFile = process.env.RELAYER_OUTPUT_FILE?.trim() || DEFAULT_OUTPUT_FILE;
   const attestationVersion = Number(process.env.ATTESTATION_VERSION?.trim() || `${DEFAULT_ATTESTATION_VERSION}`);
