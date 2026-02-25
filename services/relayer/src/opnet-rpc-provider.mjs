@@ -222,7 +222,9 @@ class CurlProxyJSONRpcProvider extends JSONRpcProvider {
 export function createOpnetJsonRpcProvider({ url, network, timeout }) {
   const proxyEnv = resolveProxyEnv();
   const proxyModeEnabled = Boolean(proxyEnv.explicitProxyUrl || (proxyEnv.useEnvProxy && proxyEnv.hasStandardProxyEnv));
-  const providerUrl = proxyModeEnabled ? url : normalizeUrlForProxy(url);
+  // Only normalize explicit ports when proxy mode is enabled (proxy stacks may require it).
+  // In direct mode, keep the original URL to avoid origin routing differences (e.g. Host with :443).
+  const providerUrl = proxyModeEnabled ? normalizeUrlForProxy(url) : url;
   const config = {
     url: providerUrl,
     network,
