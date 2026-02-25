@@ -30,14 +30,10 @@ Optional env vars:
   OPNET_RPC_URL (default derived from OPNET_NETWORK)
   OPNET_RPC_TIMEOUT_MS (default: 10000)
   OPNET_DIAG_PUBLIC_KEY (optional address/pubkey to test getPublicKeyInfo)
-  OPNET_RPC_PROXY_URL (optional explicit proxy URL)
-  OPNET_RPC_PROXY_AUTH_TOKEN (optional explicit proxy auth header value)
-  OPNET_RPC_USE_ENV_PROXY (default: true)
-  OPNET_RPC_NO_PROXY (optional NO_PROXY override for OPNet calls)
 
 Prints:
   - selected network/url
-  - transport mode (direct / proxy)
+  - transport mode (direct)
   - getBlockNumber result
   - optional getPublicKeyInfo/getPublicKeysInfoRaw result summary
 `);

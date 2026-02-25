@@ -283,12 +283,6 @@ RELAYER_POLL_INTERVAL_MS=30000 \
 npm run run:opnet-burn --workspace @heptad/relayer
 ```
 
-Proxy options for OPNet scripts:
-- Standard env proxy mode (default on): `HTTPS_PROXY`, `HTTP_PROXY`, optional `NO_PROXY`
-- Explicit per-script proxy override: `OPNET_RPC_PROXY_URL=http://proxy.example.corp:8080`
-- If proxy auth is required, add `OPNET_RPC_PROXY_AUTH_TOKEN='Basic ...'` (or other `Proxy-Authorization` value)
-- Disable env proxy for OPNet only: `OPNET_RPC_USE_ENV_PROXY=false`
-
 Repeat with:
 - `RELAYER_ID=relayer-b`, `RELAYER_INDEX=1`, output `relayer-b.json`
 - `RELAYER_ID=relayer-c`, `RELAYER_INDEX=2`, output `relayer-c.json`

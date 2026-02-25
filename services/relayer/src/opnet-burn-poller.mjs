@@ -327,10 +327,6 @@ Required:
 
 Optional:
   OPNET_NETWORK (default: regtest; regtest|testnet|mainnet)
-  OPNET_RPC_PROXY_URL (optional explicit HTTP(S) proxy URL for OPNet RPC)
-  OPNET_RPC_PROXY_AUTH_TOKEN (optional raw Proxy-Authorization header value for explicit proxy mode)
-  OPNET_RPC_USE_ENV_PROXY (default: true; honor HTTP_PROXY/HTTPS_PROXY for OPNet RPC)
-  OPNET_RPC_NO_PROXY (optional override for NO_PROXY when using env proxy mode)
   RELAYER_ID (default: relayer-opnet)
   RELAYER_MAPPING_FILE (default: ${DEFAULT_MAPPING_FILE})
   ATTESTATION_VERSION (default: ${DEFAULT_ATTESTATION_VERSION})

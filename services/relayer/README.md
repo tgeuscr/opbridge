@@ -187,14 +187,8 @@ Optional env vars:
 - `MINT_CANDIDATE_NONCE` (choose a specific candidate by nonce)
 - `OPNET_BRIDGE_ADDRESS` (fallback if missing in candidate)
 - `OPNET_RPC_URL` (default derived from `OPNET_NETWORK`: `regtest` -> `https://regtest.opnet.org`, `testnet` -> `https://testnet.opnet.org`)
-- `OPNET_RPC_PROXY_URL` (optional explicit HTTP(S) proxy URL for OPNet RPC)
-- `OPNET_RPC_PROXY_AUTH_TOKEN` (optional raw `Proxy-Authorization` header value, explicit proxy mode only)
-- `OPNET_RPC_USE_ENV_PROXY` (default: `true`; uses `HTTPS_PROXY` / `HTTP_PROXY` when present)
-- `OPNET_RPC_NO_PROXY` (optional override for `NO_PROXY` in env-proxy mode)
 - `OPNET_NETWORK` (default: `regtest`; `testnet|regtest|mainnet`)
 - `OPNET_MAX_SAT_SPEND` (default: `20000`)
 - `OPNET_FEE_RATE` (default: `2`)
 
-Proxy note:
-
-- OPNet scripts now log `OP_NET RPC transport: ...` at startup/submission so you can confirm whether they are using direct or proxy mode.
+OPNet scripts log `OP_NET RPC transport: ...` at startup/submission (currently direct only).
