@@ -1,45 +1,45 @@
 {
   "network": "sepolia",
   "chainId": 11155111,
-  "deployedAt": "2026-02-23T21:31:39.789Z",
+  "deployedAt": "2026-02-25T16:44:18.742Z",
   "deployer": "0xDBC112f28da61cA54e8F2A802866Dcc516Fa6D86",
   "owner": "0xDBC112f28da61cA54e8F2A802866Dcc516Fa6D86",
   "feeRecipient": "0x7c72d96895627928B8060942E37e6f0a43a1Dba4",
-  "vaultAddress": "0xE55E2dC9Bb1C0331d332E4454618aE53985CBDaa",
+  "vaultAddress": "0xAE6a52E188f88748a8571F0404001eD3d16e1530",
   "assets": [
     {
       "assetId": 0,
       "symbol": "USDT",
       "decimals": 6,
-      "tokenAddress": "0xAa625436C45487C4893b4CAb16E413Ea494b99e9"
+      "tokenAddress": "0x38922Fe08aC8d3DC75167B6B28d35A58b83B4355"
     },
     {
       "assetId": 1,
       "symbol": "WBTC",
       "decimals": 8,
-      "tokenAddress": "0x774d1c1CE5DC24894E4635647A18b466C6866625"
+      "tokenAddress": "0x9b2148a270EFa01115264c859F89045906894C13"
     },
     {
       "assetId": 2,
       "symbol": "WETH",
       "decimals": 18,
-      "tokenAddress": "0x63a11Bd486A7955A13B6D47318aF6F85eCCC92E9"
+      "tokenAddress": "0xeD1B50EC1ae15F5ac6C150f569e6001447ab7D4a"
     },
     {
       "assetId": 3,
       "symbol": "PAXG",
       "decimals": 18,
-      "tokenAddress": "0xA98BBF5cb5a47E9875E23fe903A98f9800922DE6"
+      "tokenAddress": "0x17EF7607919B2a3136b842Fbb2E4C274082904e5"
     }
   ],
   "opnet": {
     "network": "regtest",
-    "bridgeAddress": "opr1sqrk7pxceap0k64594ez9ezpv8v852lc4qqp2aghp",
+    "bridgeAddress": "opt1sqq75zrdakhy5d804d6qsy8zqkvtdkgcvrcavz86u",
     "wrappedTokens": {
-      "USDT": "opr1sqr9sk7l8emd0wuk44r6hfkmgrt7hxet5xgz0av76",
-      "WBTC": "opr1sqpap6cuetyr0hevmm5d2k7qxe9m0l2r8vvmu8zll",
-      "WETH": "opr1sqpwryfg9jjf4kv3svdeuynu4fwmf4t5nqucskzxr",
-      "PAXG": "opr1sqp0kwpqekt7jtrf0aa2qwp7lvcaf5a8r8q9wj37u"
+      "USDT": "opt1sqqzgsk2q7tl2rd574xn7n85svvmkmkjqgyqlkaf9",
+      "WBTC": "opt1sqrmtt9ls4ydr5s0aje8xfj7jj4qh38g75ucuewfm",
+      "WETH": "opt1sqzhd3tgj7a27ajah7c45ddeg5qfd8lcn7qf9mwjt",
+      "PAXG": "opt1sqz5sw02nm7ul7x5le33eax8z5zw7j4aupvkwahuv"
     }
   }
 }

@@ -674,7 +674,12 @@ export function App() {
     });
   }, [relayKeyInputSlots]);
 
-  const readNetwork = networkMode === 'mainnet' ? networks.bitcoin : networks.regtest;
+  const readNetwork =
+    networkMode === 'mainnet'
+      ? networks.bitcoin
+      : networkMode === 'testnet'
+        ? networks.opnetTestnet
+        : networks.regtest;
   const bridgeInput = bridgeAddress.trim();
   const tokenInput = tokenContractAddress.trim();
   // Use user-provided op... addresses directly for contract calls.
@@ -899,7 +904,7 @@ export function App() {
 
     void (async () => {
       try {
-        const resolved = await resolveAddressToHex(bridgeAddress, true, false);
+        const resolved = await resolveAddressToHex(bridgeAddress, true);
         setResolvedBridgeAddress(resolved);
       } catch {
         setResolvedBridgeAddress('');
@@ -915,7 +920,7 @@ export function App() {
 
     void (async () => {
       try {
-        const resolved = await resolveAddressToHex(tokenContractAddress, true, false);
+        const resolved = await resolveAddressToHex(tokenContractAddress, true);
         setResolvedTokenContractAddress(resolved);
       } catch {
         setResolvedTokenContractAddress('');
