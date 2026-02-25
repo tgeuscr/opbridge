@@ -53,6 +53,22 @@ function hexToBytes(raw) {
   return bytes;
 }
 
+function bytesToHex(bytes) {
+  return `0x${Array.from(bytes)
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+function leftPadTo32(bytes, fieldName) {
+  if (bytes.length > 32) {
+    throw new Error(`${fieldName} exceeds 32 bytes.`);
+  }
+  if (bytes.length === 32) return bytes;
+  const out = new Uint8Array(32);
+  out.set(bytes, 32 - bytes.length);
+  return out;
+}
+
 function normalizeNetworkName(name) {
   return String(name || "regtest").trim().toLowerCase();
 }
@@ -67,6 +83,14 @@ function resolveNetwork(name) {
 
 function defaultOpnetRpcUrlForNetwork(name) {
   return normalizeNetworkName(name) === "testnet" ? TESTNET_OPNET_RPC_URL : DEFAULT_OPNET_RPC_URL;
+}
+
+function parseEthereumUserForBridgeAbi(raw) {
+  const bytes = hexToBytes(String(raw ?? "").trim());
+  if (bytes.length !== 20 && bytes.length !== 32) {
+    throw new Error(`mintSubmission.ethereumUser must be 20 or 32 bytes, got ${bytes.length}.`);
+  }
+  return Address.fromString(bytesToHex(leftPadTo32(bytes, "ethereumUser")));
 }
 
 function selectCandidate(parsed) {
@@ -206,7 +230,7 @@ Optional:
 
   const bridge = getContract(bridgeAddress, BRIDGE_MINT_ABI, provider, opnetNetwork);
   const recipient = Address.fromString(String(mintSubmission.recipient));
-  const ethereumUser = Address.fromString(String(mintSubmission.ethereumUser));
+  const ethereumUser = parseEthereumUserForBridgeAbi(mintSubmission.ethereumUser);
   const attestationVersion = Number(mintSubmission.attestationVersion);
   if (!Number.isInteger(attestationVersion) || attestationVersion < 0 || attestationVersion > 255) {
     throw new Error(`Invalid mintSubmission.attestationVersion=${mintSubmission.attestationVersion}`);
