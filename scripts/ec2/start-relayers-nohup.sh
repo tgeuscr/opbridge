@@ -5,6 +5,8 @@ HEPTAD_HOME="${HEPTAD_HOME:-/home/ssm-user/heptad}"
 HEPTAD_ENV_DIR="${HEPTAD_ENV_DIR:-/home/ssm-user/heptad-env}"
 LOG_DIR="${HEPTAD_LOG_DIR:-/tmp}"
 PID_DIR="${HEPTAD_PID_DIR:-/tmp}"
+NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+NODE_VERSION="${HEPTAD_NODE_VERSION:-24}"
 
 mkdir -p \
   "$HEPTAD_HOME/services/relayer/.data/mint-attestations" \
@@ -47,6 +49,15 @@ start_one() {
 
   (
     cd "$HEPTAD_HOME"
+    if ! command -v npm >/dev/null 2>&1; then
+      if [[ -s "$NVM_DIR/nvm.sh" ]]; then
+        # shellcheck disable=SC1090
+        . "$NVM_DIR/nvm.sh"
+        nvm use "$NODE_VERSION" >/dev/null
+      fi
+    fi
+    command -v npm >/dev/null 2>&1 || { echo "npm not found (tried NVM_DIR=$NVM_DIR)"; exit 1; }
+
     set -a
     . "$HEPTAD_ENV_DIR/relayer-common.env"
     . "$HEPTAD_ENV_DIR/relayer-$suffix.env"
