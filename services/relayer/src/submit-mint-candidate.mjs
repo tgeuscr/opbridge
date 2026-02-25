@@ -59,6 +59,14 @@ function bytesToHex(bytes) {
     .join("")}`;
 }
 
+function hex32ToBigInt(raw, fieldName) {
+  const bytes = hexToBytes(String(raw ?? "").trim());
+  if (bytes.length !== 32) {
+    throw new Error(`${fieldName} must be 32 bytes, got ${bytes.length}.`);
+  }
+  return BigInt(bytesToHex(bytes));
+}
+
 function leftPadTo32(bytes, fieldName) {
   if (bytes.length > 32) {
     throw new Error(`${fieldName} exceeds 32 bytes.`);
@@ -90,7 +98,61 @@ function parseEthereumUserForBridgeAbi(raw) {
   if (bytes.length !== 20 && bytes.length !== 32) {
     throw new Error(`mintSubmission.ethereumUser must be 20 or 32 bytes, got ${bytes.length}.`);
   }
-  return Address.fromString(bytesToHex(leftPadTo32(bytes, "ethereumUser")));
+  return Address.fromBigInt(BigInt(bytesToHex(leftPadTo32(bytes, "ethereumUser"))));
+}
+
+function isLikelyHex(value) {
+  const raw = String(value ?? "").trim();
+  const normalized = raw.startsWith("0x") ? raw.slice(2) : raw;
+  return normalized.length > 0 && /^[0-9a-fA-F]+$/.test(normalized) && normalized.length % 2 === 0;
+}
+
+function normalizeHex(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  return raw.startsWith("0x") ? raw.toLowerCase() : `0x${raw.toLowerCase()}`;
+}
+
+async function parseRecipientForBridgeAbi(rawRecipient, provider) {
+  const recipientHex = normalizeHex(rawRecipient);
+  const recipientValue = hex32ToBigInt(recipientHex, "mintSubmission.recipient");
+
+  // Contract runtime expects a valid Schnorr/tweaked key on the recipient Address.
+  // Try to resolve the full address metadata from OPNet RPC and pass both the
+  // hashed-id word and tweaked x-only pubkey word when available.
+  if (typeof provider?.getPublicKeysInfoRaw === "function") {
+    try {
+      const rpcInfoMap = await provider.getPublicKeysInfoRaw([recipientHex]);
+      const infos = [];
+      if (rpcInfoMap && typeof rpcInfoMap === "object") {
+        if (Object.hasOwn(rpcInfoMap, recipientHex)) infos.push(rpcInfoMap[recipientHex]);
+        if (Object.hasOwn(rpcInfoMap, rawRecipient)) infos.push(rpcInfoMap[rawRecipient]);
+        infos.push(...Object.values(rpcInfoMap));
+      }
+
+      for (const info of infos) {
+        if (!info || typeof info !== "object" || Object.hasOwn(info, "error")) continue;
+        const tweakedPubkey = normalizeHex(info.tweakedPubkey);
+        const mldsaHashedPublicKey = normalizeHex(info.mldsaHashedPublicKey);
+        if (!isLikelyHex(tweakedPubkey) || !isLikelyHex(mldsaHashedPublicKey)) continue;
+        try {
+          const tweakedValue = hex32ToBigInt(tweakedPubkey, "recipient.tweakedPubkey");
+          const mldsaHashValue = hex32ToBigInt(mldsaHashedPublicKey, "recipient.mldsaHashedPublicKey");
+          if (recipientHex === tweakedPubkey || recipientHex === mldsaHashedPublicKey) {
+            return Address.fromBigInt(mldsaHashValue, tweakedValue);
+          }
+        } catch {
+          // Try next candidate/info.
+        }
+      }
+    } catch {
+      // Fallback below handles direct x-only inputs.
+    }
+  }
+
+  // If the deposit recipient is already the tweaked x-only pubkey word, populate
+  // both slots to satisfy Schnorr validation in contract runtime.
+  return Address.fromBigInt(recipientValue, recipientValue);
 }
 
 function selectCandidate(parsed) {
@@ -229,7 +291,7 @@ Optional:
   const provider = createOpnetJsonRpcProvider({ url: opnetRpcUrl, network: opnetNetwork });
 
   const bridge = getContract(bridgeAddress, BRIDGE_MINT_ABI, provider, opnetNetwork);
-  const recipient = Address.fromString(String(mintSubmission.recipient));
+  const recipient = await parseRecipientForBridgeAbi(mintSubmission.recipient, provider);
   const ethereumUser = parseEthereumUserForBridgeAbi(mintSubmission.ethereumUser);
   const attestationVersion = Number(mintSubmission.attestationVersion);
   if (!Number.isInteger(attestationVersion) || attestationVersion < 0 || attestationVersion > 255) {
