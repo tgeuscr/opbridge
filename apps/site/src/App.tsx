@@ -1,4 +1,7 @@
 import { SupportedWallets, useWalletConnect } from '@btc-vision/walletconnect';
+import { networks } from '@btc-vision/bitcoin';
+import { Address } from '@btc-vision/transaction';
+import { ABIDataTypes, BitcoinAbiTypes, getContract } from 'opnet';
 import { useEffect, useState } from 'react';
 
 type EthereumProvider = {
@@ -16,6 +19,43 @@ type EthereumWindow = Window & {
 const SEPOLIA_CHAIN_ID_HEX = '0xaa36a7';
 const SEPOLIA_CHAIN_ID_DEC = 11155111;
 const DEFAULT_STATUS_API_URL = import.meta.env.VITE_STATUS_API_URL?.trim() || '';
+const OPNET_BRIDGE_ADDRESS = import.meta.env.VITE_OPNET_BRIDGE_ADDRESS?.trim() || '';
+const OPNET_FEE_RATE = Number(import.meta.env.VITE_OPNET_FEE_RATE?.trim() || '2');
+const OPNET_MAX_SAT_SPEND = BigInt(import.meta.env.VITE_OPNET_MAX_SAT_SPEND?.trim() || '20000');
+const ERC20_APPROVE_SELECTOR = '0x095ea7b3';
+const VAULT_DEPOSIT_ERC20_SELECTOR = '0x47e7ef24';
+
+const ETH_VAULT_ADDRESS = import.meta.env.VITE_ETHEREUM_VAULT_ADDRESS?.trim() || '';
+const ETH_TOKEN_ADDRESSES = {
+  USDT: import.meta.env.VITE_ETHEREUM_USDT_ADDRESS?.trim() || '',
+  WBTC: import.meta.env.VITE_ETHEREUM_WBTC_ADDRESS?.trim() || '',
+  WETH: import.meta.env.VITE_ETHEREUM_WETH_ADDRESS?.trim() || '',
+  PAXG: import.meta.env.VITE_ETHEREUM_PAXG_ADDRESS?.trim() || '',
+} as const;
+
+const ETH_ASSET_CONFIG = {
+  USDT: { assetId: 0, decimals: 6 },
+  WBTC: { assetId: 1, decimals: 8 },
+  WETH: { assetId: 2, decimals: 18 },
+  PAXG: { assetId: 3, decimals: 18 },
+} as const;
+
+type AssetSymbol = keyof typeof ETH_ASSET_CONFIG;
+
+const BRIDGE_BURN_ABI = [
+  {
+    name: 'requestBurn',
+    inputs: [
+      { name: 'asset', type: ABIDataTypes.UINT8 },
+      { name: 'from', type: ABIDataTypes.ADDRESS },
+      { name: 'ethereumRecipient', type: ABIDataTypes.ADDRESS },
+      { name: 'amount', type: ABIDataTypes.UINT256 },
+      { name: 'withdrawalId', type: ABIDataTypes.UINT256 },
+    ],
+    outputs: [],
+    type: BitcoinAbiTypes.Function,
+  },
+];
 
 function short(value?: string | null) {
   if (!value) return '-';
@@ -33,6 +73,76 @@ function getEthereumProvider(): EthereumProvider | null {
   return ethereum;
 }
 
+function padHexToBytes(hexWithoutPrefix: string, bytes: number): string {
+  if (hexWithoutPrefix.length > bytes * 2) {
+    throw new Error(`Hex value exceeds ${bytes} bytes.`);
+  }
+  return hexWithoutPrefix.padStart(bytes * 2, '0');
+}
+
+function normalizeEthereumAddress(raw: string, fieldName: string): string {
+  const value = raw.trim();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(value)) {
+    throw new Error(`${fieldName} must be a valid 20-byte hex address.`);
+  }
+  return value;
+}
+
+function normalizeBytes32Hex(raw: string, fieldName: string): string {
+  const value = raw.trim();
+  const normalized = value.startsWith('0x') ? value.slice(2) : value;
+  if (!/^[0-9a-fA-F]{64}$/.test(normalized)) {
+    throw new Error(`${fieldName} must be a 32-byte hex value.`);
+  }
+  return `0x${normalized.toLowerCase()}`;
+}
+
+function encodeAddressWord(address: string): string {
+  return padHexToBytes(address.replace(/^0x/, '').toLowerCase(), 32);
+}
+
+function encodeUintWord(value: bigint | number): string {
+  const n = typeof value === 'number' ? BigInt(value) : value;
+  if (n < 0n) throw new Error('Unsigned integer cannot be negative.');
+  return padHexToBytes(n.toString(16), 32);
+}
+
+function encodeBytes32Word(value: string): string {
+  return normalizeBytes32Hex(value, 'bytes32').replace(/^0x/, '');
+}
+
+function buildApproveCalldata(spender: string, amount: bigint): string {
+  return `${ERC20_APPROVE_SELECTOR}${encodeAddressWord(spender)}${encodeUintWord(amount)}`;
+}
+
+function buildDepositErc20Calldata(assetId: number, amount: bigint, recipient: string): string {
+  return `${VAULT_DEPOSIT_ERC20_SELECTOR}${encodeUintWord(assetId)}${encodeUintWord(amount)}${encodeBytes32Word(recipient)}`;
+}
+
+function ethereumAddressToAddressWord(raw: string): Address {
+  const value = normalizeEthereumAddress(raw, 'Ethereum recipient');
+  const padded = `0x${padHexToBytes(value.replace(/^0x/, ''), 32)}`;
+  return Address.fromBigInt(BigInt(padded));
+}
+
+function parseHumanAmount(raw: string, decimals: number): bigint {
+  const value = raw.trim();
+  if (!value) throw new Error('Amount is required.');
+  if (!/^\d+(\.\d+)?$/.test(value)) throw new Error('Amount must be a positive decimal number.');
+  const [whole, fraction = ''] = value.split('.');
+  if (fraction.length > decimals) {
+    throw new Error(`Amount has too many decimal places (max ${decimals}).`);
+  }
+  const scaled = `${whole}${fraction.padEnd(decimals, '0')}`;
+  const normalized = scaled.replace(/^0+/, '') || '0';
+  return BigInt(normalized);
+}
+
+function formatEthereumError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 export function App() {
   const {
     connectToWallet,
@@ -43,6 +153,9 @@ export function App() {
     hashedMLDSAKey,
     network,
     connecting,
+    address: opnetAddressObject,
+    provider: opnetProvider,
+    signer: opnetSigner,
   } = useWalletConnect();
 
   const [ethAddress, setEthAddress] = useState('');
@@ -52,6 +165,15 @@ export function App() {
   const [statusApiState, setStatusApiState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
   const [statusApiMessage, setStatusApiMessage] = useState('No status check yet.');
   const [statusApiUpdatedAt, setStatusApiUpdatedAt] = useState('');
+  const [depositAsset, setDepositAsset] = useState('USDT');
+  const [depositAmount, setDepositAmount] = useState('');
+  const [burnAsset, setBurnAsset] = useState('USDT');
+  const [burnAmount, setBurnAmount] = useState('');
+  const [depositBusy, setDepositBusy] = useState(false);
+  const [depositStatus, setDepositStatus] = useState('No deposit started yet.');
+  const [burnWithdrawalId, setBurnWithdrawalId] = useState('0');
+  const [burnBusy, setBurnBusy] = useState(false);
+  const [burnStatus, setBurnStatus] = useState('No burn started yet.');
 
   useEffect(() => {
     if (!statusApiUrl) {
@@ -163,6 +285,148 @@ export function App() {
   const opConnected = Boolean(walletAddress);
   const ethConnected = Boolean(ethAddress);
   const onSepolia = ethChainId.toLowerCase() === SEPOLIA_CHAIN_ID_HEX;
+  const opRecipientHash = hashedMLDSAKey || '';
+  const walletPairReady = opConnected && ethConnected;
+  const depositReady = walletPairReady && onSepolia && Boolean(opRecipientHash);
+  const burnReady = walletPairReady && onSepolia;
+  const depositConfigReady = Boolean(ETH_VAULT_ADDRESS && ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol]);
+  const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && opnetSigner && opnetAddressObject && walletAddress);
+
+  async function waitForEthereumReceipt(provider: EthereumProvider, txHash: string, label: string) {
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      const receipt = (await provider.request({
+        method: 'eth_getTransactionReceipt',
+        params: [txHash],
+      })) as { status?: string; blockNumber?: string; transactionHash?: string } | null;
+      if (receipt) return receipt;
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      if (attempt === 9) {
+        setDepositStatus(`${label} pending... waiting for confirmation`);
+      }
+    }
+    throw new Error(`${label} receipt timeout for tx ${txHash}`);
+  }
+
+  async function runLockedDepositFlow() {
+    const provider = getEthereumProvider();
+    if (!provider) {
+      setDepositStatus('MetaMask provider not found.');
+      return;
+    }
+
+    try {
+      setDepositBusy(true);
+      setDepositStatus('Checking MetaMask session...');
+
+      const [account] = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
+      const chainId = (await provider.request({ method: 'eth_chainId' })) as string;
+      setEthAddress(account ?? '');
+      setEthChainId(chainId ?? '');
+
+      if (!account) throw new Error('No MetaMask account connected.');
+      if ((chainId || '').toLowerCase() !== SEPOLIA_CHAIN_ID_HEX) {
+        throw new Error(`Wrong network. Expected Sepolia (${SEPOLIA_CHAIN_ID_HEX}), got ${chainId || '-'}.`);
+      }
+
+      const recipient = normalizeBytes32Hex(opRecipientHash, 'Connected OP_WALLET hashed MLDSA key');
+      const vaultAddress = normalizeEthereumAddress(ETH_VAULT_ADDRESS, 'Ethereum vault address');
+      const asset = depositAsset as AssetSymbol;
+      const tokenAddress = normalizeEthereumAddress(ETH_TOKEN_ADDRESSES[asset], `${asset} token address`);
+      const { assetId, decimals } = ETH_ASSET_CONFIG[asset];
+      const amountRaw = parseHumanAmount(depositAmount, decimals);
+      if (amountRaw <= 0n) throw new Error('Amount must be greater than zero.');
+
+      setDepositStatus(`Submitting ${asset} approve transaction...`);
+      const approveData = buildApproveCalldata(vaultAddress, amountRaw);
+      const approveTxHash = (await provider.request({
+        method: 'eth_sendTransaction',
+        params: [{ from: account, to: tokenAddress, data: approveData }],
+      })) as string;
+
+      const approveReceipt = await waitForEthereumReceipt(provider, approveTxHash, 'Approve');
+      if (approveReceipt.status !== '0x1') {
+        throw new Error(`Approve transaction failed: ${approveTxHash}`);
+      }
+
+      setDepositStatus(`Approve confirmed (${approveTxHash}). Submitting vault deposit...`);
+      const depositData = buildDepositErc20Calldata(assetId, amountRaw, recipient);
+      const depositTxHash = (await provider.request({
+        method: 'eth_sendTransaction',
+        params: [{ from: account, to: vaultAddress, data: depositData }],
+      })) as string;
+
+      const depositReceipt = await waitForEthereumReceipt(provider, depositTxHash, 'Deposit');
+      if (depositReceipt.status !== '0x1') {
+        throw new Error(`Deposit transaction failed: ${depositTxHash}`);
+      }
+
+      setDepositStatus(
+        `Deposit confirmed. asset=${asset} amount=${depositAmount} recipient=${short(recipient)} approveTx=${short(approveTxHash)} depositTx=${short(depositTxHash)}`,
+      );
+    } catch (error) {
+      setDepositStatus(`Deposit failed: ${formatEthereumError(error)}`);
+    } finally {
+      setDepositBusy(false);
+    }
+  }
+
+  async function runLockedBurnFlow() {
+    if (!opnetProvider || !opnetSigner || !opnetAddressObject || !walletAddress) {
+      setBurnStatus('Connect OP_WALLET first (provider/signer unavailable).');
+      return;
+    }
+
+    try {
+      setBurnBusy(true);
+      setBurnStatus('Preparing burn request...');
+
+      const asset = burnAsset as AssetSymbol;
+      const { assetId, decimals } = ETH_ASSET_CONFIG[asset];
+      const amountRaw = parseHumanAmount(burnAmount, decimals);
+      if (amountRaw <= 0n) throw new Error('Amount must be greater than zero.');
+      if (!/^\d+$/.test(burnWithdrawalId.trim())) {
+        throw new Error('Withdrawal ID must be a non-negative integer.');
+      }
+      const withdrawalId = BigInt(burnWithdrawalId.trim());
+      const ethereumRecipient = ethereumAddressToAddressWord(ethAddress);
+
+      const bridge = getContract(OPNET_BRIDGE_ADDRESS, BRIDGE_BURN_ABI as never, opnetProvider as never, networks.opnetTestnet);
+      if (typeof (bridge as any).setSender === 'function') {
+        (bridge as any).setSender(opnetAddressObject);
+      }
+
+      setBurnStatus('Simulating burn request on OPNet...');
+      const simulation = await (bridge as any).requestBurn(
+        assetId,
+        opnetAddressObject,
+        ethereumRecipient,
+        amountRaw,
+        withdrawalId,
+      );
+
+      if (simulation?.revert) {
+        throw new Error(`Burn simulation revert: ${simulation.revert}`);
+      }
+
+      setBurnStatus('Simulation OK. Sending burn request transaction...');
+      const tx = await simulation.sendTransaction({
+        signer: opnetSigner,
+        mldsaSigner: null,
+        refundTo: walletAddress,
+        maximumAllowedSatToSpend: OPNET_MAX_SAT_SPEND,
+        feeRate: OPNET_FEE_RATE,
+        network: networks.opnetTestnet,
+      });
+
+      setBurnStatus(
+        `Burn request sent. asset=${asset} amount=${burnAmount} withdrawalId=${withdrawalId.toString()} tx=${short((tx as { transactionId?: string })?.transactionId || null)}`,
+      );
+    } catch (error) {
+      setBurnStatus(`Burn failed: ${formatEthereumError(error)}`);
+    } finally {
+      setBurnBusy(false);
+    }
+  }
 
   return (
     <main className="landing">
@@ -170,8 +434,8 @@ export function App() {
         <p className="eyebrow">Heptad Bridge Preview</p>
         <h1>Connect OP_WALLET + MetaMask</h1>
         <p className="lede">
-          Test frontend for wallet onboarding before bridge UX goes live. This preview is intended for OPNet test
-          environments and Ethereum Sepolia.
+          Beta bridge flow with strict recipient locking: deposits always go from your connected MetaMask address to
+          your connected OP_WALLET, and burns return only to your connected MetaMask address.
         </p>
         <div className="banner" role="status">
           Testnet Only: Use Sepolia and non-production wallets/funds.
@@ -263,13 +527,167 @@ export function App() {
         </article>
       </section>
 
+      <section className="card flow-policy">
+        <div className="card-head">
+          <h2>Bridge Policy (MVP)</h2>
+          <span className={`pill ${walletPairReady ? 'ok' : ''}`}>{walletPairReady ? 'Wallet Pair Ready' : 'Connect Both Wallets'}</span>
+        </div>
+        <p className="muted">
+          Custom recipients are disabled for now. This reduces recipient mismatches and uses the connected OP_WALLET
+          identity directly for OPNet-side actions.
+        </p>
+        <div className="mini-grid">
+          <div>
+            <h3>Ethereum → OPNet</h3>
+            <p><strong>From:</strong> connected MetaMask address</p>
+            <p><strong>To:</strong> connected OP_WALLET hashed MLDSA key (locked)</p>
+          </div>
+          <div>
+            <h3>OPNet → Ethereum</h3>
+            <p><strong>From:</strong> connected OP_WALLET address</p>
+            <p><strong>To:</strong> connected MetaMask address (locked)</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="flow-grid">
+        <article className="card flow-card">
+          <div className="card-head">
+            <h2>Deposit (Sepolia → OPNet)</h2>
+            <span className={`pill ${depositReady ? 'ok' : ''}`}>{depositReady ? 'Ready' : 'Blocked'}</span>
+          </div>
+          <p className="muted">
+            Recipient is locked to the connected OP_WALLET. The Ethereum vault deposit will carry the hashed MLDSA key.
+          </p>
+          <label className="field">
+            <span>Asset</span>
+            <select value={depositAsset} onChange={(e) => setDepositAsset(e.target.value)}>
+              <option>USDT</option>
+              <option>WBTC</option>
+              <option>WETH</option>
+              <option>PAXG</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Amount</span>
+            <input
+              value={depositAmount}
+              onChange={(e) => setDepositAmount(e.target.value)}
+              placeholder="0.0"
+              inputMode="decimal"
+            />
+          </label>
+          <div className="route-box">
+            <div>
+              <h3>From MetaMask (locked)</h3>
+              <p>{ethAddress || '-'}</p>
+            </div>
+            <div>
+              <h3>To OP_WALLET Address (locked)</h3>
+              <p>{walletAddress || '-'}</p>
+            </div>
+            <div>
+              <h3>To Hashed MLDSA Key (vault recipient bytes32)</h3>
+              <p>{opRecipientHash || '-'}</p>
+            </div>
+          </div>
+          <div className="actions">
+            <button
+              className="primary"
+              onClick={runLockedDepositFlow}
+              disabled={!depositReady || !depositConfigReady || depositBusy}
+            >
+              {depositBusy ? 'Submitting Deposit…' : 'Approve + Deposit (Locked Recipient)'}
+            </button>
+          </div>
+          <p className={`notice ${depositReady ? 'ok' : ''}`}>
+            {depositReady
+              ? depositConfigReady
+                ? 'Deposit flow is enabled and uses the connected OP_WALLET hashed MLDSA key as the vault recipient.'
+                : 'Wallets are ready, but vault/token addresses are missing. Set Vercel env vars to enable deposits.'
+              : 'Connect OP_WALLET + MetaMask on Sepolia to enable the deposit flow.'}
+          </p>
+          <p className="muted">
+            Config: vault <code>{short(ETH_VAULT_ADDRESS)}</code> | token <code>{short(ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol])}</code>
+          </p>
+          <pre className="log-box">{depositStatus}</pre>
+        </article>
+
+        <article className="card flow-card">
+          <div className="card-head">
+            <h2>Withdraw (OPNet → Sepolia)</h2>
+            <span className={`pill ${burnReady ? 'ok' : ''}`}>{burnReady ? 'Ready' : 'Blocked'}</span>
+          </div>
+          <p className="muted">
+            Burn requests will return funds only to the connected MetaMask address during beta.
+          </p>
+          <label className="field">
+            <span>Asset</span>
+            <select value={burnAsset} onChange={(e) => setBurnAsset(e.target.value)}>
+              <option>USDT</option>
+              <option>WBTC</option>
+              <option>WETH</option>
+              <option>PAXG</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Amount</span>
+            <input
+              value={burnAmount}
+              onChange={(e) => setBurnAmount(e.target.value)}
+              placeholder="0.0"
+              inputMode="decimal"
+            />
+          </label>
+          <label className="field">
+            <span>Withdrawal ID (uint256)</span>
+            <input
+              value={burnWithdrawalId}
+              onChange={(e) => setBurnWithdrawalId(e.target.value)}
+              placeholder="0"
+              inputMode="numeric"
+            />
+          </label>
+          <div className="route-box">
+            <div>
+              <h3>From OP_WALLET (locked)</h3>
+              <p>{walletAddress || '-'}</p>
+            </div>
+            <div>
+              <h3>To MetaMask (locked)</h3>
+              <p>{ethAddress || '-'}</p>
+            </div>
+          </div>
+          <div className="actions">
+            <button
+              className="primary"
+              onClick={runLockedBurnFlow}
+              disabled={!burnReady || !burnConfigReady || burnBusy}
+            >
+              {burnBusy ? 'Submitting Burn…' : 'Request Burn (Locked Recipient)'}
+            </button>
+          </div>
+          <p className={`notice ${burnReady ? 'ok' : ''}`}>
+            {burnReady
+              ? burnConfigReady
+                ? 'Burn flow is enabled and locks the Ethereum recipient to the connected MetaMask address.'
+                : 'Wallets are ready, but OPNet bridge/signer config is missing. Set Vercel env vars and connect OP_WALLET.'
+              : 'Connect both wallets and switch MetaMask to Sepolia to enable the withdrawal flow.'}
+          </p>
+          <p className="muted">
+            Config: bridge <code>{short(OPNET_BRIDGE_ADDRESS)}</code> | OPNet wallet network <code>{network?.network ?? '-'}</code>
+          </p>
+          <pre className="log-box">{burnStatus}</pre>
+        </article>
+      </section>
+
       <section className="card checklist">
         <h2>Next Steps</h2>
         <ol>
-          <li>Deploy this app to Vercel as a preview project.</li>
           <li>Keep `apps/web` as the internal dev/ops bridge console.</li>
-          <li>Add status API integration after relayers are running on AWS.</li>
-          <li>Add deposit and burn flows after wallet-connect UX is stable.</li>
+          <li>Wire deposit button to the existing Ethereum vault deposit flow using the connected OP_WALLET hashed MLDSA key.</li>
+          <li>Wire burn button to OPNet burn request flow using the connected MetaMask address as the locked return address.</li>
+          <li>Keep custom recipients disabled until the recipient-resolution path is fully hardened.</li>
         </ol>
       </section>
 
