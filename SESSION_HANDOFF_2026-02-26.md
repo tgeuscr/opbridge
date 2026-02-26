@@ -151,3 +151,75 @@ journalctl -u heptad-relayer-aggregate-release.service -n 100 --no-pager
 
 - There is an older untracked handoff file `SESSION_HANDOFF_2026-02-25.md` in repo root (not committed).
 - If resuming on a fresh EC2 instance, reapply the same `~/heptad-env/*.env` layout and `systemd` unit install sequence; runtime setup was validated before the pause.
+
+## Late-Session Additions (Ops Tooling)
+
+### New terminal helper scripts added (deploy/wiring/env automation)
+- Added operator-friendly scripts to reduce manual env wiring and repeated command composition:
+  - `scripts/heptad-env-init.sh`
+  - `scripts/heptad-env-sync.sh`
+  - `scripts/deploy-ethereum-sepolia.sh`
+  - `scripts/configure-ethereum-release-relays.sh`
+  - `scripts/addpubkeystobridge.sh`
+  - `scripts/deploy-opnet-bridge.sh`
+  - `scripts/deploy-opnet-wrapped-tokens.sh`
+  - `scripts/ops/opnet-bridge-admin.mjs`
+  - `scripts/ops/lib/common.sh`
+  - `scripts/ops/lib/derive-sepolia-key-from-mnemonic.mjs`
+  - docs: `scripts/OPS_TOOLING.md`
+
+### What these scripts automate
+- `heptad-env` template creation (`./heptad-env/`)
+- syncing Ethereum deployment output + OPNet addresses into:
+  - `heptad-env/contracts.env`
+  - `heptad-env/relayer-common.env`
+  - DB path defaults in relayer API / aggregator envs
+  - `apps/site/.env.local`
+- Ethereum deploy/config wrappers that support `MNEMONIC="..."` (derive deployer key automatically) or direct `SEPOLIA_DEPLOYER_PRIVATE_KEY`
+- OPNet bridge relay MLDSA pubkey wiring via terminal (`setRelaysConfigPacked`) using relay public config JSON + bridge admin helper
+
+### Important limitation (current version)
+- There is still no canonical OPNet deploy CLI command in the repo.
+- `scripts/deploy-opnet-bridge.sh` and `scripts/deploy-opnet-wrapped-tokens.sh` therefore:
+  - build artifacts
+  - optionally run a user-supplied deploy command (`OPNET_DEPLOY_BRIDGE_CMD` / `OPNET_DEPLOY_WRAPPED_CMD`)
+  - record resulting addresses into `heptad-env/contracts.env`
+- This is still useful immediately, but OPNet deploy/wiring is not yet fully standardized end-to-end in one script.
+
+### `heptad-env/` in repo
+- A starter `heptad-env/` template folder was generated and committed (project-local templates, not EC2 secrets).
+- This is separate from the EC2 runtime folder at `~/heptad-env`.
+
+### Commit (late-session)
+- `646d7c0` `ops: add deploy and env helper scripts`
+
+## Next Session Recommendations (Concrete)
+
+1. Finish `https://api.heptad.app` setup on EC2
+   - Nginx reverse proxy -> `127.0.0.1:8787`
+   - `certbot` TLS
+   - remove public `8787` rule afterward
+
+2. Add CORS to `services/api`
+   - allow `https://heptad.app` and Vercel preview domain(s)
+   - handle preflight `OPTIONS`
+   - this is required for hosted site status/signature fetch
+
+3. Use the new scripts to standardize deploy/wiring flow
+   - `bash scripts/heptad-env-init.sh`
+   - run OPNet deploy (manual/custom command) and record addresses
+   - `bash scripts/deploy-ethereum-sepolia.sh`
+   - `bash scripts/configure-ethereum-release-relays.sh`
+   - `SEND=1 bash scripts/addpubkeystobridge.sh`
+   - `bash scripts/heptad-env-sync.sh`
+
+4. Extend OPNet admin helper (`scripts/ops/opnet-bridge-admin.mjs`)
+   - add `setWrappedToken`
+   - add `setEthereumVault`
+   - add pause/unpause
+   - optionally add bridge state verification/readback
+
+5. Run first full website-driven deposit test (hosted site after HTTPS+CORS)
+   - verify relayer API status panel works
+   - watch `mint_attestations` / `mint_candidates`
+   - proceed to mint submit path once candidate is ready
