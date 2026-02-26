@@ -339,6 +339,14 @@ export function App() {
     }
   }
 
+  function disconnectMetaMask() {
+    // MetaMask does not expose a reliable programmatic site disconnect API.
+    // Clear local app state so the UI route-locking resets for test flows.
+    setEthAddress('');
+    setEthChainId('');
+    setEthStatus('Disconnected (local app state cleared).');
+  }
+
   async function switchToSepolia() {
     const provider = getEthereumProvider();
     if (!provider) return;
@@ -569,6 +577,9 @@ export function App() {
           <div className="actions">
             <button className="primary" onClick={connectMetaMask}>
               Connect MetaMask
+            </button>
+            <button onClick={disconnectMetaMask} disabled={!ethConnected}>
+              Disconnect MetaMask
             </button>
             <button onClick={() => switchToSepolia()} disabled={!ethConnected || onSepolia}>
               {onSepolia ? 'On Sepolia' : 'Switch To Sepolia'}
