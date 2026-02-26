@@ -113,9 +113,35 @@ function normalizeHex(value) {
   return raw.startsWith("0x") ? raw.toLowerCase() : `0x${raw.toLowerCase()}`;
 }
 
-async function parseRecipientForBridgeAbi(rawRecipient, provider) {
+async function parseRecipientForBridgeAbi(rawRecipient, provider, recipientAddressHint) {
   const recipientHex = normalizeHex(rawRecipient);
   const recipientValue = hex32ToBigInt(recipientHex, "mintSubmission.recipient");
+
+  const addressHint = String(recipientAddressHint ?? "").trim();
+  if (addressHint && typeof provider?.getPublicKeyInfo === "function") {
+    try {
+      const resolved = await provider.getPublicKeyInfo(addressHint, false);
+      const resolvedHex = normalizeHex(typeof resolved?.toHex === "function" ? resolved.toHex() : "");
+      if (!resolvedHex) {
+        throw new Error("RPC returned recipient object without toHex().");
+      }
+      if (resolvedHex !== recipientHex) {
+        throw new Error(
+          [
+            "Resolved OPNet recipient does not match attested recipient hash.",
+            `hint=${addressHint}`,
+            `resolved=${resolvedHex}`,
+            `attested=${recipientHex}`,
+          ].join(" "),
+        );
+      }
+      return resolved;
+    } catch (error) {
+      throw new Error(
+        `Failed to resolve MINT_RECIPIENT_OPNET_ADDRESS=${addressHint}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
 
   // Contract runtime expects a valid Schnorr/tweaked key on the recipient Address.
   // Try to resolve the full address metadata from OPNet RPC and pass both the
@@ -249,6 +275,7 @@ Optional:
   OPNET_NETWORK (default: regtest; allowed: testnet|regtest|mainnet)
   OPNET_MAX_SAT_SPEND (default: 20000)
   OPNET_FEE_RATE (default: 2)
+  MINT_RECIPIENT_OPNET_ADDRESS (optional op.../bc1... recipient string; resolved via RPC and must match attested recipient hash)
 `);
     return;
   }
@@ -289,9 +316,10 @@ Optional:
 
   const { wallet, walletSource, walletMeta } = buildWalletFromEnv(opnetNetwork);
   const provider = createOpnetJsonRpcProvider({ url: opnetRpcUrl, network: opnetNetwork });
+  const recipientAddressHint = process.env.MINT_RECIPIENT_OPNET_ADDRESS?.trim() || "";
 
   const bridge = getContract(bridgeAddress, BRIDGE_MINT_ABI, provider, opnetNetwork);
-  const recipient = await parseRecipientForBridgeAbi(mintSubmission.recipient, provider);
+  const recipient = await parseRecipientForBridgeAbi(mintSubmission.recipient, provider, recipientAddressHint);
   const ethereumUser = parseEthereumUserForBridgeAbi(mintSubmission.ethereumUser);
   const attestationVersion = Number(mintSubmission.attestationVersion);
   if (!Number.isInteger(attestationVersion) || attestationVersion < 0 || attestationVersion > 255) {
@@ -304,6 +332,10 @@ Optional:
     `Submitting mint candidate payloadHash=${selected.payloadHashHex} asset=${mintSubmission.assetId} nonce=${mintSubmission.nonce}`,
   );
   console.log(`OP_NET RPC transport: ${describeOpnetRpcTransport()} -> ${opnetRpcUrl}`);
+  console.log(`Attested recipient (hashed MLDSA key): ${normalizeHex(mintSubmission.recipient)}`);
+  if (recipientAddressHint) {
+    console.log(`Recipient address hint (resolved via RPC): ${recipientAddressHint}`);
+  }
 
   const simulation = await bridge.mintWithRelaySignatures(
     Number(mintSubmission.assetId),
