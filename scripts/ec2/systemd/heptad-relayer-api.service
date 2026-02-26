@@ -1,0 +1,23 @@
+[Unit]
+Description=Heptad Relayer API (status + candidate registry)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ssm-user
+WorkingDirectory=/home/ssm-user/heptad
+Environment=HOME=/home/ssm-user
+Environment=NODE_VERSION=24
+Environment=RELAYER_API_PORT=8787
+Environment=RELAYER_API_DB_PATH=/home/ssm-user/heptad/services/api/.data/relayer-api.sqlite
+EnvironmentFile=-/home/ssm-user/heptad-env/relayer-api.env
+ExecStartPre=/bin/bash -lc '. "$HOME/.nvm/nvm.sh" && nvm use "$NODE_VERSION" >/dev/null && npm run --workspace @heptad/api import:relayer-snapshots'
+ExecStart=/bin/bash -lc '. "$HOME/.nvm/nvm.sh" && nvm use "$NODE_VERSION" >/dev/null && npm run --workspace @heptad/api start'
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

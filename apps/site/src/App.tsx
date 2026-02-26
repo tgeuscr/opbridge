@@ -165,6 +165,16 @@ export function App() {
   const [statusApiState, setStatusApiState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
   const [statusApiMessage, setStatusApiMessage] = useState('No status check yet.');
   const [statusApiUpdatedAt, setStatusApiUpdatedAt] = useState('');
+  const [statusApiSummary, setStatusApiSummary] = useState<Record<string, unknown> | null>(null);
+  const [statusApiRelayers, setStatusApiRelayers] = useState<
+    Array<{ relayerName: string; role: string; status: string; detail?: string | null; updatedAt?: string }>
+  >([]);
+  const [depositLookupId, setDepositLookupId] = useState('1');
+  const [depositLookupBusy, setDepositLookupBusy] = useState(false);
+  const [depositLookupResult, setDepositLookupResult] = useState('No deposit lookup yet.');
+  const [withdrawalLookupId, setWithdrawalLookupId] = useState('0');
+  const [withdrawalLookupBusy, setWithdrawalLookupBusy] = useState(false);
+  const [withdrawalLookupResult, setWithdrawalLookupResult] = useState('No withdrawal lookup yet.');
   const [depositAsset, setDepositAsset] = useState('USDT');
   const [depositAmount, setDepositAmount] = useState('');
   const [burnAsset, setBurnAsset] = useState('USDT');
@@ -180,6 +190,8 @@ export function App() {
       setStatusApiState('idle');
       setStatusApiMessage('Set VITE_STATUS_API_URL (or type one below) to enable polling.');
       setStatusApiUpdatedAt('');
+      setStatusApiSummary(null);
+      setStatusApiRelayers([]);
       return;
     }
 
@@ -188,23 +200,33 @@ export function App() {
     const poll = async () => {
       try {
         setStatusApiState((prev) => (prev === 'ok' ? prev : 'loading'));
-        const response = await fetch(`${statusApiUrl.replace(/\/$/, '')}/health`);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        const body = (await response.json()) as Record<string, unknown>;
+        const base = statusApiUrl.replace(/\/$/, '');
+        const [healthRes, statusRes] = await Promise.all([
+          fetch(`${base}/health`),
+          fetch(`${base}/status`),
+        ]);
+        if (!healthRes.ok) throw new Error(`/health HTTP ${healthRes.status}`);
+        if (!statusRes.ok) throw new Error(`/status HTTP ${statusRes.status}`);
+        const health = (await healthRes.json()) as Record<string, unknown>;
+        const status = (await statusRes.json()) as Record<string, unknown>;
         if (cancelled) return;
         setStatusApiState('ok');
         setStatusApiMessage(
-          typeof body.status === 'string'
-            ? `Status API healthy (${body.status})`
-            : 'Status API reachable (/health responded)',
+          `Relayer API healthy. ${typeof health.service === 'string' ? health.service : 'service'} /status loaded`,
+        );
+        setStatusApiSummary((status.summary as Record<string, unknown>) ?? null);
+        setStatusApiRelayers(
+          Array.isArray(status.relayers)
+            ? (status.relayers as Array<{ relayerName: string; role: string; status: string; detail?: string | null; updatedAt?: string }>)
+            : [],
         );
         setStatusApiUpdatedAt(new Date().toISOString());
       } catch (error) {
         if (cancelled) return;
         setStatusApiState('error');
         setStatusApiMessage(`Status API check failed: ${error instanceof Error ? error.message : String(error)}`);
+        setStatusApiSummary(null);
+        setStatusApiRelayers([]);
         setStatusApiUpdatedAt(new Date().toISOString());
       }
     };
@@ -219,6 +241,56 @@ export function App() {
       window.clearInterval(timer);
     };
   }, [statusApiUrl]);
+
+  async function runDepositLookup() {
+    if (!statusApiUrl.trim()) {
+      setDepositLookupResult('Set Status API Base URL first.');
+      return;
+    }
+    const id = depositLookupId.trim();
+    if (!id) {
+      setDepositLookupResult('Deposit ID is required.');
+      return;
+    }
+    try {
+      setDepositLookupBusy(true);
+      const response = await fetch(`${statusApiUrl.replace(/\/$/, '')}/deposits/${encodeURIComponent(id)}`);
+      const body = (await response.json()) as Record<string, unknown>;
+      if (!response.ok) {
+        throw new Error(typeof body.error === 'string' ? body.error : `HTTP ${response.status}`);
+      }
+      setDepositLookupResult(JSON.stringify(body, null, 2));
+    } catch (error) {
+      setDepositLookupResult(`Deposit lookup failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setDepositLookupBusy(false);
+    }
+  }
+
+  async function runWithdrawalLookup() {
+    if (!statusApiUrl.trim()) {
+      setWithdrawalLookupResult('Set Status API Base URL first.');
+      return;
+    }
+    const id = withdrawalLookupId.trim();
+    if (!id) {
+      setWithdrawalLookupResult('Withdrawal ID is required.');
+      return;
+    }
+    try {
+      setWithdrawalLookupBusy(true);
+      const response = await fetch(`${statusApiUrl.replace(/\/$/, '')}/withdrawals/${encodeURIComponent(id)}`);
+      const body = (await response.json()) as Record<string, unknown>;
+      if (!response.ok) {
+        throw new Error(typeof body.error === 'string' ? body.error : `HTTP ${response.status}`);
+      }
+      setWithdrawalLookupResult(JSON.stringify(body, null, 2));
+    } catch (error) {
+      setWithdrawalLookupResult(`Withdrawal lookup failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setWithdrawalLookupBusy(false);
+    }
+  }
 
   useEffect(() => {
     const provider = getEthereumProvider();
@@ -693,11 +765,12 @@ export function App() {
 
       <section className="card status-panel">
         <div className="card-head">
-          <h2>Status API (Stub)</h2>
+          <h2>Relayer API Status</h2>
           <span className={`pill ${statusApiState === 'ok' ? 'ok' : ''}`}>{statusApiState}</span>
         </div>
         <p className="muted">
-          This is a placeholder for the future relayer status backend. It polls <code>/health</code> every 15s.
+          Polls <code>/health</code> and <code>/status</code> every 15s. Use lookups below to inspect bridge progress by
+          deposit/withdrawal ID.
         </p>
         <label className="field">
           <span>Status API Base URL</span>
@@ -709,18 +782,53 @@ export function App() {
         </label>
         <div className="mini-grid">
           <div>
-            <h3>Health Check</h3>
+            <h3>Health / Summary</h3>
             <p>{statusApiMessage}</p>
             <p className="muted">Last checked: {statusApiUpdatedAt || '-'}</p>
+            <pre className="log-box compact">{statusApiSummary ? JSON.stringify(statusApiSummary, null, 2) : 'No summary yet.'}</pre>
           </div>
           <div>
-            <h3>Planned Endpoints</h3>
-            <ul>
-              <li><code>GET /health</code></li>
-              <li><code>GET /bridge/status</code></li>
-              <li><code>GET /releases/pending</code></li>
-              <li><code>GET /releases/by-withdrawal/:id</code></li>
-            </ul>
+            <h3>Relayer Heartbeats</h3>
+            {statusApiRelayers.length === 0 ? (
+              <p className="muted">No relayer heartbeat records yet.</p>
+            ) : (
+              <ul className="heartbeat-list">
+                {statusApiRelayers.map((relayer) => (
+                  <li key={`${relayer.relayerName}:${relayer.role}`}>
+                    <code>{relayer.relayerName}</code> <span className={`pill ${relayer.status === 'ok' ? 'ok' : ''}`}>{relayer.status}</span>
+                    <div className="muted">{relayer.role} {relayer.detail ? `| ${relayer.detail}` : ''}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+        <div className="mini-grid">
+          <div>
+            <h3>Deposit Lookup</h3>
+            <label className="field">
+              <span>Deposit ID / nonce</span>
+              <input value={depositLookupId} onChange={(e) => setDepositLookupId(e.target.value)} placeholder="1" />
+            </label>
+            <div className="actions">
+              <button onClick={runDepositLookup} disabled={depositLookupBusy}>
+                {depositLookupBusy ? 'Loading…' : 'Lookup Deposit'}
+              </button>
+            </div>
+            <pre className="log-box compact">{depositLookupResult}</pre>
+          </div>
+          <div>
+            <h3>Withdrawal Lookup</h3>
+            <label className="field">
+              <span>Withdrawal ID</span>
+              <input value={withdrawalLookupId} onChange={(e) => setWithdrawalLookupId(e.target.value)} placeholder="0" />
+            </label>
+            <div className="actions">
+              <button onClick={runWithdrawalLookup} disabled={withdrawalLookupBusy}>
+                {withdrawalLookupBusy ? 'Loading…' : 'Lookup Withdrawal'}
+              </button>
+            </div>
+            <pre className="log-box compact">{withdrawalLookupResult}</pre>
           </div>
         </div>
       </section>

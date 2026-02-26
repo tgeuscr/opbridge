@@ -293,6 +293,28 @@ button.primary {
   word-break: break-word;
 }
 
+.log-box.compact {
+  max-height: 220px;
+  overflow: auto;
+  font-size: 0.78rem;
+}
+
+.heartbeat-list {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.heartbeat-list li {
+  color: var(--ink);
+}
+
+.heartbeat-list li .pill {
+  margin-left: 0.35rem;
+  vertical-align: middle;
+}
+
 .status-panel {
   display: grid;
   gap: 0.8rem;

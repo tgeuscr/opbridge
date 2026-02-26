@@ -8,6 +8,7 @@ import { Address } from "@btc-vision/transaction";
 import { ABIDataTypes, BitcoinAbiTypes, getContract } from "opnet";
 import { ethers } from "ethers";
 import { createOpnetJsonRpcProvider, describeOpnetRpcTransport } from "./opnet-rpc-provider.mjs";
+import { publishReleaseAttestationsSnapshot, publishRelayerHeartbeat } from "./relayer-api-publish.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
@@ -462,20 +463,33 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
         }
 
         if (pending.length > 0) {
-          fs.writeFileSync(
-            outputFile,
-            JSON.stringify(
-              {
-                generatedAt: new Date().toISOString(),
-                relayerId,
-                mappingSource: mappingFile,
-                count: pending.length,
-                pending,
-              },
-              (_, value) => (typeof value === "bigint" ? value.toString() : value),
-              2,
-            ),
-          );
+          const snapshot = {
+            generatedAt: new Date().toISOString(),
+            relayerId,
+            mappingSource: mappingFile,
+            count: pending.length,
+            pending,
+          };
+          const disableFileOutput =
+            process.env.RELAYER_DISABLE_FILE_OUTPUT?.trim() === "1" ||
+            process.env.RELAYER_DISABLE_FILE_OUTPUT?.trim()?.toLowerCase() === "true";
+          if (!disableFileOutput) {
+            fs.writeFileSync(
+              outputFile,
+              JSON.stringify(snapshot, (_, value) => (typeof value === "bigint" ? value.toString() : value), 2),
+            );
+          }
+          try {
+            const published = await publishReleaseAttestationsSnapshot(snapshot, disableFileOutput ? null : outputFile);
+            if (published?.skipped) {
+              console.log(`[opnet-burn-poller] API publish skipped: ${published.reason}`);
+            } else {
+              console.log(`[opnet-burn-poller] Published ${pending.length} release attestations to relayer API.`);
+            }
+          } catch (error) {
+            console.error(`[opnet-burn-poller] release attestation API publish failed: ${error instanceof Error ? error.message : String(error)}`);
+            if (disableFileOutput) throw error;
+          }
           for (const entry of pending) {
             console.log(
               `[opnet-burn-poller] burn tx=${entry.source.txHash} withdrawalId=${entry.message.nonce} asset=${entry.message.assetId} amount=${entry.message.amount} recipient=${entry.message.ethereumUser}`,
@@ -486,6 +500,17 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
       }
     } catch (error) {
       console.error(`[opnet-burn-poller-error] ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    try {
+      await publishRelayerHeartbeat({
+        relayerName: relayerId,
+        role: "opnet-burn-poller",
+        status: "ok",
+        detail: `nextFromBlock=${nextFromBlock.toString()}`,
+      });
+    } catch (error) {
+      console.error(`[opnet-burn-heartbeat] ${error instanceof Error ? error.message : String(error)}`);
     }
 
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));

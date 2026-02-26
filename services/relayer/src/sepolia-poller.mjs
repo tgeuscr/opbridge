@@ -4,6 +4,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { networks } from "@btc-vision/bitcoin";
 import { Address, MLDSASecurityLevel, QuantumBIP32Factory } from "@btc-vision/transaction";
+import { publishMintAttestationsSnapshot, publishRelayerHeartbeat } from "./relayer-api-publish.mjs";
 
 const DEPOSIT_INITIATED_TOPIC0 =
   "0x3fb1c794079291b42d6d8707ba973ad40ab31522db5ff4280e7606823b71be73";
@@ -514,20 +515,30 @@ Example:
         }
 
         if (pending.length > 0) {
-          fs.writeFileSync(
-            outputFile,
-            JSON.stringify(
-              {
-                generatedAt: new Date().toISOString(),
-                relayerId,
-                mappingSource: mappingFile,
-                count: pending.length,
-                pending,
-              },
-              null,
-              2,
-            ),
-          );
+          const snapshot = {
+            generatedAt: new Date().toISOString(),
+            relayerId,
+            mappingSource: mappingFile,
+            count: pending.length,
+            pending,
+          };
+          const disableFileOutput =
+            process.env.RELAYER_DISABLE_FILE_OUTPUT?.trim() === "1" ||
+            process.env.RELAYER_DISABLE_FILE_OUTPUT?.trim()?.toLowerCase() === "true";
+          if (!disableFileOutput) {
+            fs.writeFileSync(outputFile, JSON.stringify(snapshot, null, 2));
+          }
+          try {
+            const published = await publishMintAttestationsSnapshot(snapshot, disableFileOutput ? null : outputFile);
+            if (published?.skipped) {
+              console.log(`[poller] API publish skipped: ${published.reason}`);
+            } else {
+              console.log(`[poller] Published ${pending.length} mint attestations to relayer API.`);
+            }
+          } catch (error) {
+            console.error(`[poller] mint attestation API publish failed: ${error instanceof Error ? error.message : String(error)}`);
+            if (disableFileOutput) throw error;
+          }
           for (const entry of pending) {
             console.log(
               `[deposit] assetId=${entry.message.assetId} nonce=${entry.message.nonce} payloadHash=${entry.payloadHashHex}`,
@@ -539,6 +550,17 @@ Example:
       }
     } catch (error) {
       console.error(`[poller-error] ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    try {
+      await publishRelayerHeartbeat({
+        relayerName: relayerId,
+        role: "sepolia-poller",
+        status: "ok",
+        detail: `nextFromBlock=${nextFromBlock.toString()}`,
+      });
+    } catch (error) {
+      console.error(`[poller-heartbeat] ${error instanceof Error ? error.message : String(error)}`);
     }
 
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));

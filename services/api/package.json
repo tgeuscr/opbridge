@@ -1,0 +1,11 @@
+{
+  "name": "@heptad/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "import:relayer-snapshots": "node src/import-relayer-snapshots.mjs",
+    "build": "node --check src/server.mjs && node --check src/import-relayer-snapshots.mjs && node --check src/db.mjs"
+  }
+}

@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import { publishReleaseCandidatesSnapshot } from "./relayer-api-publish.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
@@ -62,6 +64,34 @@ function loadEntries(files) {
     for (const item of pending) {
       if (Number(item?.message?.direction) !== DIRECTION_OP_TO_ETH_RELEASE) continue;
       entries.push({ file, relayerId: parsed.relayerId ?? null, pending: item });
+    }
+  }
+  return entries;
+}
+
+function loadEntriesFromDb(dbPath) {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  const rows = db.prepare(`
+    SELECT relayer_id, payload_hash_hex, observation_id, message_json, signatures_json, source_json
+    FROM release_attestations
+    ORDER BY updated_at DESC
+  `).all();
+  const entries = [];
+  for (const row of rows) {
+    try {
+      entries.push({
+        file: `sqlite:${dbPath}`,
+        relayerId: row.relayer_id ?? null,
+        pending: {
+          observationId: row.observation_id,
+          payloadHashHex: row.payload_hash_hex,
+          message: row.message_json ? JSON.parse(row.message_json) : {},
+          signatures: row.signatures_json ? JSON.parse(row.signatures_json) : [],
+          source: row.source_json ? JSON.parse(row.source_json) : null,
+        },
+      });
+    } catch {
+      // Skip malformed rows.
     }
   }
   return entries;
@@ -143,28 +173,42 @@ function packReleaseCandidate(groupKey, groupEntries, threshold) {
   };
 }
 
-function main() {
+async function main() {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     console.log(`Aggregate OP_NET Burn Attestations (Release Candidates)
 
 Optional:
   RELAYER_RELEASE_ATTESTATION_FILES (comma-separated JSON files)
+  RELAYER_ATTESTATION_SOURCE (optional: db|files; default auto)
+  RELAYER_API_DB_PATH (SQLite DB path; used when source=db or when file exists)
   RELAYER_THRESHOLD (default: 2)
   RELEASE_AGGREGATOR_OUTPUT_FILE (default: ${DEFAULT_OUTPUT_FILE})
 `);
     return;
   }
 
-  const files = resolveInputFiles();
-  if (files.length === 0) {
-    throw new Error("No release attestation files found. Set RELAYER_RELEASE_ATTESTATION_FILES or create .data/release-attestations/*.json.");
-  }
+  const dbPath = process.env.RELAYER_API_DB_PATH?.trim() || "";
+  const sourceMode = (process.env.RELAYER_ATTESTATION_SOURCE?.trim() || "").toLowerCase();
   const threshold = Number(process.env.RELAYER_THRESHOLD?.trim() || "2");
   if (!Number.isInteger(threshold) || threshold < 1 || threshold > 255) {
     throw new Error("RELAYER_THRESHOLD must be an integer in [1,255].");
   }
   const outputFile = process.env.RELEASE_AGGREGATOR_OUTPUT_FILE?.trim() || DEFAULT_OUTPUT_FILE;
-  const entries = loadEntries(files);
+  let files = [];
+  let entries = [];
+  if (sourceMode === "db" || (dbPath && fs.existsSync(dbPath) && sourceMode !== "files")) {
+    if (!dbPath) {
+      throw new Error("RELAYER_API_DB_PATH is required when RELAYER_ATTESTATION_SOURCE=db");
+    }
+    entries = loadEntriesFromDb(dbPath);
+    files = [`sqlite:${dbPath}`];
+  } else {
+    files = resolveInputFiles();
+    if (files.length === 0) {
+      throw new Error("No release attestation files found. Set RELAYER_RELEASE_ATTESTATION_FILES or create .data/release-attestations/*.json.");
+    }
+    entries = loadEntries(files);
+  }
   const groups = new Map();
   for (const entry of entries) {
     const hash = String(entry.pending.payloadHashHex ?? "").toLowerCase();
@@ -187,13 +231,34 @@ Optional:
     ready: candidates.filter((entry) => entry.ready).length,
     candidates,
   };
-  fs.mkdirSync(path.dirname(outputFile), { recursive: true });
-  fs.writeFileSync(outputFile, JSON.stringify(output, null, 2));
-  console.log(`Wrote ${output.ready}/${output.groups} ready release candidates -> ${outputFile}`);
+  const disableFileOutput =
+    process.env.RELAYER_DISABLE_FILE_OUTPUT?.trim() === "1" ||
+    process.env.RELAYER_DISABLE_FILE_OUTPUT?.trim()?.toLowerCase() === "true";
+  if (!disableFileOutput) {
+    fs.mkdirSync(path.dirname(outputFile), { recursive: true });
+    fs.writeFileSync(outputFile, JSON.stringify(output, null, 2));
+    console.log(`Wrote ${output.ready}/${output.groups} ready release candidates -> ${outputFile}`);
+  } else {
+    console.log(`File output disabled; generated ${output.ready}/${output.groups} ready release candidates in-memory.`);
+  }
+
+  try {
+    const published = await publishReleaseCandidatesSnapshot(output, disableFileOutput ? null : outputFile);
+    if (published?.skipped) {
+      console.log(`[release-aggregator] API publish skipped: ${published.reason}`);
+    } else {
+      console.log(`[release-aggregator] Published release candidates snapshot to relayer API.`);
+    }
+  } catch (error) {
+    console.error(`[release-aggregator] API publish failed: ${error instanceof Error ? error.message : String(error)}`);
+    if (disableFileOutput) {
+      throw error;
+    }
+  }
 }
 
 try {
-  main();
+  await main();
 } catch (error) {
   console.error(error);
   process.exit(1);
