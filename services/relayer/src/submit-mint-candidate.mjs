@@ -251,6 +251,10 @@ function buildWalletFromEnv(opnetNetwork) {
   };
 }
 
+function wantsPreflightOnly() {
+  return process.argv.includes("--preflight") || process.env.MINT_SUBMIT_PREFLIGHT_ONLY === "1";
+}
+
 async function main() {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     console.log(`Submit OPNet Mint Candidate
@@ -276,6 +280,7 @@ Optional:
   OPNET_MAX_SAT_SPEND (default: 20000)
   OPNET_FEE_RATE (default: 2)
   MINT_RECIPIENT_OPNET_ADDRESS (optional op.../bc1... recipient string; resolved via RPC and must match attested recipient hash)
+  MINT_SUBMIT_PREFLIGHT_ONLY=1 (or pass --preflight) to validate recipient resolution and stop before simulation/tx send
 `);
     return;
   }
@@ -314,7 +319,6 @@ Optional:
     throw new Error("Bridge address is missing. Set OPNET_BRIDGE_ADDRESS or ensure candidate has message.opnetBridge.");
   }
 
-  const { wallet, walletSource, walletMeta } = buildWalletFromEnv(opnetNetwork);
   const provider = createOpnetJsonRpcProvider({ url: opnetRpcUrl, network: opnetNetwork });
   const recipientAddressHint = process.env.MINT_RECIPIENT_OPNET_ADDRESS?.trim() || "";
 
@@ -336,6 +340,45 @@ Optional:
   if (recipientAddressHint) {
     console.log(`Recipient address hint (resolved via RPC): ${recipientAddressHint}`);
   }
+  let recipientTweakedHex = null;
+  let recipientP2tr = null;
+  try {
+    recipientTweakedHex = recipient.tweakedToHex();
+  } catch (error) {
+    throw new Error(
+      `Recipient preflight failed while reading tweaked pubkey: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  try {
+    if (typeof recipient.p2tr === "function") {
+      recipientP2tr = recipient.p2tr(opnetNetwork);
+    }
+  } catch (error) {
+    throw new Error(
+      `Recipient preflight failed while deriving p2tr: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  console.log(
+    JSON.stringify(
+      {
+        action: "opnet/mint/preflight",
+        preflightOnly: wantsPreflightOnly(),
+        candidatePayloadHash: selected.payloadHashHex,
+        attestedRecipientHex: normalizeHex(mintSubmission.recipient),
+        resolvedRecipientHex: recipient.toHex(),
+        recipientTweakedHex,
+        recipientP2tr,
+      },
+      null,
+      2,
+    ),
+  );
+  if (wantsPreflightOnly()) {
+    console.log("Preflight only mode enabled; skipping contract simulation and tx submission.");
+    return;
+  }
+
+  const { wallet, walletSource, walletMeta } = buildWalletFromEnv(opnetNetwork);
 
   const simulation = await bridge.mintWithRelaySignatures(
     Number(mintSubmission.assetId),
