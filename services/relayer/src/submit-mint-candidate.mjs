@@ -117,30 +117,84 @@ async function parseRecipientForBridgeAbi(rawRecipient, provider, recipientAddre
   const recipientHex = normalizeHex(rawRecipient);
   const recipientValue = hex32ToBigInt(recipientHex, "mintSubmission.recipient");
 
-  const addressHint = String(recipientAddressHint ?? "").trim();
-  if (addressHint && typeof provider?.getPublicKeyInfo === "function") {
-    try {
-      const resolved = await provider.getPublicKeyInfo(addressHint, false);
-      const resolvedHex = normalizeHex(typeof resolved?.toHex === "function" ? resolved.toHex() : "");
-      if (!resolvedHex) {
-        throw new Error("RPC returned recipient object without toHex().");
-      }
-      if (resolvedHex !== recipientHex) {
-        throw new Error(
-          [
-            "Resolved OPNet recipient does not match attested recipient hash.",
-            `hint=${addressHint}`,
-            `resolved=${resolvedHex}`,
-            `attested=${recipientHex}`,
-          ].join(" "),
-        );
-      }
-      return resolved;
-    } catch (error) {
+  const tryBuildAddressFromRawInfo = (info, sourceLabel) => {
+    if (!info || typeof info !== "object" || Object.hasOwn(info, "error")) return null;
+    const tweakedPubkey = normalizeHex(info.tweakedPubkey);
+    const mldsaHashedPublicKey = normalizeHex(info.mldsaHashedPublicKey);
+    if (!isLikelyHex(tweakedPubkey) || !isLikelyHex(mldsaHashedPublicKey)) return null;
+
+    const tweakedValue = hex32ToBigInt(tweakedPubkey, `${sourceLabel}.tweakedPubkey`);
+    const mldsaHashValue = hex32ToBigInt(mldsaHashedPublicKey, `${sourceLabel}.mldsaHashedPublicKey`);
+
+    if (mldsaHashedPublicKey !== recipientHex) {
       throw new Error(
-        `Failed to resolve MINT_RECIPIENT_OPNET_ADDRESS=${addressHint}: ${error instanceof Error ? error.message : String(error)}`,
+        [
+          "Resolved OPNet recipient does not match attested recipient hash.",
+          `source=${sourceLabel}`,
+          `resolved=${mldsaHashedPublicKey}`,
+          `attested=${recipientHex}`,
+        ].join(" "),
       );
     }
+
+    return Address.fromBigInt(mldsaHashValue, tweakedValue);
+  };
+
+  const addressHint = String(recipientAddressHint ?? "").trim();
+  if (addressHint) {
+    let primaryError = null;
+    if (typeof provider?.getPublicKeyInfo === "function") {
+      try {
+        const resolved = await provider.getPublicKeyInfo(addressHint, false);
+        const resolvedHex = normalizeHex(typeof resolved?.toHex === "function" ? resolved.toHex() : "");
+        if (!resolvedHex) {
+          throw new Error("RPC returned recipient object without toHex().");
+        }
+        if (resolvedHex !== recipientHex) {
+          throw new Error(
+            [
+              "Resolved OPNet recipient does not match attested recipient hash.",
+              `hint=${addressHint}`,
+              `resolved=${resolvedHex}`,
+              `attested=${recipientHex}`,
+            ].join(" "),
+          );
+        }
+        return resolved;
+      } catch (error) {
+        primaryError = error;
+      }
+    }
+
+    // Some testnet RPC nodes cannot resolve op.../p2tr via getPublicKeyInfo but do return
+    // raw key material via getPublicKeysInfoRaw. Build the Address object manually from that.
+    if (typeof provider?.getPublicKeysInfoRaw === "function") {
+      try {
+        const rpcInfoMap = await provider.getPublicKeysInfoRaw([addressHint]);
+        const infos = [];
+        if (rpcInfoMap && typeof rpcInfoMap === "object") {
+          if (Object.hasOwn(rpcInfoMap, addressHint)) infos.push(rpcInfoMap[addressHint]);
+          infos.push(...Object.values(rpcInfoMap));
+        }
+        for (const info of infos) {
+          try {
+            const built = tryBuildAddressFromRawInfo(info, `getPublicKeysInfoRaw(${addressHint})`);
+            if (built) return built;
+          } catch (error) {
+            throw error;
+          }
+        }
+      } catch (error) {
+        const primaryMessage = primaryError instanceof Error ? primaryError.message : String(primaryError ?? "");
+        throw new Error(
+          `Failed to resolve MINT_RECIPIENT_OPNET_ADDRESS=${addressHint}: ${error instanceof Error ? error.message : String(error)}${primaryMessage ? ` (getPublicKeyInfo fallback error: ${primaryMessage})` : ""}`,
+        );
+      }
+    }
+
+    throw new Error(
+      `Failed to resolve MINT_RECIPIENT_OPNET_ADDRESS=${addressHint}: ${primaryError instanceof Error ? primaryError.message : String(primaryError ?? "No supported RPC resolver available.")}`,
+    );
   }
 
   // Contract runtime expects a valid Schnorr/tweaked key on the recipient Address.
@@ -157,16 +211,9 @@ async function parseRecipientForBridgeAbi(rawRecipient, provider, recipientAddre
       }
 
       for (const info of infos) {
-        if (!info || typeof info !== "object" || Object.hasOwn(info, "error")) continue;
-        const tweakedPubkey = normalizeHex(info.tweakedPubkey);
-        const mldsaHashedPublicKey = normalizeHex(info.mldsaHashedPublicKey);
-        if (!isLikelyHex(tweakedPubkey) || !isLikelyHex(mldsaHashedPublicKey)) continue;
         try {
-          const tweakedValue = hex32ToBigInt(tweakedPubkey, "recipient.tweakedPubkey");
-          const mldsaHashValue = hex32ToBigInt(mldsaHashedPublicKey, "recipient.mldsaHashedPublicKey");
-          if (recipientHex === tweakedPubkey || recipientHex === mldsaHashedPublicKey) {
-            return Address.fromBigInt(mldsaHashValue, tweakedValue);
-          }
+          const built = tryBuildAddressFromRawInfo(info, "recipientRawLookup");
+          if (built) return built;
         } catch {
           // Try next candidate/info.
         }
