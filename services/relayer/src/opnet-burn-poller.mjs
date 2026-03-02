@@ -430,68 +430,77 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
             const block = await provider.getBlock(height, true);
             const blockHeight = BigInt(block.height);
             for (const tx of block.transactions) {
-              const bridgeEventsRaw = normalizeEventBuckets(tx.events, mapping.opnet.bridgeAddress, mapping.opnet.bridgeHex);
-              if (bridgeEventsRaw.length === 0) continue;
-              let decodedEvents = [];
               try {
-                decodedEvents = bridge.decodeEvents(bridgeEventsRaw);
+                const bridgeEventsRaw = normalizeEventBuckets(tx.events, mapping.opnet.bridgeAddress, mapping.opnet.bridgeHex);
+                if (bridgeEventsRaw.length === 0) continue;
+                let decodedEvents = [];
+                try {
+                  decodedEvents = bridge.decodeEvents(bridgeEventsRaw);
+                } catch (error) {
+                  console.warn(
+                    `[opnet-burn-poller] skipping tx=${tx.hash} at block=${blockHeight.toString()} due to decode error: ${
+                      error instanceof Error ? error.message : String(error)
+                    }`,
+                  );
+                  continue;
+                }
+                let burnOrdinal = 0;
+                for (const evt of decodedEvents) {
+                  if (evt.type !== "BurnRequested") continue;
+                  const props = evt.properties ?? {};
+                  const observationId = `${tx.hash}:${burnOrdinal}`;
+                  burnOrdinal += 1;
+                  if (seen.has(observationId)) continue;
+                  seen.add(observationId);
+
+                  const message = {
+                    version: attestationVersion,
+                    direction: DIRECTION_OP_TO_ETH_RELEASE,
+                    ethereumVault: String(mapping.ethereum.vaultAddress),
+                    opnetBridge: String(mapping.opnet.bridgeAddress),
+                    opnetBridgeHex: String(mapping.opnet.bridgeHex),
+                    ethereumUser: normalizeEthereumRecipientHex20(props.ethereumRecipient),
+                    opnetUser: await normalizeOpnetAddressHex32Resolved(props.from, provider),
+                    assetId: Number(props.assetId),
+                    amount: String(props.amount),
+                    nonce: String(props.withdrawalId),
+                  };
+                  const payloadHashBytes = encodeReleaseAttestationHash(message);
+                  const payloadHashHex = bytesToHex(payloadHashBytes);
+                  const signatures = relaySigners.map((signer) => ({
+                    relayIndex: signer.relayIndex,
+                    relayerId: signer.relayerId,
+                    signerId: signer.signerId,
+                    signerPubKeyHex: signer.signerPubKeyHex,
+                    signatureHex: signer.signDigestHex(payloadHashHex),
+                  }));
+
+                  pending.push({
+                    observationId,
+                    message,
+                    canonicalPayload: canonicalPayload(message),
+                    payloadHashHex,
+                    signerIds: signatures.map((entry) => entry.signerId),
+                    signatures,
+                    source: {
+                      network: mapping.opnet.network,
+                      bridgeAddress: mapping.opnet.bridgeAddress,
+                      blockNumber: Number(blockHeight),
+                      blockHash: block.hash,
+                      txHash: tx.hash,
+                      txIndex: tx.index,
+                      eventType: evt.type,
+                      eventIndex: burnOrdinal - 1,
+                    },
+                  });
+                }
               } catch (error) {
                 console.warn(
-                  `[opnet-burn-poller] skipping tx=${tx.hash} at block=${blockHeight.toString()} due to decode error: ${
+                  `[opnet-burn-poller] skipping tx=${tx.hash} at block=${blockHeight.toString()} due to event parse error: ${
                     error instanceof Error ? error.message : String(error)
                   }`,
                 );
                 continue;
-              }
-              let burnOrdinal = 0;
-              for (const evt of decodedEvents) {
-                if (evt.type !== "BurnRequested") continue;
-                const props = evt.properties ?? {};
-                const observationId = `${tx.hash}:${burnOrdinal}`;
-                burnOrdinal += 1;
-                if (seen.has(observationId)) continue;
-                seen.add(observationId);
-
-                const message = {
-                  version: attestationVersion,
-                  direction: DIRECTION_OP_TO_ETH_RELEASE,
-                  ethereumVault: String(mapping.ethereum.vaultAddress),
-                  opnetBridge: String(mapping.opnet.bridgeAddress),
-                  opnetBridgeHex: String(mapping.opnet.bridgeHex),
-                  ethereumUser: normalizeEthereumRecipientHex20(props.ethereumRecipient),
-                  opnetUser: await normalizeOpnetAddressHex32Resolved(props.from, provider),
-                  assetId: Number(props.assetId),
-                  amount: String(props.amount),
-                  nonce: String(props.withdrawalId),
-                };
-                const payloadHashBytes = encodeReleaseAttestationHash(message);
-                const payloadHashHex = bytesToHex(payloadHashBytes);
-                const signatures = relaySigners.map((signer) => ({
-                  relayIndex: signer.relayIndex,
-                  relayerId: signer.relayerId,
-                  signerId: signer.signerId,
-                  signerPubKeyHex: signer.signerPubKeyHex,
-                  signatureHex: signer.signDigestHex(payloadHashHex),
-                }));
-
-                pending.push({
-                  observationId,
-                  message,
-                  canonicalPayload: canonicalPayload(message),
-                  payloadHashHex,
-                  signerIds: signatures.map((entry) => entry.signerId),
-                  signatures,
-                  source: {
-                    network: mapping.opnet.network,
-                    bridgeAddress: mapping.opnet.bridgeAddress,
-                    blockNumber: Number(blockHeight),
-                    blockHash: block.hash,
-                    txHash: tx.hash,
-                    txIndex: tx.index,
-                    eventType: evt.type,
-                    eventIndex: burnOrdinal - 1,
-                  },
-                });
               }
             }
           }
