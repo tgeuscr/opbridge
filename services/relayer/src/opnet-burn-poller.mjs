@@ -427,7 +427,17 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
         while (cursor <= head) {
           const end = cursor + BigInt(maxBlockRange) - 1n <= head ? cursor + BigInt(maxBlockRange) - 1n : head;
           for (let height = cursor; height <= end; height++) {
-            const block = await provider.getBlock(height, true);
+            let block;
+            try {
+              block = await provider.getBlock(height, true);
+            } catch (error) {
+              console.warn(
+                `[opnet-burn-poller] skipping block=${height.toString()} due to block fetch/parse error: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+              continue;
+            }
             const blockHeight = BigInt(block.height);
             for (const tx of block.transactions) {
               try {
