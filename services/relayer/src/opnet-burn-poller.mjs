@@ -314,11 +314,31 @@ function normalizeEventBuckets(contractEvents, bridgeAddress, bridgeHex) {
     if (!Array.isArray(events)) continue;
     if (targets.has(String(key).toLowerCase())) {
       for (const event of events) {
-        // opnet.decodeEvents expects base64 payloads; skip malformed hex-prefixed entries.
-        if (typeof event === "string" && event.trim().toLowerCase().startsWith("0x")) {
+        // opnet.decodeEvents expects base64 payload strings. Some RPC variants return
+        // object wrappers or hex-prefixed payloads; normalize to base64-safe strings.
+        let payload = event;
+        if (payload && typeof payload === "object") {
+          if (typeof payload.data === "string") {
+            payload = payload.data;
+          } else if (typeof payload.payload === "string") {
+            payload = payload.payload;
+          }
+        }
+
+        if (typeof payload !== "string") continue;
+        const trimmed = payload.trim();
+        if (!trimmed) continue;
+        if (trimmed.toLowerCase().startsWith("0x")) {
+          const hex = trimmed.slice(2);
+          if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
+            continue;
+          }
+          const asBase64 = Buffer.from(hex, "hex").toString("base64");
+          if (asBase64) buckets.push(asBase64);
           continue;
         }
-        buckets.push(event);
+
+        buckets.push(trimmed);
       }
     }
   }
