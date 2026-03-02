@@ -57,6 +57,24 @@ const BRIDGE_BURN_ABI = [
   },
 ];
 
+const BRIDGE_MINT_ABI = [
+  {
+    name: 'mintWithRelaySignatures',
+    inputs: [
+      { name: 'asset', type: ABIDataTypes.UINT8 },
+      { name: 'ethereumUser', type: ABIDataTypes.ADDRESS },
+      { name: 'recipient', type: ABIDataTypes.ADDRESS },
+      { name: 'amount', type: ABIDataTypes.UINT256 },
+      { name: 'depositId', type: ABIDataTypes.UINT256 },
+      { name: 'attestationVersion', type: ABIDataTypes.UINT8 },
+      { name: 'relayIndexesPacked', type: ABIDataTypes.BYTES },
+      { name: 'relaySignaturesPacked', type: ABIDataTypes.BYTES },
+    ],
+    outputs: [],
+    type: BitcoinAbiTypes.Function,
+  },
+];
+
 function short(value?: string | null) {
   if (!value) return '-';
   if (value.length < 14) return value;
@@ -138,6 +156,28 @@ function parseHumanAmount(raw: string, decimals: number): bigint {
   return BigInt(normalized);
 }
 
+function hexToBytes(raw: string, fieldName: string): Uint8Array {
+  const value = raw.trim().toLowerCase();
+  const normalized = value.startsWith('0x') ? value.slice(2) : value;
+  if (!normalized || normalized.length % 2 !== 0 || !/^[0-9a-f]+$/.test(normalized)) {
+    throw new Error(`${fieldName} must be a valid hex string.`);
+  }
+  const out = new Uint8Array(normalized.length / 2);
+  for (let i = 0; i < out.length; i += 1) {
+    out[i] = Number.parseInt(normalized.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+function parseEthereumUserForMint(raw: string): Address {
+  const bytes = hexToBytes(raw, 'mintSubmission.ethereumUser');
+  if (bytes.length !== 20 && bytes.length !== 32) {
+    throw new Error(`mintSubmission.ethereumUser must be 20 or 32 bytes; got ${bytes.length}.`);
+  }
+  const hex = bytes.length === 20 ? `0x${padHexToBytes(raw.replace(/^0x/, ''), 32)}` : normalizeBytes32Hex(raw, 'mintSubmission.ethereumUser');
+  return Address.fromBigInt(BigInt(hex));
+}
+
 function formatEthereumError(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
@@ -181,6 +221,9 @@ export function App() {
   const [burnAmount, setBurnAmount] = useState('');
   const [depositBusy, setDepositBusy] = useState(false);
   const [depositStatus, setDepositStatus] = useState('No deposit started yet.');
+  const [claimDepositId, setClaimDepositId] = useState('');
+  const [claimMintBusy, setClaimMintBusy] = useState(false);
+  const [claimMintStatus, setClaimMintStatus] = useState('No mint claim started yet.');
   const [burnWithdrawalId, setBurnWithdrawalId] = useState('0');
   const [burnBusy, setBurnBusy] = useState(false);
   const [burnStatus, setBurnStatus] = useState('No burn started yet.');
@@ -371,6 +414,9 @@ export function App() {
   const burnReady = walletPairReady && onSepolia;
   const depositConfigReady = Boolean(ETH_VAULT_ADDRESS && ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol]);
   const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && opnetSigner && opnetAddressObject && walletAddress);
+  const claimMintReady = Boolean(
+    opConnected && onSepolia && ethConnected && statusApiUrl.trim() && burnConfigReady && opRecipientHash,
+  );
 
   async function waitForEthereumReceipt(provider: EthereumProvider, txHash: string, label: string) {
     for (let attempt = 0; attempt < 90; attempt += 1) {
@@ -505,6 +551,134 @@ export function App() {
       setBurnStatus(`Burn failed: ${formatEthereumError(error)}`);
     } finally {
       setBurnBusy(false);
+    }
+  }
+
+  async function runClaimMintFlow() {
+    if (!statusApiUrl.trim()) {
+      setClaimMintStatus('Set Status API Base URL first.');
+      return;
+    }
+    if (!opnetProvider || !opnetSigner || !opnetAddressObject || !walletAddress) {
+      setClaimMintStatus('Connect OP_WALLET first (provider/signer unavailable).');
+      return;
+    }
+    if (!ethAddress.trim()) {
+      setClaimMintStatus('Connect MetaMask first to resolve your deposit candidates.');
+      return;
+    }
+
+    try {
+      setClaimMintBusy(true);
+      setClaimMintStatus('Fetching ready mint candidates from Relayer API...');
+      const base = statusApiUrl.replace(/\/$/, '');
+      const recipientHash = normalizeBytes32Hex(opRecipientHash, 'Connected OP_WALLET hashed MLDSA key');
+      const query = new URLSearchParams({
+        ethereumUser: ethAddress.toLowerCase(),
+        recipientHash: recipientHash.toLowerCase(),
+        ready: 'true',
+        limit: '20',
+      });
+      const response = await fetch(`${base}/mint-candidates?${query.toString()}`);
+      const body = (await response.json()) as {
+        ok?: boolean;
+        items?: Array<{
+          depositId?: string;
+          mintSubmission?: {
+            assetId?: number | string;
+            ethereumUser?: string;
+            recipient?: string;
+            amount?: string;
+            nonce?: string;
+            attestationVersion?: number | string;
+            relayIndexesPackedHex?: string;
+            relaySignaturesPackedHex?: string;
+          };
+        }>;
+      };
+      if (!response.ok) {
+        throw new Error(`mint-candidates HTTP ${response.status}`);
+      }
+      const items = Array.isArray(body.items) ? body.items : [];
+      if (items.length === 0) {
+        setClaimMintStatus('No ready mint candidate yet for this wallet pair. Wait for relayer aggregation and retry.');
+        return;
+      }
+
+      const wantedDepositId = claimDepositId.trim();
+      const selected = wantedDepositId
+        ? items.find((entry) => String(entry.depositId ?? entry.mintSubmission?.nonce ?? '') === wantedDepositId)
+        : items[0];
+      if (!selected) {
+        setClaimMintStatus(`No ready candidate found for depositId=${wantedDepositId}.`);
+        return;
+      }
+      if (!selected.mintSubmission) {
+        throw new Error('Candidate missing mintSubmission payload.');
+      }
+
+      const mint = selected.mintSubmission;
+      const mintRecipient = normalizeBytes32Hex(String(mint.recipient ?? ''), 'mintSubmission.recipient');
+      if (mintRecipient.toLowerCase() !== recipientHash.toLowerCase()) {
+        throw new Error(`Recipient mismatch: candidate=${mintRecipient} connectedWallet=${recipientHash}`);
+      }
+
+      const assetId = Number(mint.assetId);
+      const amount = BigInt(String(mint.amount ?? '0'));
+      const depositId = BigInt(String(mint.nonce ?? selected.depositId ?? '0'));
+      const attestationVersion = Number(mint.attestationVersion);
+      const relayIndexesPacked = hexToBytes(String(mint.relayIndexesPackedHex ?? ''), 'mintSubmission.relayIndexesPackedHex');
+      const relaySignaturesPacked = hexToBytes(
+        String(mint.relaySignaturesPackedHex ?? ''),
+        'mintSubmission.relaySignaturesPackedHex',
+      );
+      if (!Number.isInteger(assetId) || assetId < 0) throw new Error(`Invalid assetId=${mint.assetId}`);
+      if (amount <= 0n) throw new Error(`Invalid amount=${mint.amount}`);
+      if (!Number.isInteger(attestationVersion) || attestationVersion < 0 || attestationVersion > 255) {
+        throw new Error(`Invalid attestationVersion=${mint.attestationVersion}`);
+      }
+      if (relayIndexesPacked.length === 0) throw new Error('relayIndexesPackedHex cannot be empty.');
+      if (relaySignaturesPacked.length === 0) throw new Error('relaySignaturesPackedHex cannot be empty.');
+
+      const ethereumUser = parseEthereumUserForMint(String(mint.ethereumUser ?? ''));
+      const bridge = getContract(OPNET_BRIDGE_ADDRESS, BRIDGE_MINT_ABI as never, opnetProvider as never, networks.opnetTestnet);
+      if (typeof (bridge as { setSender?: (sender: Address) => void }).setSender === 'function') {
+        (bridge as { setSender: (sender: Address) => void }).setSender(opnetAddressObject);
+      }
+
+      setClaimMintStatus(`Simulating mint for depositId=${depositId.toString()}...`);
+      const simulation = await (bridge as any).mintWithRelaySignatures(
+        assetId,
+        ethereumUser,
+        opnetAddressObject,
+        amount,
+        depositId,
+        attestationVersion,
+        relayIndexesPacked,
+        relaySignaturesPacked,
+      );
+      if (simulation?.revert) {
+        throw new Error(`Mint simulation revert: ${simulation.revert}`);
+      }
+
+      setClaimMintStatus(`Simulation OK. Sending mint transaction for depositId=${depositId.toString()}...`);
+      const tx = await simulation.sendTransaction({
+        signer: opnetSigner,
+        mldsaSigner: null,
+        refundTo: walletAddress,
+        maximumAllowedSatToSpend: OPNET_MAX_SAT_SPEND,
+        feeRate: OPNET_FEE_RATE,
+        network: networks.opnetTestnet,
+      });
+
+      setDepositLookupId(depositId.toString());
+      setClaimMintStatus(
+        `Mint sent. depositId=${depositId.toString()} amount=${amount.toString()} tx=${short((tx as { transactionId?: string })?.transactionId || null)}`,
+      );
+    } catch (error) {
+      setClaimMintStatus(`Mint claim failed: ${formatEthereumError(error)}`);
+    } finally {
+      setClaimMintBusy(false);
     }
   }
 
@@ -683,6 +857,23 @@ export function App() {
               {depositBusy ? 'Submitting Deposit…' : 'Approve + Deposit (Locked Recipient)'}
             </button>
           </div>
+          <label className="field">
+            <span>Claim Deposit ID (optional)</span>
+            <input
+              value={claimDepositId}
+              onChange={(e) => setClaimDepositId(e.target.value)}
+              placeholder="Leave blank for latest ready candidate"
+              inputMode="numeric"
+            />
+          </label>
+          <div className="actions">
+            <button
+              onClick={runClaimMintFlow}
+              disabled={!claimMintReady || claimMintBusy}
+            >
+              {claimMintBusy ? 'Submitting Mint…' : 'Claim Mint On OPNet'}
+            </button>
+          </div>
           <p className={`notice ${depositReady ? 'ok' : ''}`}>
             {depositReady
               ? depositConfigReady
@@ -690,10 +881,16 @@ export function App() {
                 : 'Wallets are ready, but vault/token addresses are missing. Set Vercel env vars to enable deposits.'
               : 'Connect OP_WALLET + MetaMask on Sepolia to enable the deposit flow.'}
           </p>
+          <p className={`notice ${claimMintReady ? 'ok' : ''}`}>
+            {claimMintReady
+              ? 'Mint claim is enabled. It fetches your ready candidate from Relayer API and submits OPNet mint via OP_WALLET.'
+              : 'Connect both wallets, use Sepolia, and set Status API URL to enable in-site mint claim.'}
+          </p>
           <p className="muted">
             Config: vault <code>{short(ETH_VAULT_ADDRESS)}</code> | token <code>{short(ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol])}</code>
           </p>
           <pre className="log-box">{depositStatus}</pre>
+          <pre className="log-box">{claimMintStatus}</pre>
         </article>
 
         <article className="card flow-card">
