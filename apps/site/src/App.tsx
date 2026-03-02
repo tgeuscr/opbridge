@@ -24,6 +24,7 @@ const OPNET_FEE_RATE = Number(import.meta.env.VITE_OPNET_FEE_RATE?.trim() || '2'
 const OPNET_MAX_SAT_SPEND = BigInt(import.meta.env.VITE_OPNET_MAX_SAT_SPEND?.trim() || '20000');
 const ERC20_APPROVE_SELECTOR = '0x095ea7b3';
 const VAULT_DEPOSIT_ERC20_SELECTOR = '0x47e7ef24';
+const VAULT_RELEASE_SELECTOR = '0x82c19770';
 
 const ETH_VAULT_ADDRESS = import.meta.env.VITE_ETHEREUM_VAULT_ADDRESS?.trim() || '';
 const ETH_TOKEN_ADDRESSES = {
@@ -129,12 +130,55 @@ function encodeBytes32Word(value: string): string {
   return normalizeBytes32Hex(value, 'bytes32').replace(/^0x/, '');
 }
 
+function encodeBytesWord(raw: string, fieldName: string): string {
+  const bytes = hexToBytes(raw, fieldName);
+  const lengthWord = encodeUintWord(bytes.length);
+  const dataHex = Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+  const remainder = dataHex.length % 64;
+  const paddedData = remainder === 0 ? dataHex : `${dataHex}${'0'.repeat(64 - remainder)}`;
+  return `${lengthWord}${paddedData}`;
+}
+
 function buildApproveCalldata(spender: string, amount: bigint): string {
   return `${ERC20_APPROVE_SELECTOR}${encodeAddressWord(spender)}${encodeUintWord(amount)}`;
 }
 
 function buildDepositErc20Calldata(assetId: number, amount: bigint, recipient: string): string {
   return `${VAULT_DEPOSIT_ERC20_SELECTOR}${encodeUintWord(assetId)}${encodeUintWord(amount)}${encodeBytes32Word(recipient)}`;
+}
+
+function buildReleaseCalldata(params: {
+  assetId: number;
+  opnetUser: string;
+  recipient: string;
+  amount: bigint;
+  withdrawalId: bigint;
+  attestationVersion: number;
+  relayIndexesPackedHex: string;
+  relaySignaturesPackedHex: string;
+}): string {
+  const relayIndexesWord = encodeBytesWord(params.relayIndexesPackedHex, 'releaseSubmission.relayIndexesPackedHex');
+  const relaySignaturesWord = encodeBytesWord(params.relaySignaturesPackedHex, 'releaseSubmission.relaySignaturesPackedHex');
+
+  const headWordCount = 8;
+  const relayIndexesOffset = BigInt(headWordCount * 32);
+  const relaySignaturesOffset = relayIndexesOffset + BigInt(relayIndexesWord.length / 2);
+
+  return (
+    `${VAULT_RELEASE_SELECTOR}` +
+    `${encodeUintWord(params.assetId)}` +
+    `${encodeBytes32Word(params.opnetUser)}` +
+    `${encodeAddressWord(params.recipient)}` +
+    `${encodeUintWord(params.amount)}` +
+    `${encodeUintWord(params.withdrawalId)}` +
+    `${encodeUintWord(params.attestationVersion)}` +
+    `${encodeUintWord(relayIndexesOffset)}` +
+    `${encodeUintWord(relaySignaturesOffset)}` +
+    `${relayIndexesWord}` +
+    `${relaySignaturesWord}`
+  );
 }
 
 function ethereumAddressToAddressWord(raw: string): Address {
@@ -176,6 +220,15 @@ function parseEthereumUserForMint(raw: string): Address {
   }
   const hex = bytes.length === 20 ? `0x${padHexToBytes(raw.replace(/^0x/, ''), 32)}` : normalizeBytes32Hex(raw, 'mintSubmission.ethereumUser');
   return Address.fromBigInt(BigInt(hex));
+}
+
+function normalizeHexBytes(raw: string, fieldName: string): string {
+  const value = raw.trim();
+  const normalized = value.startsWith('0x') ? value.slice(2) : value;
+  if (!normalized || normalized.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(normalized)) {
+    throw new Error(`${fieldName} must be valid hex bytes.`);
+  }
+  return `0x${normalized.toLowerCase()}`;
 }
 
 function formatEthereumError(error: unknown): string {
@@ -227,6 +280,9 @@ export function App() {
   const [burnWithdrawalId, setBurnWithdrawalId] = useState('0');
   const [burnBusy, setBurnBusy] = useState(false);
   const [burnStatus, setBurnStatus] = useState('No burn started yet.');
+  const [claimWithdrawalId, setClaimWithdrawalId] = useState('');
+  const [claimReleaseBusy, setClaimReleaseBusy] = useState(false);
+  const [claimReleaseStatus, setClaimReleaseStatus] = useState('No withdrawal claim started yet.');
 
   useEffect(() => {
     if (!statusApiUrl) {
@@ -417,8 +473,14 @@ export function App() {
   const claimMintReady = Boolean(
     opConnected && onSepolia && ethConnected && statusApiUrl.trim() && burnConfigReady && opRecipientHash,
   );
+  const claimReleaseReady = Boolean(walletPairReady && onSepolia && statusApiUrl.trim() && ETH_VAULT_ADDRESS && opRecipientHash);
 
-  async function waitForEthereumReceipt(provider: EthereumProvider, txHash: string, label: string) {
+  async function waitForEthereumReceipt(
+    provider: EthereumProvider,
+    txHash: string,
+    label: string,
+    onPending?: (message: string) => void,
+  ) {
     for (let attempt = 0; attempt < 90; attempt += 1) {
       const receipt = (await provider.request({
         method: 'eth_getTransactionReceipt',
@@ -427,7 +489,7 @@ export function App() {
       if (receipt) return receipt;
       await new Promise((resolve) => window.setTimeout(resolve, 2000));
       if (attempt === 9) {
-        setDepositStatus(`${label} pending... waiting for confirmation`);
+        onPending?.(`${label} pending... waiting for confirmation`);
       }
     }
     throw new Error(`${label} receipt timeout for tx ${txHash}`);
@@ -469,7 +531,7 @@ export function App() {
         params: [{ from: account, to: tokenAddress, data: approveData }],
       })) as string;
 
-      const approveReceipt = await waitForEthereumReceipt(provider, approveTxHash, 'Approve');
+      const approveReceipt = await waitForEthereumReceipt(provider, approveTxHash, 'Approve', setDepositStatus);
       if (approveReceipt.status !== '0x1') {
         throw new Error(`Approve transaction failed: ${approveTxHash}`);
       }
@@ -481,7 +543,7 @@ export function App() {
         params: [{ from: account, to: vaultAddress, data: depositData }],
       })) as string;
 
-      const depositReceipt = await waitForEthereumReceipt(provider, depositTxHash, 'Deposit');
+      const depositReceipt = await waitForEthereumReceipt(provider, depositTxHash, 'Deposit', setDepositStatus);
       if (depositReceipt.status !== '0x1') {
         throw new Error(`Deposit transaction failed: ${depositTxHash}`);
       }
@@ -679,6 +741,140 @@ export function App() {
       setClaimMintStatus(`Mint claim failed: ${formatEthereumError(error)}`);
     } finally {
       setClaimMintBusy(false);
+    }
+  }
+
+  async function runClaimReleaseFlow() {
+    const provider = getEthereumProvider();
+    if (!provider) {
+      setClaimReleaseStatus('MetaMask provider not found.');
+      return;
+    }
+    if (!statusApiUrl.trim()) {
+      setClaimReleaseStatus('Set Status API Base URL first.');
+      return;
+    }
+    if (!ethAddress.trim()) {
+      setClaimReleaseStatus('Connect MetaMask first.');
+      return;
+    }
+
+    try {
+      setClaimReleaseBusy(true);
+      setClaimReleaseStatus('Checking MetaMask session...');
+      const [account] = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
+      const chainId = (await provider.request({ method: 'eth_chainId' })) as string;
+      setEthAddress(account ?? '');
+      setEthChainId(chainId ?? '');
+      if (!account) throw new Error('No MetaMask account connected.');
+      if ((chainId || '').toLowerCase() !== SEPOLIA_CHAIN_ID_HEX) {
+        throw new Error(`Wrong network. Expected Sepolia (${SEPOLIA_CHAIN_ID_HEX}), got ${chainId || '-'}.`);
+      }
+
+      const base = statusApiUrl.replace(/\/$/, '');
+      const recipient = normalizeEthereumAddress(account, 'Connected MetaMask address');
+      const opnetUser = normalizeBytes32Hex(opRecipientHash, 'Connected OP_WALLET hashed MLDSA key');
+      const query = new URLSearchParams({
+        recipient: recipient.toLowerCase(),
+        opnetUser: opnetUser.toLowerCase(),
+        ready: 'true',
+        limit: '20',
+      });
+
+      setClaimReleaseStatus('Fetching ready release candidates from Relayer API...');
+      const response = await fetch(`${base}/release-candidates?${query.toString()}`);
+      const body = (await response.json()) as {
+        items?: Array<{
+          withdrawalId?: string;
+          releaseSubmission?: {
+            assetId?: number | string;
+            opnetUser?: string;
+            recipient?: string;
+            amount?: string;
+            withdrawalId?: string;
+            attestationVersion?: number | string;
+            relayIndexesPackedHex?: string;
+            relaySignaturesPackedHex?: string;
+          };
+        }>;
+      };
+      if (!response.ok) {
+        throw new Error(`release-candidates HTTP ${response.status}`);
+      }
+      const items = Array.isArray(body.items) ? body.items : [];
+      if (items.length === 0) {
+        setClaimReleaseStatus('No ready release candidate yet for this wallet pair. Wait for relayer aggregation and retry.');
+        return;
+      }
+
+      const wantedWithdrawalId = claimWithdrawalId.trim();
+      const selected = wantedWithdrawalId
+        ? items.find((entry) => String(entry.withdrawalId ?? entry.releaseSubmission?.withdrawalId ?? '') === wantedWithdrawalId)
+        : items[0];
+      if (!selected) {
+        setClaimReleaseStatus(`No ready release candidate found for withdrawalId=${wantedWithdrawalId}.`);
+        return;
+      }
+      if (!selected.releaseSubmission) {
+        throw new Error('Candidate missing releaseSubmission payload.');
+      }
+
+      const submission = selected.releaseSubmission;
+      const submissionRecipient = normalizeEthereumAddress(String(submission.recipient ?? ''), 'releaseSubmission.recipient');
+      const submissionOpnetUser = normalizeBytes32Hex(String(submission.opnetUser ?? ''), 'releaseSubmission.opnetUser');
+      if (submissionRecipient.toLowerCase() !== recipient.toLowerCase()) {
+        throw new Error(`Recipient mismatch: candidate=${submissionRecipient} connected=${recipient}`);
+      }
+      if (submissionOpnetUser.toLowerCase() !== opnetUser.toLowerCase()) {
+        throw new Error(`OPNet user mismatch: candidate=${submissionOpnetUser} connectedWallet=${opnetUser}`);
+      }
+
+      const assetId = Number(submission.assetId);
+      const amount = BigInt(String(submission.amount ?? '0'));
+      const withdrawalId = BigInt(String(submission.withdrawalId ?? selected.withdrawalId ?? '0'));
+      const attestationVersion = Number(submission.attestationVersion);
+      const relayIndexesPackedHex = normalizeHexBytes(
+        String(submission.relayIndexesPackedHex ?? ''),
+        'releaseSubmission.relayIndexesPackedHex',
+      );
+      const relaySignaturesPackedHex = normalizeHexBytes(
+        String(submission.relaySignaturesPackedHex ?? ''),
+        'releaseSubmission.relaySignaturesPackedHex',
+      );
+      if (!Number.isInteger(assetId) || assetId < 0) throw new Error(`Invalid assetId=${submission.assetId}`);
+      if (amount <= 0n) throw new Error(`Invalid amount=${submission.amount}`);
+      if (!Number.isInteger(attestationVersion) || attestationVersion < 0 || attestationVersion > 255) {
+        throw new Error(`Invalid attestationVersion=${submission.attestationVersion}`);
+      }
+
+      const vaultAddress = normalizeEthereumAddress(ETH_VAULT_ADDRESS, 'Ethereum vault address');
+      const calldata = buildReleaseCalldata({
+        assetId,
+        opnetUser: submissionOpnetUser,
+        recipient,
+        amount,
+        withdrawalId,
+        attestationVersion,
+        relayIndexesPackedHex,
+        relaySignaturesPackedHex,
+      });
+
+      setClaimReleaseStatus(`Submitting withdrawal claim for withdrawalId=${withdrawalId.toString()}...`);
+      const txHash = (await provider.request({
+        method: 'eth_sendTransaction',
+        params: [{ from: account, to: vaultAddress, data: calldata }],
+      })) as string;
+
+      const receipt = await waitForEthereumReceipt(provider, txHash, 'Release', setClaimReleaseStatus);
+      if (receipt.status !== '0x1') {
+        throw new Error(`Release transaction failed: ${txHash}`);
+      }
+      setWithdrawalLookupId(withdrawalId.toString());
+      setClaimReleaseStatus(`Withdrawal released. withdrawalId=${withdrawalId.toString()} tx=${short(txHash)}`);
+    } catch (error) {
+      setClaimReleaseStatus(`Withdrawal claim failed: ${formatEthereumError(error)}`);
+    } finally {
+      setClaimReleaseBusy(false);
     }
   }
 
@@ -947,6 +1143,23 @@ export function App() {
               {burnBusy ? 'Submitting Burn…' : 'Request Burn (Locked Recipient)'}
             </button>
           </div>
+          <label className="field">
+            <span>Claim Withdrawal ID (optional)</span>
+            <input
+              value={claimWithdrawalId}
+              onChange={(e) => setClaimWithdrawalId(e.target.value)}
+              placeholder="Leave blank for latest ready candidate"
+              inputMode="numeric"
+            />
+          </label>
+          <div className="actions">
+            <button
+              onClick={runClaimReleaseFlow}
+              disabled={!claimReleaseReady || claimReleaseBusy}
+            >
+              {claimReleaseBusy ? 'Submitting Release…' : 'Claim Withdraw On Sepolia'}
+            </button>
+          </div>
           <p className={`notice ${burnReady ? 'ok' : ''}`}>
             {burnReady
               ? burnConfigReady
@@ -954,10 +1167,16 @@ export function App() {
                 : 'Wallets are ready, but OPNet bridge/signer config is missing. Set Vercel env vars and connect OP_WALLET.'
               : 'Connect both wallets and switch MetaMask to Sepolia to enable the withdrawal flow.'}
           </p>
+          <p className={`notice ${claimReleaseReady ? 'ok' : ''}`}>
+            {claimReleaseReady
+              ? 'Withdrawal claim is enabled. It fetches your ready release candidate and submits Sepolia release via MetaMask.'
+              : 'Connect both wallets, use Sepolia, and set Status API URL to enable in-site withdrawal claim.'}
+          </p>
           <p className="muted">
             Config: bridge <code>{short(OPNET_BRIDGE_ADDRESS)}</code> | OPNet wallet network <code>{network?.network ?? '-'}</code>
           </p>
           <pre className="log-box">{burnStatus}</pre>
+          <pre className="log-box">{claimReleaseStatus}</pre>
         </article>
       </section>
 
