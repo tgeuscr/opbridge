@@ -432,7 +432,17 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
             for (const tx of block.transactions) {
               const bridgeEventsRaw = normalizeEventBuckets(tx.events, mapping.opnet.bridgeAddress, mapping.opnet.bridgeHex);
               if (bridgeEventsRaw.length === 0) continue;
-              const decodedEvents = bridge.decodeEvents(bridgeEventsRaw);
+              let decodedEvents = [];
+              try {
+                decodedEvents = bridge.decodeEvents(bridgeEventsRaw);
+              } catch (error) {
+                console.warn(
+                  `[opnet-burn-poller] skipping tx=${tx.hash} at block=${blockHeight.toString()} due to decode error: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`,
+                );
+                continue;
+              }
               let burnOrdinal = 0;
               for (const evt of decodedEvents) {
                 if (evt.type !== "BurnRequested") continue;
