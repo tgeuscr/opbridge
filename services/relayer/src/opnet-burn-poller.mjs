@@ -313,7 +313,13 @@ function normalizeEventBuckets(contractEvents, bridgeAddress, bridgeHex) {
   for (const [key, events] of Object.entries(contractEvents)) {
     if (!Array.isArray(events)) continue;
     if (targets.has(String(key).toLowerCase())) {
-      buckets.push(...events);
+      for (const event of events) {
+        // opnet.decodeEvents expects base64 payloads; skip malformed hex-prefixed entries.
+        if (typeof event === "string" && event.trim().toLowerCase().startsWith("0x")) {
+          continue;
+        }
+        buckets.push(event);
+      }
     }
   }
   return buckets;
