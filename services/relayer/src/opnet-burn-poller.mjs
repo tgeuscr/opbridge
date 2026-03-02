@@ -439,7 +439,18 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
               continue;
             }
             const blockHeight = BigInt(block.height);
-            for (const tx of block.transactions) {
+            let transactions = [];
+            try {
+              transactions = Array.isArray(block.transactions) ? block.transactions : [];
+            } catch (error) {
+              console.warn(
+                `[opnet-burn-poller] skipping block=${height.toString()} tx list due to parse error: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+              continue;
+            }
+            for (const tx of transactions) {
               try {
                 const bridgeEventsRaw = normalizeEventBuckets(tx.events, mapping.opnet.bridgeAddress, mapping.opnet.bridgeHex);
                 if (bridgeEventsRaw.length === 0) continue;
