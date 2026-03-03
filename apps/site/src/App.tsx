@@ -436,6 +436,7 @@ export function App() {
   const [claimDepositId, setClaimDepositId] = useState('');
   const [claimMintBusy, setClaimMintBusy] = useState(false);
   const [claimMintStatus, setClaimMintStatus] = useState('No mint claim started yet.');
+  const [claimMintPreflight, setClaimMintPreflight] = useState('No mint preflight captured yet.');
   const [burnWithdrawalId, setBurnWithdrawalId] = useState('0');
   const [burnBusy, setBurnBusy] = useState(false);
   const [burnStatus, setBurnStatus] = useState('No burn started yet.');
@@ -903,6 +904,7 @@ export function App() {
     let preflightDetails = '';
     try {
       setClaimMintBusy(true);
+      setClaimMintPreflight('No mint preflight captured yet.');
       setClaimMintStatus('Fetching ready mint candidates from Relayer API...');
       const base = statusApiUrl.replace(/\/$/, '');
       const recipientHash = normalizeBytes32Hex(opRecipientHash, 'Connected OP_WALLET hashed MLDSA key');
@@ -1043,6 +1045,7 @@ export function App() {
         null,
         2,
       );
+      setClaimMintPreflight(preflightDetails);
       const bridge = getContract(OPNET_BRIDGE_ADDRESS, BRIDGE_MINT_ABI as never, opnetProvider as never, networks.opnetTestnet);
       if (typeof (bridge as { setSender?: (sender: Address) => void }).setSender === 'function') {
         (bridge as { setSender: (sender: Address) => void }).setSender(sender);
@@ -1084,6 +1087,7 @@ export function App() {
     } catch (error) {
       const baseMessage = `Mint claim failed: ${formatEthereumError(error)}`;
       if (preflightDetails) {
+        setClaimMintPreflight(preflightDetails);
         setClaimMintStatus(`${baseMessage}\nPreflight:\n${preflightDetails}`);
       } else {
         setClaimMintStatus(baseMessage);
@@ -1436,6 +1440,8 @@ export function App() {
           </p>
           <pre className="log-box">{depositStatus}</pre>
           <pre className="log-box">{claimMintStatus}</pre>
+          <p className="muted">Last Mint Preflight (persistent)</p>
+          <pre className="log-box">{claimMintPreflight}</pre>
         </article>
 
         <article className="card flow-card">
