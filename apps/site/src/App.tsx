@@ -423,6 +423,23 @@ async function parseRecipientForMint(
   addressHint: string,
 ): Promise<Address> {
   const recipientHex = normalizeBytes32Hex(rawRecipient, 'mintSubmission.recipient');
+  const hint = addressHint.trim();
+
+  // Prefer parsing from the connected OP_WALLET address string. This yields the
+  // runtime-native address form and avoids malformed Schnorr serialization edge cases.
+  if (hint) {
+    try {
+      const hinted = Address.fromString(hint);
+      const hintedHex = normalizeHex(typeof (hinted as { toHex?: () => string }).toHex === 'function' ? hinted.toHex() : '');
+      if (hintedHex === recipientHex) {
+        return hinted;
+      }
+      throw new Error(`Recipient mismatch: candidate=${recipientHex} connectedWallet=${hintedHex}`);
+    } catch {
+      // Fall through to existing connected/rpc resolution below.
+    }
+  }
+
   if (!connectedAddress) throw new Error('Connected OP_WALLET address is unavailable.');
   const connectedHex = normalizeHex(typeof (connectedAddress as { toHex?: () => string }).toHex === 'function' ? connectedAddress.toHex() : '');
   if (!connectedHex) throw new Error('Connected OP_WALLET address could not be serialized.');
@@ -1263,9 +1280,17 @@ export function App() {
       if (relayIndexesPacked.length === 0) throw new Error('relayIndexesPackedHex cannot be empty.');
       if (relaySignaturesPacked.length === 0) throw new Error('relaySignaturesPackedHex cannot be empty.');
 
-      const sender = await resolveConnectedSender();
-      if (!sender) throw new Error('Connected OP_WALLET sender address is unavailable.');
-      const recipient = await parseRecipientForMint(String(mint.recipient ?? ''), sender, opnetProvider, walletAddress);
+      const connectedSender = await resolveConnectedSender();
+      if (!connectedSender) throw new Error('Connected OP_WALLET sender address is unavailable.');
+      const recipient = await parseRecipientForMint(
+        String(mint.recipient ?? ''),
+        connectedSender,
+        opnetProvider,
+        walletAddress,
+      );
+      // Use resolved recipient as sender for mint call; in this flow they are the
+      // same connected OP_WALLET identity and this avoids sender/recipient format drift.
+      const sender = recipient;
       const ethereumUser = parseEthereumUserForMint(String(mint.ethereumUser ?? ''));
       const senderDebug = getAddressDebugInfo(sender);
       const recipientDebug = getAddressDebugInfo(recipient);
