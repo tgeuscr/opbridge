@@ -219,7 +219,7 @@ function parseEthereumUserForMint(raw: string): Address {
     throw new Error(`mintSubmission.ethereumUser must be 20 or 32 bytes; got ${bytes.length}.`);
   }
   const hex = bytes.length === 20 ? `0x${padHexToBytes(raw.replace(/^0x/, ''), 32)}` : normalizeBytes32Hex(raw, 'mintSubmission.ethereumUser');
-  return Address.fromBigInt(BigInt(hex));
+  return Address.fromString(hex);
 }
 
 function normalizeHex(raw: string): string {
