@@ -1,6 +1,6 @@
 import { SupportedWallets, useWalletConnect } from '@btc-vision/walletconnect';
 import { networks } from '@btc-vision/bitcoin';
-import { Address } from '@btc-vision/transaction';
+import { Address, UnisatSigner } from '@btc-vision/transaction';
 import { ABIDataTypes, BitcoinAbiTypes, getContract } from 'opnet';
 import { useEffect, useState } from 'react';
 
@@ -242,14 +242,13 @@ function parseRecipientForMint(
   return connectedAddress;
 }
 
-function buildConnectedOpnetAddress(recipientHash: string, btcPublicKey: string, fallback: Address | null): Address | null {
-  const hash = recipientHash.trim();
-  const pubKey = btcPublicKey.trim();
-  if (!hash || !pubKey) return fallback;
-  try {
-    return Address.fromString(hash, pubKey);
-  } catch {
-    return fallback;
+class OPWalletSigner extends UnisatSigner {
+  public override get unisat() {
+    const module = (window as Window & { opnet?: unknown }).opnet;
+    if (!module) {
+      throw new Error('OP_WALLET extension not found');
+    }
+    return module as any;
   }
 }
 
@@ -279,6 +278,7 @@ export function App() {
     connecting,
     address: opnetAddressObject,
     provider: opnetProvider,
+    signer: opnetSigner,
   } = useWalletConnect();
 
   const [ethAddress, setEthAddress] = useState('');
@@ -313,6 +313,8 @@ export function App() {
   const [claimWithdrawalId, setClaimWithdrawalId] = useState('');
   const [claimReleaseBusy, setClaimReleaseBusy] = useState(false);
   const [claimReleaseStatus, setClaimReleaseStatus] = useState('No withdrawal claim started yet.');
+  const [fallbackSigner, setFallbackSigner] = useState<UnisatSigner | null>(null);
+  const [fallbackSignerError, setFallbackSignerError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!statusApiUrl) {
@@ -370,6 +372,38 @@ export function App() {
       window.clearInterval(timer);
     };
   }, [statusApiUrl]);
+
+  useEffect(() => {
+    let active = true;
+
+    const initFallbackSigner = async (): Promise<void> => {
+      if (!walletAddress || opnetSigner || walletType !== SupportedWallets.OP_WALLET) {
+        if (active) {
+          setFallbackSigner(null);
+          setFallbackSignerError(null);
+        }
+        return;
+      }
+
+      try {
+        const localSigner = new OPWalletSigner();
+        await localSigner.init();
+        if (!active) return;
+        setFallbackSigner(localSigner);
+        setFallbackSignerError(null);
+      } catch (error) {
+        if (!active) return;
+        setFallbackSigner(null);
+        setFallbackSignerError(error instanceof Error ? error.message : String(error));
+      }
+    };
+
+    void initFallbackSigner();
+
+    return () => {
+      active = false;
+    };
+  }, [walletAddress, opnetSigner, walletType, network?.network]);
 
   async function runDepositLookup() {
     if (!statusApiUrl.trim()) {
@@ -495,23 +529,71 @@ export function App() {
   const ethConnected = Boolean(ethAddress);
   const onSepolia = ethChainId.toLowerCase() === SEPOLIA_CHAIN_ID_HEX;
   const opRecipientHash = hashedMLDSAKey || '';
-  const connectedOpnetAddress = buildConnectedOpnetAddress(opRecipientHash, publicKey || '', opnetAddressObject);
   const walletPairReady = opConnected && ethConnected;
   const depositReady = walletPairReady && onSepolia && Boolean(opRecipientHash);
   const burnReady = walletPairReady && onSepolia;
   const depositConfigReady = Boolean(ETH_VAULT_ADDRESS && ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol]);
-  const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && connectedOpnetAddress && walletAddress);
+  const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && opnetAddressObject && walletAddress);
   const claimMintReady = Boolean(opConnected && statusApiUrl.trim() && burnConfigReady && opRecipientHash);
   const claimMintBlockers = [
     !opConnected ? 'OP_WALLET not connected' : '',
     !statusApiUrl.trim() ? 'Status API URL is empty' : '',
     !OPNET_BRIDGE_ADDRESS ? 'OPNet bridge address is missing (VITE_OPNET_BRIDGE_ADDRESS)' : '',
     !opnetProvider ? 'OPNet provider unavailable' : '',
-    !connectedOpnetAddress ? 'OPNet sender address unavailable' : '',
+    !opnetAddressObject ? 'OPNet sender address unavailable' : '',
     !walletAddress ? 'OP_WALLET address unavailable' : '',
     !opRecipientHash ? 'Hashed MLDSA key unavailable' : '',
   ].filter(Boolean);
   const claimReleaseReady = Boolean(walletPairReady && onSepolia && statusApiUrl.trim() && ETH_VAULT_ADDRESS && opRecipientHash);
+
+  const resolveConnectedSender = async (): Promise<Address | null> => {
+    if (!opnetAddressObject) return null;
+    if (
+      typeof (opnetAddressObject as { equals?: unknown }).equals === 'function' &&
+      typeof (opnetAddressObject as { toHex?: unknown }).toHex === 'function'
+    ) {
+      return opnetAddressObject as Address;
+    }
+
+    const raw = typeof (opnetAddressObject as { toHex?: () => string }).toHex === 'function'
+      ? (opnetAddressObject as { toHex: () => string }).toHex()
+      : String(opnetAddressObject);
+
+    if (/^0x[0-9a-fA-F]{64}$/.test(raw)) {
+      return Address.fromBigInt(BigInt(raw));
+    }
+
+    if (opnetProvider && typeof (opnetProvider as { getPublicKeyInfo?: unknown }).getPublicKeyInfo === 'function') {
+      try {
+        return await (opnetProvider as { getPublicKeyInfo: (address: string, trusted: boolean) => Promise<Address> }).getPublicKeyInfo(raw, false);
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  };
+
+  const resolveTxSigner = async (): Promise<unknown | null> => {
+    if (opnetSigner) return opnetSigner;
+    if (fallbackSigner) return fallbackSigner;
+
+    if (walletType === SupportedWallets.OP_WALLET && walletAddress) {
+      try {
+        const localSigner = new OPWalletSigner();
+        await localSigner.init();
+        setFallbackSigner(localSigner);
+        setFallbackSignerError(null);
+        return localSigner;
+      } catch (error) {
+        setFallbackSigner(null);
+        setFallbackSignerError(error instanceof Error ? error.message : String(error));
+        return null;
+      }
+    }
+
+    return null;
+  };
 
   async function waitForEthereumReceipt(
     provider: EthereumProvider,
@@ -597,7 +679,7 @@ export function App() {
   }
 
   async function runLockedBurnFlow() {
-    if (!opnetProvider || !connectedOpnetAddress || !walletAddress) {
+    if (!opnetProvider || !walletAddress) {
       setBurnStatus('Connect OP_WALLET first (provider/address unavailable).');
       return;
     }
@@ -615,16 +697,18 @@ export function App() {
       }
       const withdrawalId = BigInt(burnWithdrawalId.trim());
       const ethereumRecipient = ethereumAddressToAddressWord(ethAddress);
+      const sender = await resolveConnectedSender();
+      if (!sender) throw new Error('Connected OP_WALLET sender address is unavailable.');
 
       const bridge = getContract(OPNET_BRIDGE_ADDRESS, BRIDGE_BURN_ABI as never, opnetProvider as never, networks.opnetTestnet);
       if (typeof (bridge as any).setSender === 'function') {
-        (bridge as any).setSender(connectedOpnetAddress);
+        (bridge as any).setSender(sender);
       }
 
       setBurnStatus('Simulating burn request on OPNet...');
       const simulation = await (bridge as any).requestBurn(
         assetId,
-        connectedOpnetAddress,
+        sender,
         ethereumRecipient,
         amountRaw,
         withdrawalId,
@@ -635,8 +719,12 @@ export function App() {
       }
 
       setBurnStatus('Simulation OK. Sending burn request transaction...');
+      const txSigner = await resolveTxSigner();
+      if (!txSigner) {
+        throw new Error(`OP_WALLET signer unavailable.${fallbackSignerError ? ` ${fallbackSignerError}` : ''}`);
+      }
       const tx = await simulation.sendTransaction({
-        signer: null,
+        signer: txSigner,
         mldsaSigner: null,
         refundTo: walletAddress,
         maximumAllowedSatToSpend: OPNET_MAX_SAT_SPEND,
@@ -659,7 +747,7 @@ export function App() {
       setClaimMintStatus('Set Status API Base URL first.');
       return;
     }
-    if (!opnetProvider || !connectedOpnetAddress || !walletAddress) {
+    if (!opnetProvider || !walletAddress) {
       setClaimMintStatus('Claim Mint blocked: OP_WALLET provider/address unavailable.');
       return;
     }
@@ -790,10 +878,12 @@ export function App() {
       if (relaySignaturesPacked.length === 0) throw new Error('relaySignaturesPackedHex cannot be empty.');
 
       const ethereumUser = parseEthereumUserForMint(String(mint.ethereumUser ?? ''));
-      const recipient = parseRecipientForMint(String(mint.recipient ?? ''), connectedOpnetAddress);
+      const sender = await resolveConnectedSender();
+      if (!sender) throw new Error('Connected OP_WALLET sender address is unavailable.');
+      const recipient = parseRecipientForMint(String(mint.recipient ?? ''), sender);
       const bridge = getContract(OPNET_BRIDGE_ADDRESS, BRIDGE_MINT_ABI as never, opnetProvider as never, networks.opnetTestnet);
       if (typeof (bridge as { setSender?: (sender: Address) => void }).setSender === 'function') {
-        (bridge as { setSender: (sender: Address) => void }).setSender(connectedOpnetAddress);
+        (bridge as { setSender: (sender: Address) => void }).setSender(sender);
       }
 
       setClaimMintStatus(`Simulating mint for depositId=${depositId.toString()}...`);
@@ -812,8 +902,12 @@ export function App() {
       }
 
       setClaimMintStatus(`Simulation OK. Sending mint transaction for depositId=${depositId.toString()}...`);
+      const txSigner = await resolveTxSigner();
+      if (!txSigner) {
+        throw new Error(`OP_WALLET signer unavailable.${fallbackSignerError ? ` ${fallbackSignerError}` : ''}`);
+      }
       const tx = await simulation.sendTransaction({
-        signer: null,
+        signer: txSigner,
         mldsaSigner: null,
         refundTo: walletAddress,
         maximumAllowedSatToSpend: OPNET_MAX_SAT_SPEND,
