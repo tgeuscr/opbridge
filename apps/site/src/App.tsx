@@ -23,7 +23,7 @@ const OPNET_BRIDGE_ADDRESS = import.meta.env.VITE_OPNET_BRIDGE_ADDRESS?.trim() |
 const OPNET_FEE_RATE = Number(import.meta.env.VITE_OPNET_FEE_RATE?.trim() || '2');
 const OPNET_MAX_SAT_SPEND = BigInt(import.meta.env.VITE_OPNET_MAX_SAT_SPEND?.trim() || '20000');
 const ERC20_APPROVE_SELECTOR = '0x095ea7b3';
-const VAULT_DEPOSIT_ERC20_SELECTOR = '0x47e7ef24';
+const VAULT_DEPOSIT_ERC20_SELECTOR = '0x1eaa9083';
 const VAULT_RELEASE_SELECTOR = '0x82c19770';
 
 const ETH_VAULT_ADDRESS = import.meta.env.VITE_ETHEREUM_VAULT_ADDRESS?.trim() || '';
