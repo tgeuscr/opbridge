@@ -1607,28 +1607,26 @@ export function App() {
     for (let i = 0; i < privateKeys.length; i++) {
       const relayIndex = startIndex + i;
       const rawKey = String(privateKeys[i] ?? '').trim();
-      parseMldsaPrivateKey(rawKey);
-      privateKeyByIndex.set(relayIndex, rawKey);
+      if (rawKey) {
+        parseMldsaPrivateKey(rawKey);
+        privateKeyByIndex.set(relayIndex, rawKey);
+      }
     }
     const targetRelayCount = activeRelayCount > 0 ? activeRelayCount : DEFAULT_DEV_RELAY_KEY_SLOTS;
     const packedForCurrentRelayCount = new Uint8Array(targetRelayCount * 1312);
     const keysForCurrentRelayCount: string[] = [];
     for (let relayIndex = 0; relayIndex < targetRelayCount; relayIndex++) {
       const pub = publicKeyByIndex.get(relayIndex);
-      const key = privateKeyByIndex.get(relayIndex);
       if (!pub) {
         throw new Error(`Relay JSON is missing mldsaPublicKey for relay index ${relayIndex}.`);
       }
-      if (!key) {
-        throw new Error(`Relay JSON is missing mldsaPrivateKey for relay index ${relayIndex}.`);
-      }
       packedForCurrentRelayCount.set(pub, relayIndex * 1312);
-      keysForCurrentRelayCount.push(key);
+      keysForCurrentRelayCount.push(privateKeyByIndex.get(relayIndex) ?? '');
     }
     setRelayPubKeysPackedInput(bytesToHex(packedForCurrentRelayCount));
     setRelayPrivateKeysInput(keysForCurrentRelayCount);
     setOutput(
-      `Loaded relay JSON: ${keysForCurrentRelayCount.length} private keys and ${targetRelayCount} packed relay pubkeys for current bridge config.`,
+      `Loaded relay JSON: ${targetRelayCount} packed relay pubkeys for current bridge config (private keys ${keysForCurrentRelayCount.some((k) => k) ? 'present' : 'not provided'}).`,
     );
   };
 
@@ -1693,19 +1691,20 @@ export function App() {
 
     const relayPrivateKeys: string[] = [];
     const relayPubKeysPacked = new Uint8Array(relayCount * 1312);
-    const relays: Array<{ relayIndex: number; mldsaPublicKeyHex: string; mldsaPrivateKeyHex: string }> = [];
+    const relays: Array<{ relayIndex: number; mldsaPublicKeyHex: string; mldsaPrivateKeyHex?: string }> = [];
     for (let relayIndex = 0; relayIndex < relayCount; relayIndex++) {
       const pubHex = publicKeyByIndex.get(relayIndex);
-      const privHex = privateKeyByIndex.get(relayIndex);
       if (!pubHex) {
         throw new Error(`Uploaded relay JSON is missing mldsaPublicKey for relay index ${relayIndex}.`);
       }
-      if (!privHex) {
-        throw new Error(`Uploaded relay JSON is missing mldsaPrivateKey for relay index ${relayIndex}.`);
-      }
       relayPubKeysPacked.set(hexToBytes(pubHex, 1312), relayIndex * 1312);
+      const privHex = privateKeyByIndex.get(relayIndex) ?? '';
       relayPrivateKeys.push(privHex);
-      relays.push({ relayIndex, mldsaPublicKeyHex: pubHex, mldsaPrivateKeyHex: privHex });
+      relays.push(
+        privHex
+          ? { relayIndex, mldsaPublicKeyHex: pubHex, mldsaPrivateKeyHex: privHex }
+          : { relayIndex, mldsaPublicKeyHex: pubHex },
+      );
     }
 
     return {
