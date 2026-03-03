@@ -182,6 +182,9 @@ export function upsertMintAttestation(db, entry, context = {}) {
   const message = entry?.message ?? {};
   const signatures = Array.isArray(entry?.signatures) ? entry.signatures : [];
   const source = entry?.source ?? null;
+  const relayerId = context.relayerId ? String(context.relayerId) : '';
+  const observationIdRaw = String(entry?.observationId ?? '');
+  const observationId = relayerId ? `${observationIdRaw}:${relayerId}` : observationIdRaw;
   const stmt = db.prepare(`
     INSERT INTO mint_attestations (
       observation_id, payload_hash_hex, nonce, asset_id, ethereum_user, opnet_user, amount, relayer_id,
@@ -206,14 +209,14 @@ export function upsertMintAttestation(db, entry, context = {}) {
       updated_at=excluded.updated_at
   `);
   stmt.run({
-    observation_id: String(entry?.observationId ?? ''),
+    observation_id: observationId,
     payload_hash_hex: String(entry?.payloadHashHex ?? '').toLowerCase(),
     nonce: message?.nonce != null ? String(message.nonce) : null,
     asset_id: Number.isInteger(message?.assetId) ? Number(message.assetId) : null,
     ethereum_user: message?.ethereumUser ? String(message.ethereumUser).toLowerCase() : null,
     opnet_user: (message?.opnetUser ?? message?.recipient) ? String(message.opnetUser ?? message.recipient).toLowerCase() : null,
     amount: message?.amount != null ? String(message.amount) : null,
-    relayer_id: context.relayerId ? String(context.relayerId) : null,
+    relayer_id: relayerId || null,
     message_json: JSON.stringify(message),
     signatures_json: JSON.stringify(signatures),
     source_json: source ? JSON.stringify(source) : null,
@@ -228,6 +231,9 @@ export function upsertReleaseAttestation(db, entry, context = {}) {
   const message = entry?.message ?? {};
   const signatures = Array.isArray(entry?.signatures) ? entry.signatures : [];
   const source = entry?.source ?? null;
+  const relayerId = context.relayerId ? String(context.relayerId) : '';
+  const observationIdRaw = String(entry?.observationId ?? '');
+  const observationId = relayerId ? `${observationIdRaw}:${relayerId}` : observationIdRaw;
   const stmt = db.prepare(`
     INSERT INTO release_attestations (
       observation_id, payload_hash_hex, withdrawal_id, asset_id, ethereum_user, opnet_user, amount, relayer_id,
@@ -252,14 +258,14 @@ export function upsertReleaseAttestation(db, entry, context = {}) {
       updated_at=excluded.updated_at
   `);
   stmt.run({
-    observation_id: String(entry?.observationId ?? ''),
+    observation_id: observationId,
     payload_hash_hex: String(entry?.payloadHashHex ?? '').toLowerCase(),
     withdrawal_id: message?.nonce != null ? String(message.nonce) : null,
     asset_id: Number.isInteger(message?.assetId) ? Number(message.assetId) : null,
     ethereum_user: message?.ethereumUser ? String(message.ethereumUser).toLowerCase() : null,
     opnet_user: message?.opnetUser ? String(message.opnetUser).toLowerCase() : null,
     amount: message?.amount != null ? String(message.amount) : null,
-    relayer_id: context.relayerId ? String(context.relayerId) : null,
+    relayer_id: relayerId || null,
     message_json: JSON.stringify(message),
     signatures_json: JSON.stringify(signatures),
     source_json: source ? JSON.stringify(source) : null,
