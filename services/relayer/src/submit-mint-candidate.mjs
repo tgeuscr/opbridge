@@ -98,11 +98,6 @@ function parseEthereumUserForBridgeAbi(raw) {
   if (bytes.length !== 20 && bytes.length !== 32) {
     throw new Error(`mintSubmission.ethereumUser must be 20 or 32 bytes, got ${bytes.length}.`);
   }
-  if (bytes.length === 20) {
-    // Preserve Ethereum-address semantics for this field. Encoding as a generic
-    // OPNet key address can trigger Schnorr parsing on-chain.
-    return Address.fromString(normalizeHex(raw));
-  }
   const hashHex = bytesToHex(leftPadTo32(bytes, "ethereumUser"));
   return Address.fromBigInt(BigInt(hashHex));
 }

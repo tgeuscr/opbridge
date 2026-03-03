@@ -218,12 +218,7 @@ function parseEthereumUserForMint(raw: string): Address {
   if (bytes.length !== 20 && bytes.length !== 32) {
     throw new Error(`mintSubmission.ethereumUser must be 20 or 32 bytes; got ${bytes.length}.`);
   }
-  if (bytes.length === 20) {
-    // Encode Ethereum addresses using the Ethereum parser so runtime does not
-    // treat this field as a Schnorr/tweaked OPNet key address.
-    return Address.fromString(normalizeEthereumAddress(raw, 'mintSubmission.ethereumUser'));
-  }
-  const hashHex = normalizeBytes32Hex(raw, 'mintSubmission.ethereumUser');
+  const hashHex = bytes.length === 20 ? `0x${padHexToBytes(raw.replace(/^0x/, ''), 32)}` : normalizeBytes32Hex(raw, 'mintSubmission.ethereumUser');
   return Address.fromBigInt(hex32ToBigInt(hashHex, 'mintSubmission.ethereumUser'));
 }
 
