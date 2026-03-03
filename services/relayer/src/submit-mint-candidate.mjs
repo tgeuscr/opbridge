@@ -370,7 +370,12 @@ Optional:
   const provider = createOpnetJsonRpcProvider({ url: opnetRpcUrl, network: opnetNetwork });
   const recipientAddressHint = process.env.MINT_RECIPIENT_OPNET_ADDRESS?.trim() || "";
 
+  const { wallet, walletSource, walletMeta } = buildWalletFromEnv(opnetNetwork);
+
   const bridge = getContract(bridgeAddress, BRIDGE_MINT_ABI, provider, opnetNetwork);
+  if (typeof bridge?.setSender === "function") {
+    bridge.setSender(wallet.address);
+  }
   const recipient = await parseRecipientForBridgeAbi(mintSubmission.recipient, provider, recipientAddressHint);
   const ethereumUser = parseEthereumUserForBridgeAbi(mintSubmission.ethereumUser);
   const attestationVersion = Number(mintSubmission.attestationVersion);
@@ -425,8 +430,6 @@ Optional:
     console.log("Preflight only mode enabled; skipping contract simulation and tx submission.");
     return;
   }
-
-  const { wallet, walletSource, walletMeta } = buildWalletFromEnv(opnetNetwork);
 
   const simulation = await bridge.mintWithRelaySignatures(
     Number(mintSubmission.assetId),
