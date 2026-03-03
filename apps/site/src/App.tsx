@@ -630,7 +630,13 @@ export function App() {
       return;
     }
     if (!opnetProvider || !opnetSigner || !opnetAddressObject || !walletAddress) {
-      setClaimMintStatus('Connect OP_WALLET first (provider/signer unavailable).');
+      try {
+        setClaimMintStatus('OP_WALLET signer unavailable. Attempting reconnect...');
+        await connectToWallet(SupportedWallets.OP_WALLET);
+        setClaimMintStatus('Reconnect requested. If approved in OP_WALLET, tap Claim Mint again.');
+      } catch (error) {
+        setClaimMintStatus(`OP_WALLET reconnect failed: ${formatEthereumError(error)}`);
+      }
       return;
     }
     if (!claimMintReady) {
