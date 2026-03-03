@@ -93,12 +93,16 @@ function defaultOpnetRpcUrlForNetwork(name) {
   return normalizeNetworkName(name) === "testnet" ? TESTNET_OPNET_RPC_URL : DEFAULT_OPNET_RPC_URL;
 }
 
-function parseEthereumUserForBridgeAbi(raw) {
+function parseEthereumUserForBridgeAbi(raw, tweakedHex) {
   const bytes = hexToBytes(String(raw ?? "").trim());
   if (bytes.length !== 20 && bytes.length !== 32) {
     throw new Error(`mintSubmission.ethereumUser must be 20 or 32 bytes, got ${bytes.length}.`);
   }
-  return Address.fromBigInt(BigInt(bytesToHex(leftPadTo32(bytes, "ethereumUser"))));
+  const hashHex = bytesToHex(leftPadTo32(bytes, "ethereumUser"));
+  return Address.fromBigInt(
+    BigInt(hashHex),
+    hex32ToBigInt(tweakedHex, "mintSubmission.ethereumUserTweaked"),
+  );
 }
 
 function isLikelyHex(value) {
@@ -371,7 +375,11 @@ Optional:
 
   const bridge = getContract(bridgeAddress, BRIDGE_MINT_ABI, provider, opnetNetwork);
   const recipient = await parseRecipientForBridgeAbi(mintSubmission.recipient, provider, recipientAddressHint);
-  const ethereumUser = parseEthereumUserForBridgeAbi(mintSubmission.ethereumUser);
+  const recipientTweakedHexForEthereumUser = recipient.tweakedToHex();
+  const ethereumUser = parseEthereumUserForBridgeAbi(
+    mintSubmission.ethereumUser,
+    recipientTweakedHexForEthereumUser,
+  );
   const attestationVersion = Number(mintSubmission.attestationVersion);
   if (!Number.isInteger(attestationVersion) || attestationVersion < 0 || attestationVersion > 255) {
     throw new Error(`Invalid mintSubmission.attestationVersion=${mintSubmission.attestationVersion}`);

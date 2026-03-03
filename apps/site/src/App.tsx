@@ -213,13 +213,16 @@ function hexToBytes(raw: string, fieldName: string): Uint8Array {
   return out;
 }
 
-function parseEthereumUserForMint(raw: string): Address {
+function parseEthereumUserForMint(raw: string, tweakedHex: string): Address {
   const bytes = hexToBytes(raw, 'mintSubmission.ethereumUser');
   if (bytes.length !== 20 && bytes.length !== 32) {
     throw new Error(`mintSubmission.ethereumUser must be 20 or 32 bytes; got ${bytes.length}.`);
   }
-  const hex = bytes.length === 20 ? `0x${padHexToBytes(raw.replace(/^0x/, ''), 32)}` : normalizeBytes32Hex(raw, 'mintSubmission.ethereumUser');
-  return Address.fromString(hex);
+  const hashHex = bytes.length === 20 ? `0x${padHexToBytes(raw.replace(/^0x/, ''), 32)}` : normalizeBytes32Hex(raw, 'mintSubmission.ethereumUser');
+  return Address.fromBigInt(
+    hex32ToBigInt(hashHex, 'mintSubmission.ethereumUser'),
+    hex32ToBigInt(tweakedHex, 'mintSubmission.ethereumUserTweaked'),
+  );
 }
 
 function normalizeHex(raw: string): string {
@@ -1025,10 +1028,11 @@ export function App() {
       if (relayIndexesPacked.length === 0) throw new Error('relayIndexesPackedHex cannot be empty.');
       if (relaySignaturesPacked.length === 0) throw new Error('relaySignaturesPackedHex cannot be empty.');
 
-      const ethereumUser = parseEthereumUserForMint(String(mint.ethereumUser ?? ''));
       const sender = await resolveConnectedSender();
       if (!sender) throw new Error('Connected OP_WALLET sender address is unavailable.');
       const recipient = await parseRecipientForMint(String(mint.recipient ?? ''), sender, opnetProvider, walletAddress);
+      const recipientTweakedHex = normalizeHex((recipient as { tweakedToHex: () => string }).tweakedToHex());
+      const ethereumUser = parseEthereumUserForMint(String(mint.ethereumUser ?? ''), recipientTweakedHex);
       const senderDebug = getAddressDebugInfo(sender);
       const recipientDebug = getAddressDebugInfo(recipient);
       preflightDetails = JSON.stringify(
