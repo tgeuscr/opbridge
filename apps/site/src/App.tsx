@@ -656,7 +656,7 @@ export function App() {
       if (senderHex !== expectedHashHex) {
         throw new Error(`Connected OP_WALLET sender mismatch: sender=${senderHex || '-'} expected=${expectedHashHex}`);
       }
-      return await resolveAddressWithTweaked(sender, opnetProvider, expectedHashHex, walletAddress, 'sender');
+      return await resolveAddressWithTweaked(sender, opnetProvider, expectedHashHex, walletAddress || '', 'sender');
     }
 
     const raw = typeof (opnetAddressObject as { toHex?: () => string }).toHex === 'function'
@@ -668,7 +668,7 @@ export function App() {
       if (parsed !== expectedHashHex) {
         throw new Error(`Connected OP_WALLET sender mismatch: sender=${parsed} expected=${expectedHashHex}`);
       }
-      return await resolveAddressWithTweaked(Address.fromBigInt(BigInt(parsed)), opnetProvider, expectedHashHex, walletAddress, 'sender');
+      return await resolveAddressWithTweaked(Address.fromBigInt(BigInt(parsed)), opnetProvider, expectedHashHex, walletAddress || '', 'sender');
     }
 
     if (opnetProvider && typeof (opnetProvider as { getPublicKeyInfo?: unknown }).getPublicKeyInfo === 'function') {
@@ -678,7 +678,7 @@ export function App() {
         if (resolvedHex !== expectedHashHex) {
           throw new Error(`Connected OP_WALLET sender mismatch: sender=${resolvedHex || '-'} expected=${expectedHashHex}`);
         }
-        return await resolveAddressWithTweaked(resolved, opnetProvider, expectedHashHex, walletAddress, 'sender');
+        return await resolveAddressWithTweaked(resolved, opnetProvider, expectedHashHex, walletAddress || '', 'sender');
       } catch {
         return null;
       }
