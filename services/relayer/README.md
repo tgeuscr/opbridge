@@ -86,6 +86,26 @@ RELAYER_KEYS_MNEMONIC="word1 word2 ... word12" \
 npm run keys:generate --workspace @heptad/relayer
 ```
 
+Generate one relayer key bundle by relay index (recommended for per-instance key files):
+
+```bash
+RELAYER_KEYS_MNEMONIC="word1 word2 ... word12" \
+RELAYER_KEYS_RELAY_INDEX=1 \
+npm run keys:generate --workspace @heptad/relayer
+```
+
+Equivalent CLI form:
+
+```bash
+RELAYER_KEYS_MNEMONIC="word1 word2 ... word12" \
+npm run keys:generate --workspace @heptad/relayer -- --relay-index 1
+```
+
+Single-relayer mode defaults:
+
+- `services/relayer/.data/keys/relay-keys-relayer-<index>.json`
+- `services/relayer/.data/keys/relay-public-config-relayer-<index>.json`
+
 Outputs:
 
 - `services/relayer/.data/relay-keys.json` (private keys; local only)
@@ -120,17 +140,20 @@ Run each relayer in its own process with one key and one relay index:
 
 ```bash
 SEPOLIA_RPC_URL=... OPNET_BRIDGE_ADDRESS=... OPNET_BRIDGE_HEX=0x... \
-RELAYER_ID=relayer-a RELAYER_INDEX=0 RELAYER_PRIVATE_KEY=0x... \
+RELAYER_ID=relayer-a RELAYER_INDEX=0 \
+RELAYER_KEYS_FILE=services/relayer/.data/keys/relay-keys-relayer-0.json \
 RELAYER_OUTPUT_FILE=services/relayer/.data/attestations/relayer-a.json \
 npm run run:sepolia --workspace @heptad/relayer
 
 SEPOLIA_RPC_URL=... OPNET_BRIDGE_ADDRESS=... OPNET_BRIDGE_HEX=0x... \
-RELAYER_ID=relayer-b RELAYER_INDEX=1 RELAYER_PRIVATE_KEY=0x... \
+RELAYER_ID=relayer-b RELAYER_INDEX=1 \
+RELAYER_KEYS_FILE=services/relayer/.data/keys/relay-keys-relayer-1.json \
 RELAYER_OUTPUT_FILE=services/relayer/.data/attestations/relayer-b.json \
 npm run run:sepolia --workspace @heptad/relayer
 
 SEPOLIA_RPC_URL=... OPNET_BRIDGE_ADDRESS=... OPNET_BRIDGE_HEX=0x... \
-RELAYER_ID=relayer-c RELAYER_INDEX=2 RELAYER_PRIVATE_KEY=0x... \
+RELAYER_ID=relayer-c RELAYER_INDEX=2 \
+RELAYER_KEYS_FILE=services/relayer/.data/keys/relay-keys-relayer-2.json \
 RELAYER_OUTPUT_FILE=services/relayer/.data/attestations/relayer-c.json \
 npm run run:sepolia --workspace @heptad/relayer
 ```

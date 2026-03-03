@@ -211,13 +211,15 @@ function loadRelayKeyPayload() {
 }
 
 function loadRelaySigners(relayerId, opnetNetwork) {
+  const relayIndexFromEnvRaw = process.env.RELAYER_INDEX?.trim();
+  const relayIndexFromEnv =
+    relayIndexFromEnvRaw && /^\d+$/.test(relayIndexFromEnvRaw) ? Number(relayIndexFromEnvRaw) : null;
   const singlePrivateKey = process.env.RELAYER_PRIVATE_KEY?.trim();
   if (singlePrivateKey) {
-    const relayIndexRaw = process.env.RELAYER_INDEX?.trim();
-    if (!relayIndexRaw || !/^\d+$/.test(relayIndexRaw)) {
+    if (relayIndexFromEnv == null) {
       throw new Error("RELAYER_INDEX is required in single-relayer mode (RELAYER_PRIVATE_KEY).");
     }
-    const relayIndex = Number(relayIndexRaw);
+    const relayIndex = relayIndexFromEnv;
     if (!Number.isInteger(relayIndex) || relayIndex < 0 || relayIndex > 255) {
       throw new Error("RELAYER_INDEX must be an integer in [0,255].");
     }
@@ -230,8 +232,14 @@ function loadRelaySigners(relayerId, opnetNetwork) {
   }
 
   const keys = Array.isArray(payload.relayPrivateKeys) ? payload.relayPrivateKeys : [];
+  const payloadStartIndex =
+    payload?.startIndex != null && Number.isInteger(Number(payload.startIndex))
+      ? Number(payload.startIndex)
+      : null;
+  const indexOffset =
+    payloadStartIndex != null ? payloadStartIndex : keys.length === 1 && relayIndexFromEnv != null ? relayIndexFromEnv : 0;
   return keys
-    .map((raw, relayIndex) => buildRelaySigner(raw, relayIndex, relayerId, opnetNetwork))
+    .map((raw, position) => buildRelaySigner(raw, indexOffset + position, relayerId, opnetNetwork))
     .filter(Boolean);
 }
 

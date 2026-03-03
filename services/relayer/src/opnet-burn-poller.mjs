@@ -255,13 +255,15 @@ function loadRelayKeyPayload() {
 }
 
 function loadRelaySigners(relayerId) {
+  const relayIndexFromEnvRaw = process.env.RELAYER_INDEX?.trim();
+  const relayIndexFromEnv =
+    relayIndexFromEnvRaw && /^\d+$/.test(relayIndexFromEnvRaw) ? Number(relayIndexFromEnvRaw) : null;
   const singlePrivateKey = process.env.RELAYER_EVM_PRIVATE_KEY?.trim();
   if (singlePrivateKey) {
-    const relayIndexRaw = process.env.RELAYER_INDEX?.trim();
-    if (!relayIndexRaw || !/^\d+$/.test(relayIndexRaw)) {
+    if (relayIndexFromEnv == null) {
       throw new Error("RELAYER_INDEX is required in single-relayer mode.");
     }
-    const relayIndex = Number(relayIndexRaw);
+    const relayIndex = relayIndexFromEnv;
     const wallet = new ethers.Wallet(singlePrivateKey);
     return [
       {
@@ -279,8 +281,15 @@ function loadRelaySigners(relayerId) {
   const keys =
     (Array.isArray(payload.relayEvmPrivateKeys) ? payload.relayEvmPrivateKeys : null) ??
     (Array.isArray(payload.relayPrivateKeys) ? payload.relayPrivateKeys : []);
+  const payloadStartIndex =
+    payload?.startIndex != null && Number.isInteger(Number(payload.startIndex))
+      ? Number(payload.startIndex)
+      : null;
+  const indexOffset =
+    payloadStartIndex != null ? payloadStartIndex : keys.length === 1 && relayIndexFromEnv != null ? relayIndexFromEnv : 0;
 
-  return keys.map((key, relayIndex) => {
+  return keys.map((key, position) => {
+    const relayIndex = indexOffset + position;
     const wallet = new ethers.Wallet(String(key).trim());
     return {
       relayIndex,

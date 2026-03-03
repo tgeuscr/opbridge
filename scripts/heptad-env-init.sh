@@ -23,8 +23,6 @@ SEPOLIA_RPC_URL=
 OPNET_NETWORK=testnet
 OPNET_RPC_URL=https://testnet.opnet.org
 RELAYER_MAPPING_FILE=
-RELAYER_KEYS_FILE=
-RELAYER_EVM_KEYS_FILE=
 ATTESTATION_VERSION=1
 RELAYER_POLL_INTERVAL_MS=30000
 RELAYER_API_URL=http://127.0.0.1:8787
@@ -34,9 +32,10 @@ RELAYER_API_DB_PATH=
 '
 
 write_if_missing "$ENV_DIR/relayer-api.env" '# Relayer API service
-RELAYER_API_HOST=0.0.0.0
+RELAYER_API_HOST=127.0.0.1
 RELAYER_API_PORT=8787
 RELAYER_API_DB_PATH=
+# RELAYER_API_CORS_ALLOWED_ORIGINS=https://heptad.app,https://www.heptad.app,https://*.vercel.app,http://localhost:5173,http://127.0.0.1:5173
 # RELAYER_API_WRITE_TOKEN=
 '
 
@@ -55,6 +54,7 @@ for name in sepolia-a sepolia-b sepolia-c; do
   [[ "$name" == "sepolia-c" ]] && idx=2
   write_if_missing "$ENV_DIR/${name}.env" "RELAYER_ID=relayer-${name##*-}
 RELAYER_INDEX=${idx}
+RELAYER_KEYS_FILE=\${HOME}/heptad/services/relayer/.data/keys/relay-keys-relayer-${idx}.json
 RELAYER_MAX_BLOCK_RANGE=10
 RELAYER_OUTPUT_FILE=\${HOME}/heptad/services/relayer/.data/attestations/relayer-${name##*-}.json
 # RELAYER_START_BLOCK=
@@ -68,6 +68,7 @@ for name in opnet-burn-a opnet-burn-b opnet-burn-c; do
   suffix="${name##*-}"
   write_if_missing "$ENV_DIR/${name}.env" "RELAYER_ID=relayer-opnet-${suffix}
 RELAYER_INDEX=${idx}
+RELAYER_EVM_KEYS_FILE=\${HOME}/heptad/services/relayer/.data/keys/relay-keys-relayer-${idx}.json
 RELAYER_MAX_BLOCK_RANGE=5
 RELAYER_OUTPUT_FILE=\${HOME}/heptad/services/relayer/.data/release-attestations/relayer-opnet-${suffix}.json
 # RELAYER_START_BLOCK=
