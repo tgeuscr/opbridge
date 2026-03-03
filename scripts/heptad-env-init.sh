@@ -54,9 +54,9 @@ for name in sepolia-a sepolia-b sepolia-c; do
   [[ "$name" == "sepolia-c" ]] && idx=2
   write_if_missing "$ENV_DIR/${name}.env" "RELAYER_ID=relayer-${name##*-}
 RELAYER_INDEX=${idx}
-RELAYER_KEYS_FILE=\${HOME}/heptad/services/relayer/.data/keys/relay-keys-relayer-${idx}.json
+RELAYER_KEYS_FILE=/home/ssm-user/heptad/services/relayer/.data/keys/relay-keys-relayer-${idx}.json
 RELAYER_MAX_BLOCK_RANGE=10
-RELAYER_OUTPUT_FILE=\${HOME}/heptad/services/relayer/.data/attestations/relayer-${name##*-}.json
+RELAYER_OUTPUT_FILE=/home/ssm-user/heptad/services/relayer/.data/attestations/relayer-${name##*-}.json
 # RELAYER_START_BLOCK=
 "
 done
@@ -68,9 +68,9 @@ for name in opnet-burn-a opnet-burn-b opnet-burn-c; do
   suffix="${name##*-}"
   write_if_missing "$ENV_DIR/${name}.env" "RELAYER_ID=relayer-opnet-${suffix}
 RELAYER_INDEX=${idx}
-RELAYER_EVM_KEYS_FILE=\${HOME}/heptad/services/relayer/.data/keys/relay-keys-relayer-${idx}.json
+RELAYER_EVM_KEYS_FILE=/home/ssm-user/heptad/services/relayer/.data/keys/relay-keys-relayer-${idx}.json
 RELAYER_MAX_BLOCK_RANGE=5
-RELAYER_OUTPUT_FILE=\${HOME}/heptad/services/relayer/.data/release-attestations/relayer-opnet-${suffix}.json
+RELAYER_OUTPUT_FILE=/home/ssm-user/heptad/services/relayer/.data/release-attestations/relayer-opnet-${suffix}.json
 # RELAYER_START_BLOCK=
 "
 done

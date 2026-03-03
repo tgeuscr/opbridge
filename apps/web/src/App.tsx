@@ -1562,39 +1562,159 @@ export function App() {
 
   const applyRelayDataPayload = (payload: {
     relayCount?: number;
+    startIndex?: number;
     relayPubKeysPacked?: string;
     relayPrivateKeys?: string[];
+    relays?: Array<{
+      relayIndex?: number;
+      mldsaPublicKeyHex?: string;
+      mldsaPrivateKeyHex?: string;
+    }>;
   }): void => {
-    const relayCount = payload.relayCount ?? payload.relayPrivateKeys?.length ?? DEFAULT_DEV_RELAY_KEY_SLOTS;
+    const startIndex = Number.isInteger(payload.startIndex) ? Number(payload.startIndex) : 0;
+    const relayCount = payload.relayCount ?? payload.relayPrivateKeys?.length ?? payload.relays?.length ?? DEFAULT_DEV_RELAY_KEY_SLOTS;
     if (relayCount < activeRelayCount) {
       throw new Error(
         `Relay JSON has relayCount=${relayCount}, but current bridge relay count is ${activeRelayCount}.`,
       );
     }
 
+    const publicKeyByIndex = new Map<number, Uint8Array>();
+    const privateKeyByIndex = new Map<number, string>();
+    const relays = Array.isArray(payload.relays) ? payload.relays : [];
+    for (const relay of relays) {
+      const relayIndex = Number(relay.relayIndex);
+      if (!Number.isInteger(relayIndex) || relayIndex < 0 || relayIndex > 255) {
+        throw new Error(`Relay JSON relays[].relayIndex must be an integer in [0,255].`);
+      }
+      if (relay.mldsaPublicKeyHex?.trim()) {
+        publicKeyByIndex.set(relayIndex, hexToBytes(relay.mldsaPublicKeyHex, 1312));
+      }
+      if (relay.mldsaPrivateKeyHex?.trim()) {
+        parseMldsaPrivateKey(relay.mldsaPrivateKeyHex);
+        privateKeyByIndex.set(relayIndex, relay.mldsaPrivateKeyHex.trim());
+      }
+    }
     const relayPubKeysPackedHex = (payload.relayPubKeysPacked ?? '').trim();
+    if (relayPubKeysPackedHex) {
+      const fullPacked = hexToBytes(relayPubKeysPackedHex, relayCount * 1312);
+      for (let i = 0; i < relayCount; i++) {
+        const relayIndex = startIndex + i;
+        publicKeyByIndex.set(relayIndex, fullPacked.slice(i * 1312, (i + 1) * 1312));
+      }
+    }
     const privateKeys = payload.relayPrivateKeys ?? [];
-
-    if (privateKeys.length < activeRelayCount) {
-      throw new Error(
-        `Relay JSON has ${privateKeys.length} private keys, but current bridge relay count is ${activeRelayCount}.`,
-      );
-    }
-
-    // Validate payload shape before mutating form state.
-    const fullPacked = hexToBytes(relayPubKeysPackedHex, relayCount * 1312);
-    for (const rawKey of privateKeys) {
+    for (let i = 0; i < privateKeys.length; i++) {
+      const relayIndex = startIndex + i;
+      const rawKey = String(privateKeys[i] ?? '').trim();
       parseMldsaPrivateKey(rawKey);
+      privateKeyByIndex.set(relayIndex, rawKey);
     }
-
     const targetRelayCount = activeRelayCount > 0 ? activeRelayCount : DEFAULT_DEV_RELAY_KEY_SLOTS;
-    const packedForCurrentRelayCount = fullPacked.slice(0, targetRelayCount * 1312);
-    const keysForCurrentRelayCount = privateKeys.slice(0, targetRelayCount);
+    const packedForCurrentRelayCount = new Uint8Array(targetRelayCount * 1312);
+    const keysForCurrentRelayCount: string[] = [];
+    for (let relayIndex = 0; relayIndex < targetRelayCount; relayIndex++) {
+      const pub = publicKeyByIndex.get(relayIndex);
+      const key = privateKeyByIndex.get(relayIndex);
+      if (!pub) {
+        throw new Error(`Relay JSON is missing mldsaPublicKey for relay index ${relayIndex}.`);
+      }
+      if (!key) {
+        throw new Error(`Relay JSON is missing mldsaPrivateKey for relay index ${relayIndex}.`);
+      }
+      packedForCurrentRelayCount.set(pub, relayIndex * 1312);
+      keysForCurrentRelayCount.push(key);
+    }
     setRelayPubKeysPackedInput(bytesToHex(packedForCurrentRelayCount));
     setRelayPrivateKeysInput(keysForCurrentRelayCount);
     setOutput(
       `Loaded relay JSON: ${keysForCurrentRelayCount.length} private keys and ${targetRelayCount} packed relay pubkeys for current bridge config.`,
     );
+  };
+
+  const mergeRelayDataPayloads = (
+    payloads: Array<{
+      relayCount?: number;
+      startIndex?: number;
+      relayPubKeysPacked?: string;
+      relayPrivateKeys?: string[];
+      relays?: Array<{
+        relayIndex?: number;
+        mldsaPublicKeyHex?: string;
+        mldsaPrivateKeyHex?: string;
+      }>;
+    }>,
+  ) => {
+    const publicKeyByIndex = new Map<number, string>();
+    const privateKeyByIndex = new Map<number, string>();
+    let maxRelayIndex = -1;
+
+    for (const payload of payloads) {
+      const startIndex = Number.isInteger(payload.startIndex) ? Number(payload.startIndex) : 0;
+      const relayCount = payload.relayCount ?? payload.relayPrivateKeys?.length ?? payload.relays?.length ?? 0;
+      const relays = Array.isArray(payload.relays) ? payload.relays : [];
+      for (const relay of relays) {
+        const relayIndex = Number(relay.relayIndex);
+        if (!Number.isInteger(relayIndex) || relayIndex < 0 || relayIndex > 255) {
+          throw new Error(`Relay JSON relays[].relayIndex must be an integer in [0,255].`);
+        }
+        maxRelayIndex = Math.max(maxRelayIndex, relayIndex);
+        if (relay.mldsaPublicKeyHex?.trim()) {
+          publicKeyByIndex.set(relayIndex, bytesToHex(hexToBytes(relay.mldsaPublicKeyHex, 1312)));
+        }
+        if (relay.mldsaPrivateKeyHex?.trim()) {
+          const key = relay.mldsaPrivateKeyHex.trim();
+          parseMldsaPrivateKey(key);
+          privateKeyByIndex.set(relayIndex, key);
+        }
+      }
+      if (payload.relayPubKeysPacked?.trim()) {
+        const packed = hexToBytes(payload.relayPubKeysPacked, relayCount * 1312);
+        for (let i = 0; i < relayCount; i++) {
+          const relayIndex = startIndex + i;
+          maxRelayIndex = Math.max(maxRelayIndex, relayIndex);
+          publicKeyByIndex.set(relayIndex, bytesToHex(packed.slice(i * 1312, (i + 1) * 1312)));
+        }
+      }
+      const keys = payload.relayPrivateKeys ?? [];
+      for (let i = 0; i < keys.length; i++) {
+        const relayIndex = startIndex + i;
+        maxRelayIndex = Math.max(maxRelayIndex, relayIndex);
+        const key = String(keys[i] ?? '').trim();
+        parseMldsaPrivateKey(key);
+        privateKeyByIndex.set(relayIndex, key);
+      }
+    }
+
+    const relayCount = Math.max(maxRelayIndex + 1, 0);
+    if (relayCount === 0) {
+      throw new Error('No relay keys found in uploaded relay JSON files.');
+    }
+
+    const relayPrivateKeys: string[] = [];
+    const relayPubKeysPacked = new Uint8Array(relayCount * 1312);
+    const relays: Array<{ relayIndex: number; mldsaPublicKeyHex: string; mldsaPrivateKeyHex: string }> = [];
+    for (let relayIndex = 0; relayIndex < relayCount; relayIndex++) {
+      const pubHex = publicKeyByIndex.get(relayIndex);
+      const privHex = privateKeyByIndex.get(relayIndex);
+      if (!pubHex) {
+        throw new Error(`Uploaded relay JSON is missing mldsaPublicKey for relay index ${relayIndex}.`);
+      }
+      if (!privHex) {
+        throw new Error(`Uploaded relay JSON is missing mldsaPrivateKey for relay index ${relayIndex}.`);
+      }
+      relayPubKeysPacked.set(hexToBytes(pubHex, 1312), relayIndex * 1312);
+      relayPrivateKeys.push(privHex);
+      relays.push({ relayIndex, mldsaPublicKeyHex: pubHex, mldsaPrivateKeyHex: privHex });
+    }
+
+    return {
+      relayCount,
+      startIndex: 0,
+      relayPubKeysPacked: bytesToHex(relayPubKeysPacked),
+      relayPrivateKeys,
+      relays,
+    };
   };
 
   const loadRelayDataFromJson = (): void => {
@@ -2059,17 +2179,46 @@ export function App() {
     event: React.ChangeEvent<HTMLInputElement>,
     target: 'relay' | 'deployment' | 'mintCandidate',
   ): Promise<void> => {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files ?? []);
     event.target.value = '';
-    if (!file) {
-      return;
-    }
-    if (!file.name.toLowerCase().endsWith('.json')) {
-      setOutput(`Selected file is not a JSON file: ${file.name}`);
+    if (files.length === 0) {
       return;
     }
 
     try {
+      if (target === 'relay' && files.length > 1) {
+        const payloads = await Promise.all(
+          files.map(async (file) => {
+            if (!file.name.toLowerCase().endsWith('.json')) {
+              throw new Error(`Selected file is not a JSON file: ${file.name}`);
+            }
+            return JSON.parse(await file.text()) as {
+              relayCount?: number;
+              startIndex?: number;
+              relayPubKeysPacked?: string;
+              relayPrivateKeys?: string[];
+              relays?: Array<{
+                relayIndex?: number;
+                mldsaPublicKeyHex?: string;
+                mldsaPrivateKeyHex?: string;
+              }>;
+            };
+          }),
+        );
+        const merged = mergeRelayDataPayloads(payloads);
+        const mergedText = JSON.stringify(merged, null, 2);
+        setRelayDataJsonInput(mergedText);
+        applyRelayDataPayload(merged);
+        setOutput(`Merged ${files.length} relay JSON files and loaded combined relay data.`);
+        return;
+      }
+
+      const file = files[0];
+      if (!file.name.toLowerCase().endsWith('.json')) {
+        setOutput(`Selected file is not a JSON file: ${file.name}`);
+        return;
+      }
+
       const text = await file.text();
       if (target === 'relay') {
         setRelayDataJsonInput(text);
@@ -2082,7 +2231,8 @@ export function App() {
         target === 'relay' ? 'relay' : target === 'deployment' ? 'deployment' : 'mint candidate';
       setOutput(`Loaded ${file.name} into ${targetLabel} JSON textarea.`);
     } catch (error) {
-      setOutput(`Failed to read ${file.name}: ${(error as Error).message}`);
+      const selectedNames = files.map((entry) => entry.name).join(', ');
+      setOutput(`Failed to read ${selectedNames || 'selected file(s)'}: ${(error as Error).message}`);
     }
   };
 
@@ -2713,12 +2863,13 @@ rawAmount: ${dummyRawAmountPreview}`}
               ref={relayJsonFileInputRef}
               type="file"
               accept=".json,application/json"
+              multiple
               style={{ display: 'none' }}
               onChange={(e) => {
                 void loadJsonFileInto(e, 'relay');
               }}
             />
-            <button onClick={() => relayJsonFileInputRef.current?.click()}>Upload Relay JSON</button>
+            <button onClick={() => relayJsonFileInputRef.current?.click()}>Upload Relay JSON(s)</button>
             <button onClick={loadBundledRelayData}>Load Default Relay JSON</button>
             <button onClick={loadRelayDataFromJson}>Load Relay Data JSON From Textarea</button>
           </div>
