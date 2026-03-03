@@ -228,18 +228,115 @@ function normalizeHex(raw: string): string {
   return value.startsWith('0x') ? value.toLowerCase() : `0x${value.toLowerCase()}`;
 }
 
-function parseRecipientForMint(
+function isLikelyHex(raw: string): boolean {
+  const value = normalizeHex(raw).replace(/^0x/, '');
+  return value.length > 0 && value.length % 2 === 0 && /^[0-9a-f]+$/.test(value);
+}
+
+function hex32ToBigInt(raw: string, fieldName: string): bigint {
+  const bytes = hexToBytes(raw, fieldName);
+  if (bytes.length !== 32) {
+    throw new Error(`${fieldName} must be 32 bytes; got ${bytes.length}.`);
+  }
+  return BigInt(normalizeHex(raw));
+}
+
+function hasValidTweakedKey(address: Address): boolean {
+  try {
+    const tweaked = (address as { tweakedToHex?: () => string }).tweakedToHex?.();
+    return isLikelyHex(String(tweaked ?? ''));
+  } catch {
+    return false;
+  }
+}
+
+function parseExpectedSenderHash(rawHash: string): string {
+  const hash = rawHash.trim();
+  if (!hash) {
+    throw new Error('Hashed MLDSA key unavailable from OP_WALLET.');
+  }
+  return normalizeBytes32Hex(hash, 'Connected OP_WALLET hashed MLDSA key');
+}
+
+function tryBuildAddressFromRawInfo(
+  info: unknown,
+  expectedHashHex: string,
+  sourceLabel: string,
+): Address | null {
+  if (!info || typeof info !== 'object' || Object.hasOwn(info as object, 'error')) return null;
+  const row = info as Record<string, unknown>;
+  const tweakedPubkeyHex = normalizeHex(String(row.tweakedPubkey ?? ''));
+  const hashHex = normalizeHex(String(row.mldsaHashedPublicKey ?? ''));
+  if (!isLikelyHex(tweakedPubkeyHex) || !isLikelyHex(hashHex)) return null;
+  if (hashHex !== expectedHashHex) {
+    throw new Error(`Resolved key hash mismatch from ${sourceLabel}: resolved=${hashHex} expected=${expectedHashHex}`);
+  }
+  return Address.fromBigInt(
+    hex32ToBigInt(hashHex, `${sourceLabel}.mldsaHashedPublicKey`),
+    hex32ToBigInt(tweakedPubkeyHex, `${sourceLabel}.tweakedPubkey`),
+  );
+}
+
+async function resolveAddressWithTweaked(
+  address: Address,
+  provider: unknown,
+  expectedHashHex: string,
+  addressHint: string,
+  sourceLabel: string,
+): Promise<Address> {
+  if (hasValidTweakedKey(address)) return address;
+
+  if (typeof (provider as { getPublicKeysInfoRaw?: unknown }).getPublicKeysInfoRaw === 'function') {
+    try {
+      const keys = [expectedHashHex];
+      const hint = addressHint.trim();
+      if (hint) keys.push(hint);
+      const rpcInfoMap = await (provider as { getPublicKeysInfoRaw: (keys: string[]) => Promise<Record<string, unknown>> }).getPublicKeysInfoRaw(keys);
+      const infos: unknown[] = [];
+      if (rpcInfoMap && typeof rpcInfoMap === 'object') {
+        if (Object.hasOwn(rpcInfoMap, expectedHashHex)) infos.push(rpcInfoMap[expectedHashHex]);
+        if (hint && Object.hasOwn(rpcInfoMap, hint)) infos.push(rpcInfoMap[hint]);
+        infos.push(...Object.values(rpcInfoMap));
+      }
+      for (const info of infos) {
+        const built = tryBuildAddressFromRawInfo(info, expectedHashHex, sourceLabel);
+        if (built) return built;
+      }
+    } catch {
+      // Try RPC fallback below.
+    }
+  }
+
+  if (typeof (provider as { getPublicKeyInfo?: unknown }).getPublicKeyInfo === 'function' && addressHint.trim()) {
+    try {
+      const resolved = await (provider as { getPublicKeyInfo: (address: string, trusted: boolean) => Promise<Address> }).getPublicKeyInfo(
+        addressHint.trim(),
+        false,
+      );
+      const resolvedHex = normalizeHex(typeof (resolved as { toHex?: () => string }).toHex === 'function' ? resolved.toHex() : '');
+      if (resolvedHex === expectedHashHex && hasValidTweakedKey(resolved)) return resolved;
+    } catch {
+      // Hard failure below.
+    }
+  }
+
+  throw new Error(`Unable to resolve Schnorr/tweaked key for ${sourceLabel}.`);
+}
+
+async function parseRecipientForMint(
   rawRecipient: string,
   connectedAddress: Address | null,
-): Address {
-  const recipientHex = normalizeHex(rawRecipient);
+  provider: unknown,
+  addressHint: string,
+): Promise<Address> {
+  const recipientHex = normalizeBytes32Hex(rawRecipient, 'mintSubmission.recipient');
   if (!connectedAddress) throw new Error('Connected OP_WALLET address is unavailable.');
   const connectedHex = normalizeHex(typeof (connectedAddress as { toHex?: () => string }).toHex === 'function' ? connectedAddress.toHex() : '');
   if (!connectedHex) throw new Error('Connected OP_WALLET address could not be serialized.');
   if (connectedHex !== recipientHex) {
     throw new Error(`Recipient mismatch: candidate=${recipientHex} connectedWallet=${connectedHex}`);
   }
-  return connectedAddress;
+  return await resolveAddressWithTweaked(connectedAddress, provider, recipientHex, addressHint, 'recipient');
 }
 
 class OPWalletSigner extends UnisatSigner {
@@ -548,11 +645,18 @@ export function App() {
 
   const resolveConnectedSender = async (): Promise<Address | null> => {
     if (!opnetAddressObject) return null;
+    const expectedHashHex = parseExpectedSenderHash(opRecipientHash);
+
     if (
       typeof (opnetAddressObject as { equals?: unknown }).equals === 'function' &&
       typeof (opnetAddressObject as { toHex?: unknown }).toHex === 'function'
     ) {
-      return opnetAddressObject as Address;
+      const sender = opnetAddressObject as Address;
+      const senderHex = normalizeHex(typeof (sender as { toHex?: () => string }).toHex === 'function' ? sender.toHex() : '');
+      if (senderHex !== expectedHashHex) {
+        throw new Error(`Connected OP_WALLET sender mismatch: sender=${senderHex || '-'} expected=${expectedHashHex}`);
+      }
+      return await resolveAddressWithTweaked(sender, opnetProvider, expectedHashHex, walletAddress, 'sender');
     }
 
     const raw = typeof (opnetAddressObject as { toHex?: () => string }).toHex === 'function'
@@ -560,12 +664,21 @@ export function App() {
       : String(opnetAddressObject);
 
     if (/^0x[0-9a-fA-F]{64}$/.test(raw)) {
-      return Address.fromBigInt(BigInt(raw));
+      const parsed = normalizeHex(raw);
+      if (parsed !== expectedHashHex) {
+        throw new Error(`Connected OP_WALLET sender mismatch: sender=${parsed} expected=${expectedHashHex}`);
+      }
+      return await resolveAddressWithTweaked(Address.fromBigInt(BigInt(parsed)), opnetProvider, expectedHashHex, walletAddress, 'sender');
     }
 
     if (opnetProvider && typeof (opnetProvider as { getPublicKeyInfo?: unknown }).getPublicKeyInfo === 'function') {
       try {
-        return await (opnetProvider as { getPublicKeyInfo: (address: string, trusted: boolean) => Promise<Address> }).getPublicKeyInfo(raw, false);
+        const resolved = await (opnetProvider as { getPublicKeyInfo: (address: string, trusted: boolean) => Promise<Address> }).getPublicKeyInfo(raw, false);
+        const resolvedHex = normalizeHex(typeof (resolved as { toHex?: () => string }).toHex === 'function' ? resolved.toHex() : '');
+        if (resolvedHex !== expectedHashHex) {
+          throw new Error(`Connected OP_WALLET sender mismatch: sender=${resolvedHex || '-'} expected=${expectedHashHex}`);
+        }
+        return await resolveAddressWithTweaked(resolved, opnetProvider, expectedHashHex, walletAddress, 'sender');
       } catch {
         return null;
       }
@@ -880,7 +993,7 @@ export function App() {
       const ethereumUser = parseEthereumUserForMint(String(mint.ethereumUser ?? ''));
       const sender = await resolveConnectedSender();
       if (!sender) throw new Error('Connected OP_WALLET sender address is unavailable.');
-      const recipient = parseRecipientForMint(String(mint.recipient ?? ''), sender);
+      const recipient = await parseRecipientForMint(String(mint.recipient ?? ''), sender, opnetProvider, walletAddress);
       const bridge = getContract(OPNET_BRIDGE_ADDRESS, BRIDGE_MINT_ABI as never, opnetProvider as never, networks.opnetTestnet);
       if (typeof (bridge as { setSender?: (sender: Address) => void }).setSender === 'function') {
         (bridge as { setSender: (sender: Address) => void }).setSender(sender);
