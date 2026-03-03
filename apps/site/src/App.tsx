@@ -625,52 +625,97 @@ export function App() {
       setClaimMintStatus('Connect OP_WALLET first (provider/signer unavailable).');
       return;
     }
-    if (!ethAddress.trim()) {
-      setClaimMintStatus('Connect MetaMask first to resolve your deposit candidates.');
-      return;
-    }
-
     try {
       setClaimMintBusy(true);
       setClaimMintStatus('Fetching ready mint candidates from Relayer API...');
       const base = statusApiUrl.replace(/\/$/, '');
       const recipientHash = normalizeBytes32Hex(opRecipientHash, 'Connected OP_WALLET hashed MLDSA key');
-      const query = new URLSearchParams({
-        ethereumUser: ethAddress.toLowerCase(),
-        recipientHash: recipientHash.toLowerCase(),
-        ready: 'true',
-        limit: '20',
-      });
-      const response = await fetch(`${base}/mint-candidates?${query.toString()}`);
-      const body = (await response.json()) as {
-        ok?: boolean;
-        items?: Array<{
-          depositId?: string;
-          mintSubmission?: {
-            assetId?: number | string;
-            ethereumUser?: string;
-            recipient?: string;
-            amount?: string;
-            nonce?: string;
-            attestationVersion?: number | string;
-            relayIndexesPackedHex?: string;
-            relaySignaturesPackedHex?: string;
+      const wantedDepositId = claimDepositId.trim();
+      let selected:
+        | {
+            depositId?: string;
+            ready?: boolean;
+            mintSubmission?: {
+              assetId?: number | string;
+              ethereumUser?: string;
+              recipient?: string;
+              amount?: string;
+              nonce?: string;
+              attestationVersion?: number | string;
+              relayIndexesPackedHex?: string;
+              relaySignaturesPackedHex?: string;
+            };
+          }
+        | undefined;
+
+      if (wantedDepositId) {
+        const response = await fetch(`${base}/deposits/${encodeURIComponent(wantedDepositId)}`);
+        const body = (await response.json()) as {
+          ok?: boolean;
+          mintCandidate?: {
+            depositId?: string;
+            ready?: boolean;
+            mintSubmission?: {
+              assetId?: number | string;
+              ethereumUser?: string;
+              recipient?: string;
+              amount?: string;
+              nonce?: string;
+              attestationVersion?: number | string;
+              relayIndexesPackedHex?: string;
+              relaySignaturesPackedHex?: string;
+            };
           };
-        }>;
-      };
-      if (!response.ok) {
-        throw new Error(`mint-candidates HTTP ${response.status}`);
-      }
-      const items = Array.isArray(body.items) ? body.items : [];
-      if (items.length === 0) {
-        setClaimMintStatus('No ready mint candidate yet for this wallet pair. Wait for relayer aggregation and retry.');
-        return;
+        };
+        if (!response.ok) {
+          throw new Error(`deposits/${wantedDepositId} HTTP ${response.status}`);
+        }
+        selected = body.mintCandidate;
+        if (!selected) {
+          setClaimMintStatus(`Deposit ${wantedDepositId} not found yet.`);
+          return;
+        }
+        if (!selected.ready) {
+          setClaimMintStatus(`Deposit ${wantedDepositId} is not ready yet. Wait for relayer aggregation and retry.`);
+          return;
+        }
+      } else {
+        const query = new URLSearchParams({
+          recipientHash: recipientHash.toLowerCase(),
+          ready: 'true',
+          limit: '20',
+        });
+        if (ethAddress.trim()) {
+          query.set('ethereumUser', ethAddress.toLowerCase());
+        }
+        const response = await fetch(`${base}/mint-candidates?${query.toString()}`);
+        const body = (await response.json()) as {
+          ok?: boolean;
+          items?: Array<{
+            depositId?: string;
+            mintSubmission?: {
+              assetId?: number | string;
+              ethereumUser?: string;
+              recipient?: string;
+              amount?: string;
+              nonce?: string;
+              attestationVersion?: number | string;
+              relayIndexesPackedHex?: string;
+              relaySignaturesPackedHex?: string;
+            };
+          }>;
+        };
+        if (!response.ok) {
+          throw new Error(`mint-candidates HTTP ${response.status}`);
+        }
+        const items = Array.isArray(body.items) ? body.items : [];
+        if (items.length === 0) {
+          setClaimMintStatus('No ready mint candidate yet for this wallet pair. Wait for relayer aggregation and retry.');
+          return;
+        }
+        selected = items[0];
       }
 
-      const wantedDepositId = claimDepositId.trim();
-      const selected = wantedDepositId
-        ? items.find((entry) => String(entry.depositId ?? entry.mintSubmission?.nonce ?? '') === wantedDepositId)
-        : items[0];
       if (!selected) {
         setClaimMintStatus(`No ready candidate found for depositId=${wantedDepositId}.`);
         return;
