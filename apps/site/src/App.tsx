@@ -470,9 +470,7 @@ export function App() {
   const burnReady = walletPairReady && onSepolia;
   const depositConfigReady = Boolean(ETH_VAULT_ADDRESS && ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol]);
   const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && opnetSigner && opnetAddressObject && walletAddress);
-  const claimMintReady = Boolean(
-    opConnected && onSepolia && ethConnected && statusApiUrl.trim() && burnConfigReady && opRecipientHash,
-  );
+  const claimMintReady = Boolean(opConnected && statusApiUrl.trim() && burnConfigReady && opRecipientHash);
   const claimReleaseReady = Boolean(walletPairReady && onSepolia && statusApiUrl.trim() && ETH_VAULT_ADDRESS && opRecipientHash);
 
   async function waitForEthereumReceipt(
@@ -1125,7 +1123,7 @@ export function App() {
           <p className={`notice ${claimMintReady ? 'ok' : ''}`}>
             {claimMintReady
               ? 'Mint claim is enabled. It fetches your ready candidate from Relayer API and submits OPNet mint via OP_WALLET.'
-              : 'Connect both wallets, use Sepolia, and set Status API URL to enable in-site mint claim.'}
+              : 'Connect OP_WALLET and set Status API URL to enable in-site mint claim.'}
           </p>
           <p className="muted">
             Config: vault <code>{short(ETH_VAULT_ADDRESS)}</code> | token <code>{short(ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol])}</code>
