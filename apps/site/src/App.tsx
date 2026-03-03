@@ -244,7 +244,9 @@ function hex32ToBigInt(raw: string, fieldName: string): bigint {
 function hasValidTweakedKey(address: Address): boolean {
   try {
     const tweaked = (address as { tweakedToHex?: () => string }).tweakedToHex?.();
-    return isLikelyHex(String(tweaked ?? ''));
+    if (!isLikelyHex(String(tweaked ?? ''))) return false;
+    const bytes = hexToBytes(String(tweaked), 'tweakedPubkey');
+    return bytes.length === 32;
   } catch {
     return false;
   }
@@ -284,7 +286,18 @@ async function resolveAddressWithTweaked(
   addressHint: string,
   sourceLabel: string,
 ): Promise<Address> {
-  if (hasValidTweakedKey(address)) return address;
+  if (hasValidTweakedKey(address)) {
+    const tweakedHex = normalizeHex((address as { tweakedToHex: () => string }).tweakedToHex());
+    const normalized = Address.fromBigInt(
+      hex32ToBigInt(expectedHashHex, `${sourceLabel}.expectedHashHex`),
+      hex32ToBigInt(tweakedHex, `${sourceLabel}.tweakedPubkey`),
+    );
+    const normalizedHex = normalizeHex(typeof (normalized as { toHex?: () => string }).toHex === 'function' ? normalized.toHex() : '');
+    if (normalizedHex !== expectedHashHex) {
+      throw new Error(`Normalized ${sourceLabel} hash mismatch: normalized=${normalizedHex} expected=${expectedHashHex}`);
+    }
+    return normalized;
+  }
 
   if (typeof (provider as { getPublicKeysInfoRaw?: unknown }).getPublicKeysInfoRaw === 'function') {
     try {
