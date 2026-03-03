@@ -2222,6 +2222,24 @@ export function App() {
       const text = await file.text();
       if (target === 'relay') {
         setRelayDataJsonInput(text);
+        try {
+          const payload = JSON.parse(text) as {
+            relayCount?: number;
+            startIndex?: number;
+            relayPubKeysPacked?: string;
+            relayPrivateKeys?: string[];
+            relays?: Array<{
+              relayIndex?: number;
+              mldsaPublicKeyHex?: string;
+              mldsaPrivateKeyHex?: string;
+            }>;
+          };
+          applyRelayDataPayload(payload);
+          setOutput(`Loaded ${file.name} and applied relay data.`);
+          return;
+        } catch {
+          // Keep existing behavior for non-relay-shaped JSON: load into textarea for manual review.
+        }
       } else if (target === 'deployment') {
         setDeploymentJsonInput(text);
       } else {
