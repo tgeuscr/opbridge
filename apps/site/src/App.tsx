@@ -376,6 +376,25 @@ function formatEthereumError(error: unknown): string {
   return String(error);
 }
 
+function getAddressDebugInfo(address: Address | null): { hex: string; tweakedHex: string } {
+  if (!address) return { hex: '', tweakedHex: '' };
+  let hex = '';
+  let tweakedHex = '';
+  try {
+    hex = normalizeHex(typeof (address as { toHex?: () => string }).toHex === 'function' ? address.toHex() : '');
+  } catch {
+    hex = '';
+  }
+  try {
+    tweakedHex = normalizeHex(
+      typeof (address as { tweakedToHex?: () => string }).tweakedToHex === 'function' ? (address as { tweakedToHex: () => string }).tweakedToHex() : '',
+    );
+  } catch {
+    tweakedHex = '';
+  }
+  return { hex, tweakedHex };
+}
+
 export function App() {
   const {
     connectToWallet,
@@ -881,6 +900,7 @@ export function App() {
       setClaimMintStatus(`Claim Mint blocked: ${claimMintBlockers.join('; ')}`);
       return;
     }
+    let preflightDetails = '';
     try {
       setClaimMintBusy(true);
       setClaimMintStatus('Fetching ready mint candidates from Relayer API...');
@@ -1007,12 +1027,28 @@ export function App() {
       const sender = await resolveConnectedSender();
       if (!sender) throw new Error('Connected OP_WALLET sender address is unavailable.');
       const recipient = await parseRecipientForMint(String(mint.recipient ?? ''), sender, opnetProvider, walletAddress);
+      const senderDebug = getAddressDebugInfo(sender);
+      const recipientDebug = getAddressDebugInfo(recipient);
+      preflightDetails = JSON.stringify(
+        {
+          expectedRecipientHash: recipientHash.toLowerCase(),
+          candidateRecipientHash: mintRecipient.toLowerCase(),
+          senderHex: senderDebug.hex,
+          senderTweakedHex: senderDebug.tweakedHex,
+          recipientHex: recipientDebug.hex,
+          recipientTweakedHex: recipientDebug.tweakedHex,
+          walletAddress: walletAddress || '',
+          walletPublicKey: publicKey || '',
+        },
+        null,
+        2,
+      );
       const bridge = getContract(OPNET_BRIDGE_ADDRESS, BRIDGE_MINT_ABI as never, opnetProvider as never, networks.opnetTestnet);
       if (typeof (bridge as { setSender?: (sender: Address) => void }).setSender === 'function') {
         (bridge as { setSender: (sender: Address) => void }).setSender(sender);
       }
 
-      setClaimMintStatus(`Simulating mint for depositId=${depositId.toString()}...`);
+      setClaimMintStatus(`Preflight OK.\n${preflightDetails}\nSimulating mint for depositId=${depositId.toString()}...`);
       const simulation = await (bridge as any).mintWithRelaySignatures(
         assetId,
         ethereumUser,
@@ -1046,7 +1082,12 @@ export function App() {
         `Mint sent. depositId=${depositId.toString()} amount=${amount.toString()} tx=${short((tx as { transactionId?: string })?.transactionId || null)}`,
       );
     } catch (error) {
-      setClaimMintStatus(`Mint claim failed: ${formatEthereumError(error)}`);
+      const baseMessage = `Mint claim failed: ${formatEthereumError(error)}`;
+      if (preflightDetails) {
+        setClaimMintStatus(`${baseMessage}\nPreflight:\n${preflightDetails}`);
+      } else {
+        setClaimMintStatus(baseMessage);
+      }
     } finally {
       setClaimMintBusy(false);
     }
