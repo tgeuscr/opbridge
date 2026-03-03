@@ -23,6 +23,14 @@ function parseMintAmount(raw, decimals) {
   return ethers.parseUnits(raw, decimals);
 }
 
+function parseBool(raw, fallback) {
+  if (raw == null || String(raw).trim() === "") return fallback;
+  const value = String(raw).trim().toLowerCase();
+  if (["1", "true", "yes", "y", "on"].includes(value)) return true;
+  if (["0", "false", "no", "n", "off"].includes(value)) return false;
+  throw new Error(`Invalid boolean value: ${raw}`);
+}
+
 async function main() {
   const projectRoot = process.cwd();
   const rpcUrl = requireEnv("SEPOLIA_RPC_URL");
@@ -32,6 +40,12 @@ async function main() {
   const feeRecipientRaw = process.env.ETH_VAULT_FEE_RECIPIENT?.trim() || "";
   const feeRecipientAddress = feeRecipientRaw || ownerAddress;
   const mintPerTokenRaw = process.env.SEPOLIA_TEST_MINT_PER_TOKEN || "1000000";
+  const faucetEnabled = parseBool(process.env.SEPOLIA_TEST_FAUCET_ENABLED, true);
+  const faucetCooldownSeconds = Number(process.env.SEPOLIA_TEST_FAUCET_COOLDOWN_SECONDS?.trim() || "86400");
+  if (!Number.isInteger(faucetCooldownSeconds) || faucetCooldownSeconds < 0) {
+    throw new Error("SEPOLIA_TEST_FAUCET_COOLDOWN_SECONDS must be an integer >= 0.");
+  }
+  const defaultFaucetClaimAmountRaw = process.env.SEPOLIA_TEST_FAUCET_CLAIM_AMOUNT?.trim() || "1000";
   const outputDir = path.join(projectRoot, "deployments");
 
   const provider = new ethers.JsonRpcProvider(rpcUrl);
@@ -68,10 +82,23 @@ async function main() {
 
   const deployedTokens = [];
   for (const token of DEFAULT_TOKENS) {
-    const instance = await tokenFactory.deploy(token.name, token.symbol, token.decimals, ownerAddress);
+    const symbolClaimRaw = process.env[`SEPOLIA_TEST_FAUCET_${token.symbol}_CLAIM_AMOUNT`]?.trim();
+    const faucetClaimAmountRaw = symbolClaimRaw || defaultFaucetClaimAmountRaw;
+    const faucetClaimAmount = parseMintAmount(faucetClaimAmountRaw, token.decimals);
+    const instance = await tokenFactory.deploy(
+      token.name,
+      token.symbol,
+      token.decimals,
+      ownerAddress,
+      faucetClaimAmount,
+      faucetCooldownSeconds,
+      faucetEnabled,
+    );
     await instance.waitForDeployment();
     const tokenAddress = await instance.getAddress();
-    console.log(`Token deployed ${token.symbol} -> ${tokenAddress}`);
+    console.log(
+      `Token deployed ${token.symbol} -> ${tokenAddress} (faucetEnabled=${faucetEnabled} claim=${faucetClaimAmountRaw} cooldown=${faucetCooldownSeconds}s)`,
+    );
 
     if (ownerAddress.toLowerCase() === signer.address.toLowerCase()) {
       const mintAmount = parseMintAmount(mintPerTokenRaw, token.decimals);
@@ -86,6 +113,11 @@ async function main() {
       ...token,
       tokenAddress,
       mintPerTokenRaw,
+      faucet: {
+        enabled: faucetEnabled,
+        claimAmountRaw: faucetClaimAmountRaw,
+        cooldownSeconds: faucetCooldownSeconds,
+      },
     });
   }
 
@@ -124,6 +156,7 @@ async function main() {
       symbol: token.symbol,
       decimals: token.decimals,
       tokenAddress: token.tokenAddress,
+      faucet: token.faucet,
     })),
     opnet: {
       network: "regtest",

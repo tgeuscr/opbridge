@@ -166,6 +166,26 @@ export type RelayCount = CallResult<
 >;
 
 /**
+ * @description Represents the result of the relayPubKeyHashAt function call.
+ */
+export type RelayPubKeyHashAt = CallResult<
+    {
+        relayPubKeyHash: Address;
+    },
+    OPNetEvent<never>[]
+>;
+
+/**
+ * @description Represents the result of the relayPubKeyHashesPacked function call.
+ */
+export type RelayPubKeyHashesPacked = CallResult<
+    {
+        relayPubKeyHashesPacked: Uint8Array;
+    },
+    OPNetEvent<never>[]
+>;
+
+/**
  * @description Represents the result of the setRelayCount function call.
  */
 export type SetRelayCount = CallResult<{}, OPNetEvent<RelayCountUpdatedEvent>[]>;
@@ -256,7 +276,7 @@ export type ComputeMintAttestationHash = CallResult<
 export interface IHeptadBridge extends IOP_NETContract {
     mintWithRelaySignatures(
         asset: number,
-        ethereumUser: Address,
+        ethereumUser: Uint8Array,
         recipient: Address,
         amount: bigint,
         depositId: bigint,
@@ -285,6 +305,8 @@ export interface IHeptadBridge extends IOP_NETContract {
     paused(): Promise<Paused>;
     relayThreshold(): Promise<RelayThreshold>;
     relayCount(): Promise<RelayCount>;
+    relayPubKeyHashAt(relayIndex: number): Promise<RelayPubKeyHashAt>;
+    relayPubKeyHashesPacked(): Promise<RelayPubKeyHashesPacked>;
     setRelayCount(newRelayCount: number): Promise<SetRelayCount>;
     setRelayThreshold(newThreshold: number): Promise<SetRelayThreshold>;
     setPaused(paused: boolean): Promise<SetPaused>;
@@ -298,7 +320,7 @@ export interface IHeptadBridge extends IOP_NETContract {
     transferOwnership(newOwner: Address): Promise<TransferOwnership>;
     computeMintAttestationHash(
         asset: number,
-        ethereumUser: Address,
+        ethereumUser: Uint8Array,
         recipient: Address,
         amount: bigint,
         depositId: bigint,

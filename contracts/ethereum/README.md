@@ -15,7 +15,7 @@ Current scaffolding:
     - `feeRecipient` (default = owner, configurable)
   - monotonic `depositId` generation
   - canonical `DepositInitiated` event for relayers
-- `HeptadTestToken.sol` for Sepolia test assets (owner-mintable ERC20)
+- `HeptadTestToken.sol` for Sepolia test assets (owner-mintable ERC20 + faucet `claim()`)
 
 ## Sepolia deployment scripts
 
@@ -26,6 +26,14 @@ Environment variables:
 - `ETH_VAULT_OWNER` (optional; defaults to deployer)
 - `ETH_VAULT_FEE_RECIPIENT` (optional; defaults to owner)
 - `SEPOLIA_TEST_MINT_PER_TOKEN` (optional; defaults to `1000000`)
+- `SEPOLIA_TEST_FAUCET_ENABLED` (optional; defaults to `true`)
+- `SEPOLIA_TEST_FAUCET_CLAIM_AMOUNT` (optional; defaults to `1000`, human units)
+- `SEPOLIA_TEST_FAUCET_COOLDOWN_SECONDS` (optional; defaults to `86400`)
+- Per-token faucet claim amount overrides (optional):
+  - `SEPOLIA_TEST_FAUCET_USDT_CLAIM_AMOUNT`
+  - `SEPOLIA_TEST_FAUCET_WBTC_CLAIM_AMOUNT`
+  - `SEPOLIA_TEST_FAUCET_WETH_CLAIM_AMOUNT`
+  - `SEPOLIA_TEST_FAUCET_PAXG_CLAIM_AMOUNT`
 - Optional OPNet metadata for deployment artifact:
   - `OPNET_BRIDGE_ADDRESS`
   - `OPNET_BRIDGE_HEX`

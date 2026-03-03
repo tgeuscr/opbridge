@@ -264,7 +264,7 @@ export class HeptadBridge extends OP_NET {
 
     @method(
         { name: 'asset', type: ABIDataTypes.UINT8 },
-        { name: 'ethereumUser', type: ABIDataTypes.ADDRESS },
+        { name: 'ethereumUser', type: ABIDataTypes.BYTES32 },
         { name: 'recipient', type: ABIDataTypes.ADDRESS },
         { name: 'amount', type: ABIDataTypes.UINT256 },
         { name: 'depositId', type: ABIDataTypes.UINT256 },
@@ -275,7 +275,7 @@ export class HeptadBridge extends OP_NET {
     @emit('MintFinalized')
     public mintWithRelaySignatures(calldata: Calldata): BytesWriter {
         const asset = calldata.readU8();
-        const ethereumUser = calldata.readAddress();
+        const ethereumUser = calldata.readBytes(32);
         const recipient = calldata.readAddress();
         const amount = calldata.readU256();
         const depositId = calldata.readU256();
@@ -286,7 +286,7 @@ export class HeptadBridge extends OP_NET {
         this._requireNotPaused();
 
         // Fail fast on cheap state checks before expensive signature verification.
-        this._requireValidAddress(ethereumUser, 'Invalid ethereum user');
+        this._requireBytes32NonZero(ethereumUser, 'Invalid ethereum user');
         this._requireValidAddress(recipient, 'Invalid recipient');
         this._requireNonZeroAmount(amount);
         this._assertUnusedDeposit(depositId);
@@ -563,6 +563,36 @@ export class HeptadBridge extends OP_NET {
         return response;
     }
 
+    @method({ name: 'relayIndex', type: ABIDataTypes.UINT8 })
+    @returns({ name: 'relayPubKeyHash', type: ABIDataTypes.ADDRESS })
+    public relayPubKeyHashAt(calldata: Calldata): BytesWriter {
+        const relayIndex = calldata.readU8();
+        if (relayIndex >= this._currentRelayCount()) {
+            throw new Revert('Relay index out of range');
+        }
+
+        const response = new BytesWriter(32);
+        response.writeAddress(this._relayPubKeyHash(relayIndex));
+        return response;
+    }
+
+    @method()
+    @returns({ name: 'relayPubKeyHashesPacked', type: ABIDataTypes.BYTES })
+    public relayPubKeyHashesPacked(_: Calldata): BytesWriter {
+        const relayCount = this._currentRelayCount();
+        const packed = new Uint8Array(<i32>relayCount * 32);
+        for (let i: u8 = 0; i < relayCount; i++) {
+            const hash = this._relayPubKeyHash(i);
+            for (let j: i32 = 0; j < 32; j++) {
+                packed[(<i32>i * 32) + j] = hash[j];
+            }
+        }
+
+        const response = new BytesWriter(4 + packed.length);
+        response.writeBytesWithLength(packed);
+        return response;
+    }
+
     @method({ name: 'newRelayCount', type: ABIDataTypes.UINT8 })
     @emit('RelayCountUpdated')
     public setRelayCount(calldata: Calldata): BytesWriter {
@@ -712,7 +742,7 @@ export class HeptadBridge extends OP_NET {
 
     @method(
         { name: 'asset', type: ABIDataTypes.UINT8 },
-        { name: 'ethereumUser', type: ABIDataTypes.ADDRESS },
+        { name: 'ethereumUser', type: ABIDataTypes.BYTES32 },
         { name: 'recipient', type: ABIDataTypes.ADDRESS },
         { name: 'amount', type: ABIDataTypes.UINT256 },
         { name: 'depositId', type: ABIDataTypes.UINT256 },
@@ -721,12 +751,13 @@ export class HeptadBridge extends OP_NET {
     @returns({ name: 'messageHash', type: ABIDataTypes.BYTES32 })
     public computeMintAttestationHash(calldata: Calldata): BytesWriter {
         const asset = calldata.readU8();
-        const ethereumUser = calldata.readAddress();
+        const ethereumUser = calldata.readBytes(32);
         const recipient = calldata.readAddress();
         const amount = calldata.readU256();
         const depositId = calldata.readU256();
         const attestationVersion = calldata.readU8();
 
+        this._requireBytes32NonZero(ethereumUser, 'Invalid ethereum user');
         const hash = this._mintAttestationHash(
             attestationVersion,
             asset,
@@ -922,7 +953,7 @@ export class HeptadBridge extends OP_NET {
     private _mintAttestationHash(
         attestationVersion: u8,
         asset: u8,
-        ethereumUser: Address,
+        ethereumUser: Uint8Array,
         opnetUser: Address,
         amount: u256,
         depositId: u256,
@@ -931,7 +962,7 @@ export class HeptadBridge extends OP_NET {
         payload.writeU8(attestationVersion);
         payload.writeAddress(this._ethereumVaultStore().value);
         payload.writeAddress(this.address);
-        payload.writeAddress(ethereumUser);
+        payload.writeBytes(ethereumUser);
         payload.writeAddress(opnetUser);
         payload.writeU8(asset);
         payload.writeU256(amount);
@@ -1307,6 +1338,20 @@ export class HeptadBridge extends OP_NET {
         if (value.isZero()) {
             throw new Revert('Amount is zero');
         }
+    }
+
+    private _requireBytes32NonZero(value: Uint8Array, message: string): void {
+        if (value.length !== 32) {
+            throw new Revert(message);
+        }
+
+        for (let i = 0; i < 32; i++) {
+            if (value[i] !== 0) {
+                return;
+            }
+        }
+
+        throw new Revert(message);
     }
 
     private _requireAttestationVersionAccepted(version: u8): void {

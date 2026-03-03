@@ -759,7 +759,7 @@ export function App() {
 
   const buildMintAttestationHash = async (
     targetAsset: string,
-    ethereumUser: Address,
+    ethereumUser: Uint8Array,
     recipient: Address,
     rawAmount: bigint,
     parsedDepositId: bigint,
@@ -777,14 +777,16 @@ export function App() {
       resolvedBridgeAddress || bridgeInput,
       'bridge address',
     );
-    const ethereumUserBytes = resolveWord32Bytes(ethereumUser.toHex(), 'ethereum user');
+    if (ethereumUser.length !== 32) {
+      throw new Error(`ethereum user must be 32 bytes; got ${ethereumUser.length}`);
+    }
     const recipientBytes = resolveWord32Bytes(recipient.toHex(), 'recipient');
 
     const payload = concatBytes([
       new Uint8Array([attestationVersion]),
       ethereumVaultBytes,
       opnetBridgeBytes,
-      ethereumUserBytes,
+      ethereumUser,
       recipientBytes,
       new Uint8Array([resolveAssetId(targetAsset)]),
       u256ToBytes(rawAmount),
@@ -807,12 +809,12 @@ export function App() {
     return parsed;
   };
 
-  const resolveEthereumUserAddress = (raw: string): Address => {
+  const resolveEthereumUserAddress = (raw: string): Uint8Array => {
     const value = raw.trim() || ethereumWalletAddress.trim();
     if (!value) {
       throw new Error('Ethereum user is required (set input or connect Ethereum wallet).');
     }
-    return bytesToAddressWord(resolveWord32Bytes(value, 'ethereum user'), 'ethereum user');
+    return resolveWord32Bytes(value, 'ethereum user');
   };
 
   const parseAttestationVersionAdminInput = (raw: string): number => {
@@ -2752,7 +2754,7 @@ rawAmount: ${dummyRawAmountPreview}`}
                           action: 'dummy/attestation/build',
                           asset: dummyAsset,
                           attestationVersion,
-                          ethereumUser: ethereumUser.toHex(),
+                          ethereumUser: bytesToHex(ethereumUser),
                           recipient: recipient.toHex(),
                           rawAmount: rawAmount.toString(),
                           depositId: parsedDepositId.toString(),

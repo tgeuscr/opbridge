@@ -5,32 +5,48 @@ contract HeptadTestToken {
     error NotOwner();
     error InvalidRecipient();
     error InvalidAmount();
+    error FaucetDisabled();
+    error ClaimTooSoon(uint256 claimableAt);
 
     string public name;
     string public symbol;
     uint8 public immutable decimals;
     uint256 public totalSupply;
     address public owner;
+    bool public faucetEnabled;
+    uint256 public claimAmount;
+    uint256 public claimCooldown;
 
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
+    mapping(address => uint256) public nextClaimAt;
 
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event FaucetConfigUpdated(bool enabled, uint256 claimAmount, uint256 claimCooldown);
+    event FaucetClaimed(address indexed user, uint256 amount, uint256 nextClaimAtTimestamp);
 
     constructor(
         string memory tokenName,
         string memory tokenSymbol,
         uint8 tokenDecimals,
-        address initialOwner
+        address initialOwner,
+        uint256 initialClaimAmount,
+        uint256 initialClaimCooldown,
+        bool initialFaucetEnabled
     ) {
         if (initialOwner == address(0)) revert InvalidRecipient();
+        if (initialClaimAmount == 0) revert InvalidAmount();
         name = tokenName;
         symbol = tokenSymbol;
         decimals = tokenDecimals;
         owner = initialOwner;
+        claimAmount = initialClaimAmount;
+        claimCooldown = initialClaimCooldown;
+        faucetEnabled = initialFaucetEnabled;
         emit OwnershipTransferred(address(0), initialOwner);
+        emit FaucetConfigUpdated(initialFaucetEnabled, initialClaimAmount, initialClaimCooldown);
     }
 
     modifier onlyOwner() {
@@ -52,6 +68,38 @@ contract HeptadTestToken {
         totalSupply += amount;
         balanceOf[to] += amount;
         emit Transfer(address(0), to, amount);
+    }
+
+    function setFaucetConfig(
+        bool enabled,
+        uint256 nextClaimAmount,
+        uint256 nextClaimCooldown
+    ) external onlyOwner {
+        if (nextClaimAmount == 0) revert InvalidAmount();
+        faucetEnabled = enabled;
+        claimAmount = nextClaimAmount;
+        claimCooldown = nextClaimCooldown;
+        emit FaucetConfigUpdated(enabled, nextClaimAmount, nextClaimCooldown);
+    }
+
+    function claimableAt(address user) external view returns (uint256) {
+        return nextClaimAt[user];
+    }
+
+    function claim() external {
+        if (!faucetEnabled) revert FaucetDisabled();
+        uint256 next = nextClaimAt[msg.sender];
+        if (block.timestamp < next) revert ClaimTooSoon(next);
+
+        uint256 amount = claimAmount;
+        totalSupply += amount;
+        balanceOf[msg.sender] += amount;
+
+        uint256 nextAt = block.timestamp + claimCooldown;
+        nextClaimAt[msg.sender] = nextAt;
+
+        emit Transfer(address(0), msg.sender, amount);
+        emit FaucetClaimed(msg.sender, amount, nextAt);
     }
 
     function approve(address spender, uint256 amount) external returns (bool) {

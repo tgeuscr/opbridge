@@ -36,7 +36,7 @@ const BRIDGE_MINT_ABI = [
     name: "computeMintAttestationHash",
     inputs: [
       { name: "asset", type: ABIDataTypes.UINT8 },
-      { name: "ethereumUser", type: ABIDataTypes.ADDRESS },
+      { name: "ethereumUser", type: ABIDataTypes.BYTES32 },
       { name: "recipient", type: ABIDataTypes.ADDRESS },
       { name: "amount", type: ABIDataTypes.UINT256 },
       { name: "depositId", type: ABIDataTypes.UINT256 },
@@ -49,7 +49,7 @@ const BRIDGE_MINT_ABI = [
     name: "mintWithRelaySignatures",
     inputs: [
       { name: "asset", type: ABIDataTypes.UINT8 },
-      { name: "ethereumUser", type: ABIDataTypes.ADDRESS },
+      { name: "ethereumUser", type: ABIDataTypes.BYTES32 },
       { name: "recipient", type: ABIDataTypes.ADDRESS },
       { name: "amount", type: ABIDataTypes.UINT256 },
       { name: "depositId", type: ABIDataTypes.UINT256 },
@@ -129,8 +129,7 @@ function parseEthereumUserForBridgeAbi(raw) {
   if (bytes.length !== 20 && bytes.length !== 32) {
     throw new Error(`mintSubmission.ethereumUser must be 20 or 32 bytes, got ${bytes.length}.`);
   }
-  const hashHex = bytesToHex(leftPadTo32(bytes, "ethereumUser"));
-  return Address.fromBigInt(BigInt(hashHex));
+  return leftPadTo32(bytes, "ethereumUser");
 }
 
 function isLikelyHex(value) {

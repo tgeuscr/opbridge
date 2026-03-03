@@ -23,6 +23,12 @@ const OPNET_BRIDGE_ADDRESS = import.meta.env.VITE_OPNET_BRIDGE_ADDRESS?.trim() |
 const OPNET_FEE_RATE = Number(import.meta.env.VITE_OPNET_FEE_RATE?.trim() || '2');
 const OPNET_MAX_SAT_SPEND = BigInt(import.meta.env.VITE_OPNET_MAX_SAT_SPEND?.trim() || '20000');
 const ERC20_APPROVE_SELECTOR = '0x095ea7b3';
+const ERC20_BALANCE_OF_SELECTOR = '0x70a08231';
+const TEST_TOKEN_CLAIM_SELECTOR = '0x4e71d92d';
+const TEST_TOKEN_CLAIM_AMOUNT_SELECTOR = '0x830953ab';
+const TEST_TOKEN_CLAIM_COOLDOWN_SELECTOR = '0xfdea3657';
+const TEST_TOKEN_CLAIMABLE_AT_SELECTOR = '0x37adc2d2';
+const TEST_TOKEN_FAUCET_ENABLED_SELECTOR = '0x5d1c3f04';
 const VAULT_DEPOSIT_ERC20_SELECTOR = '0x1eaa9083';
 const VAULT_RELEASE_SELECTOR = '0x82c19770';
 
@@ -42,6 +48,15 @@ const ETH_ASSET_CONFIG = {
 } as const;
 
 type AssetSymbol = keyof typeof ETH_ASSET_CONFIG;
+
+type FaucetAssetState = {
+  balanceRaw: bigint | null;
+  claimAmountRaw: bigint | null;
+  claimCooldownSec: bigint | null;
+  claimableAtSec: bigint | null;
+  faucetEnabled: boolean | null;
+  error?: string;
+};
 
 const BRIDGE_BURN_ABI = [
   {
@@ -63,7 +78,7 @@ const BRIDGE_MINT_ABI = [
     name: 'mintWithRelaySignatures',
     inputs: [
       { name: 'asset', type: ABIDataTypes.UINT8 },
-      { name: 'ethereumUser', type: ABIDataTypes.ADDRESS },
+      { name: 'ethereumUser', type: ABIDataTypes.BYTES32 },
       { name: 'recipient', type: ABIDataTypes.ADDRESS },
       { name: 'amount', type: ABIDataTypes.UINT256 },
       { name: 'depositId', type: ABIDataTypes.UINT256 },
@@ -145,6 +160,14 @@ function buildApproveCalldata(spender: string, amount: bigint): string {
   return `${ERC20_APPROVE_SELECTOR}${encodeAddressWord(spender)}${encodeUintWord(amount)}`;
 }
 
+function buildBalanceOfCalldata(account: string): string {
+  return `${ERC20_BALANCE_OF_SELECTOR}${encodeAddressWord(account)}`;
+}
+
+function buildClaimableAtCalldata(account: string): string {
+  return `${TEST_TOKEN_CLAIMABLE_AT_SELECTOR}${encodeAddressWord(account)}`;
+}
+
 function buildDepositErc20Calldata(assetId: number, amount: bigint, recipient: string): string {
   return `${VAULT_DEPOSIT_ERC20_SELECTOR}${encodeUintWord(assetId)}${encodeUintWord(amount)}${encodeBytes32Word(recipient)}`;
 }
@@ -200,6 +223,23 @@ function parseHumanAmount(raw: string, decimals: number): bigint {
   return BigInt(normalized);
 }
 
+function formatTokenAmount(raw: bigint, decimals: number): string {
+  const base = 10n ** BigInt(decimals);
+  const whole = raw / base;
+  const fraction = raw % base;
+  if (fraction === 0n) return whole.toString();
+  const fractionText = fraction.toString().padStart(decimals, '0').replace(/0+$/, '');
+  return `${whole.toString()}.${fractionText}`;
+}
+
+function parseEvmUint256Result(raw: unknown, fieldName: string): bigint {
+  const value = String(raw ?? '').trim();
+  if (!/^0x[0-9a-fA-F]+$/.test(value)) {
+    throw new Error(`${fieldName} returned invalid hex.`);
+  }
+  return BigInt(value);
+}
+
 function hexToBytes(raw: string, fieldName: string): Uint8Array {
   const value = raw.trim().toLowerCase();
   const normalized = value.startsWith('0x') ? value.slice(2) : value;
@@ -213,13 +253,14 @@ function hexToBytes(raw: string, fieldName: string): Uint8Array {
   return out;
 }
 
-function parseEthereumUserForMint(raw: string): Address {
+function parseEthereumUserForMint(raw: string): Uint8Array {
   const bytes = hexToBytes(raw, 'mintSubmission.ethereumUser');
   if (bytes.length !== 20 && bytes.length !== 32) {
     throw new Error(`mintSubmission.ethereumUser must be 20 or 32 bytes; got ${bytes.length}.`);
   }
-  const hashHex = bytes.length === 20 ? `0x${padHexToBytes(raw.replace(/^0x/, ''), 32)}` : normalizeBytes32Hex(raw, 'mintSubmission.ethereumUser');
-  return Address.fromBigInt(hex32ToBigInt(hashHex, 'mintSubmission.ethereumUser'));
+  return bytes.length === 20
+    ? hexToBytes(`0x${padHexToBytes(raw.replace(/^0x/, ''), 32)}`, 'mintSubmission.ethereumUser')
+    : bytes;
 }
 
 function normalizeHex(raw: string): string {
@@ -429,6 +470,16 @@ export function App() {
   const [withdrawalLookupResult, setWithdrawalLookupResult] = useState('No withdrawal lookup yet.');
   const [depositAsset, setDepositAsset] = useState('USDT');
   const [depositAmount, setDepositAmount] = useState('');
+  const [faucetAsset, setFaucetAsset] = useState<AssetSymbol>('USDT');
+  const [faucetBusy, setFaucetBusy] = useState(false);
+  const [faucetRefreshBusy, setFaucetRefreshBusy] = useState(false);
+  const [faucetStatus, setFaucetStatus] = useState('No faucet claim started yet.');
+  const [faucetStateByAsset, setFaucetStateByAsset] = useState<Record<AssetSymbol, FaucetAssetState>>({
+    USDT: { balanceRaw: null, claimAmountRaw: null, claimCooldownSec: null, claimableAtSec: null, faucetEnabled: null },
+    WBTC: { balanceRaw: null, claimAmountRaw: null, claimCooldownSec: null, claimableAtSec: null, faucetEnabled: null },
+    WETH: { balanceRaw: null, claimAmountRaw: null, claimCooldownSec: null, claimableAtSec: null, faucetEnabled: null },
+    PAXG: { balanceRaw: null, claimAmountRaw: null, claimCooldownSec: null, claimableAtSec: null, faucetEnabled: null },
+  });
   const [burnAsset, setBurnAsset] = useState('USDT');
   const [burnAmount, setBurnAmount] = useState('');
   const [depositBusy, setDepositBusy] = useState(false);
@@ -605,6 +656,12 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const isSepolia = ethChainId.toLowerCase() === SEPOLIA_CHAIN_ID_HEX;
+    if (!ethAddress || !isSepolia) return;
+    void refreshFaucetState();
+  }, [ethAddress, ethChainId]);
+
   async function connectOpWallet() {
     try {
       await connectToWallet(SupportedWallets.OP_WALLET);
@@ -660,6 +717,9 @@ export function App() {
   const onSepolia = ethChainId.toLowerCase() === SEPOLIA_CHAIN_ID_HEX;
   const opRecipientHash = hashedMLDSAKey || '';
   const walletPairReady = opConnected && ethConnected;
+  const faucetReady = ethConnected && onSepolia;
+  const faucetConfigReady = Boolean(ETH_TOKEN_ADDRESSES[faucetAsset]);
+  const faucetState = faucetStateByAsset[faucetAsset as AssetSymbol];
   const depositReady = walletPairReady && onSepolia && Boolean(opRecipientHash);
   const burnReady = walletPairReady && onSepolia;
   const depositConfigReady = Boolean(ETH_VAULT_ADDRESS && ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol]);
@@ -759,6 +819,118 @@ export function App() {
       }
     }
     throw new Error(`${label} receipt timeout for tx ${txHash}`);
+  }
+
+  async function fetchFaucetStateForAsset(
+    provider: EthereumProvider,
+    account: string,
+    asset: AssetSymbol,
+  ): Promise<FaucetAssetState> {
+    const tokenAddress = normalizeEthereumAddress(ETH_TOKEN_ADDRESSES[asset], `${asset} token address`);
+    const [balanceRawHex, claimAmountRawHex, claimCooldownRawHex, claimableAtRawHex, faucetEnabledRawHex] = await Promise.all([
+      provider.request({
+        method: 'eth_call',
+        params: [{ to: tokenAddress, data: buildBalanceOfCalldata(account) }, 'latest'],
+      }),
+      provider.request({
+        method: 'eth_call',
+        params: [{ to: tokenAddress, data: TEST_TOKEN_CLAIM_AMOUNT_SELECTOR }, 'latest'],
+      }),
+      provider.request({
+        method: 'eth_call',
+        params: [{ to: tokenAddress, data: TEST_TOKEN_CLAIM_COOLDOWN_SELECTOR }, 'latest'],
+      }),
+      provider.request({
+        method: 'eth_call',
+        params: [{ to: tokenAddress, data: buildClaimableAtCalldata(account) }, 'latest'],
+      }),
+      provider.request({
+        method: 'eth_call',
+        params: [{ to: tokenAddress, data: TEST_TOKEN_FAUCET_ENABLED_SELECTOR }, 'latest'],
+      }),
+    ]);
+    const balanceRaw = parseEvmUint256Result(balanceRawHex, `${asset}.balanceOf`);
+    const claimAmountRaw = parseEvmUint256Result(claimAmountRawHex, `${asset}.claimAmount`);
+    const claimCooldownSec = parseEvmUint256Result(claimCooldownRawHex, `${asset}.claimCooldown`);
+    const claimableAtSec = parseEvmUint256Result(claimableAtRawHex, `${asset}.claimableAt`);
+    const faucetEnabled = parseEvmUint256Result(faucetEnabledRawHex, `${asset}.faucetEnabled`) !== 0n;
+    return { balanceRaw, claimAmountRaw, claimCooldownSec, claimableAtSec, faucetEnabled };
+  }
+
+  async function refreshFaucetState(targetAssets?: AssetSymbol[]) {
+    const provider = getEthereumProvider();
+    if (!provider || !ethAddress || !onSepolia) {
+      return;
+    }
+
+    const assets = targetAssets && targetAssets.length > 0
+      ? targetAssets
+      : (Object.keys(ETH_ASSET_CONFIG) as AssetSymbol[]);
+
+    try {
+      setFaucetRefreshBusy(true);
+      const next = { ...faucetStateByAsset };
+      await Promise.all(
+        assets.map(async (asset) => {
+          try {
+            next[asset] = await fetchFaucetStateForAsset(provider, ethAddress, asset);
+          } catch (error) {
+            next[asset] = {
+              balanceRaw: null,
+              claimAmountRaw: null,
+              claimCooldownSec: null,
+              claimableAtSec: null,
+              faucetEnabled: null,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        }),
+      );
+      setFaucetStateByAsset(next);
+    } finally {
+      setFaucetRefreshBusy(false);
+    }
+  }
+
+  async function runClaimTestTokenFlow() {
+    const provider = getEthereumProvider();
+    if (!provider) {
+      setFaucetStatus('MetaMask provider not found.');
+      return;
+    }
+
+    try {
+      setFaucetBusy(true);
+      setFaucetStatus('Checking MetaMask session...');
+      const [account] = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
+      const chainId = (await provider.request({ method: 'eth_chainId' })) as string;
+      setEthAddress(account ?? '');
+      setEthChainId(chainId ?? '');
+
+      if (!account) throw new Error('No MetaMask account connected.');
+      if ((chainId || '').toLowerCase() !== SEPOLIA_CHAIN_ID_HEX) {
+        throw new Error(`Wrong network. Expected Sepolia (${SEPOLIA_CHAIN_ID_HEX}), got ${chainId || '-'}.`);
+      }
+
+      const asset = faucetAsset as AssetSymbol;
+      const tokenAddress = normalizeEthereumAddress(ETH_TOKEN_ADDRESSES[asset], `${asset} token address`);
+      setFaucetStatus(`Submitting ${asset} faucet claim transaction...`);
+      const txHash = (await provider.request({
+        method: 'eth_sendTransaction',
+        params: [{ from: account, to: tokenAddress, data: TEST_TOKEN_CLAIM_SELECTOR }],
+      })) as string;
+
+      const receipt = await waitForEthereumReceipt(provider, txHash, `${asset} faucet claim`, setFaucetStatus);
+      if (receipt.status !== '0x1') {
+        throw new Error(`${asset} faucet claim failed: ${txHash}`);
+      }
+      setFaucetStatus(`${asset} faucet claim confirmed. tx=${short(txHash)}`);
+      await refreshFaucetState([asset]);
+    } catch (error) {
+      setFaucetStatus(`Faucet claim failed: ${formatEthereumError(error)}`);
+    } finally {
+      setFaucetBusy(false);
+    }
   }
 
   async function runLockedDepositFlow() {
@@ -1354,6 +1526,94 @@ export function App() {
             <p><strong>To:</strong> connected MetaMask address (locked)</p>
           </div>
         </div>
+      </section>
+
+      <section className="card flow-card">
+        <div className="card-head">
+          <h2>Get Test Tokens (Sepolia Faucet)</h2>
+          <span className={`pill ${faucetReady ? 'ok' : ''}`}>{faucetReady ? 'Ready' : 'Blocked'}</span>
+        </div>
+        <p className="muted">
+          Testnet users should claim bridge-enabled tokens here before attempting deposit/withdraw flows.
+        </p>
+        <label className="field">
+          <span>Asset</span>
+          <select value={faucetAsset} onChange={(e) => setFaucetAsset(e.target.value as AssetSymbol)}>
+            <option>USDT</option>
+            <option>WBTC</option>
+            <option>WETH</option>
+            <option>PAXG</option>
+          </select>
+        </label>
+        <div className="route-box">
+          <div>
+            <h3>Token</h3>
+            <p>{ETH_TOKEN_ADDRESSES[faucetAsset as AssetSymbol] || '-'}</p>
+          </div>
+          <div>
+            <h3>Wallet Balance</h3>
+            <p>
+              {faucetState?.balanceRaw != null
+                ? formatTokenAmount(
+                    faucetState.balanceRaw,
+                    ETH_ASSET_CONFIG[faucetAsset as AssetSymbol].decimals,
+                  )
+                : '-'}
+            </p>
+          </div>
+          <div>
+            <h3>Claim Amount</h3>
+            <p>
+              {faucetState?.claimAmountRaw != null
+                ? formatTokenAmount(
+                    faucetState.claimAmountRaw,
+                    ETH_ASSET_CONFIG[faucetAsset as AssetSymbol].decimals,
+                  )
+                : '-'}
+            </p>
+          </div>
+          <div>
+            <h3>Cooldown</h3>
+            <p>{faucetState?.claimCooldownSec != null ? `${faucetState.claimCooldownSec.toString()}s` : '-'}</p>
+          </div>
+          <div>
+            <h3>Next Claim At</h3>
+            <p>
+              {faucetState?.claimableAtSec != null
+                ? new Date(Number(faucetState.claimableAtSec) * 1000).toISOString()
+                : '-'}
+            </p>
+          </div>
+          <div>
+            <h3>Faucet Enabled</h3>
+            <p>
+              {faucetState?.faucetEnabled == null ? '-' : faucetState.faucetEnabled ? 'true' : 'false'}
+            </p>
+          </div>
+        </div>
+        <div className="actions">
+          <button
+            onClick={runClaimTestTokenFlow}
+            disabled={!faucetReady || !faucetConfigReady || faucetBusy}
+          >
+            {faucetBusy ? 'Claiming…' : `Claim ${faucetAsset} Test Tokens`}
+          </button>
+          <button
+            onClick={() => void refreshFaucetState([faucetAsset as AssetSymbol])}
+            disabled={!faucetReady || !faucetConfigReady || faucetRefreshBusy}
+          >
+            {faucetRefreshBusy ? 'Refreshing…' : 'Refresh Faucet State'}
+          </button>
+        </div>
+        <p className={`notice ${faucetReady ? 'ok' : ''}`}>
+          {faucetReady
+            ? faucetConfigReady
+              ? 'Faucet claim flow is enabled for the selected asset.'
+              : 'Selected asset token address is missing. Set VITE_ETHEREUM_*_ADDRESS.'
+            : 'Connect MetaMask on Sepolia to use faucet claims.'}
+        </p>
+        {faucetState?.error ? <p className="notice">Faucet read error: {faucetState.error}</p> : null}
+        <pre className="log-box">{faucetStatus}</pre>
       </section>
 
       <section className="flow-grid">

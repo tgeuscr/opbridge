@@ -12,7 +12,7 @@
                 },
                 {
                     "name": "ethereumUser",
-                    "type": "ADDRESS"
+                    "type": "BYTES32"
                 },
                 {
                     "name": "recipient",
@@ -287,6 +287,37 @@
             ]
         },
         {
+            "name": "relayPubKeyHashAt",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [
+                {
+                    "name": "relayIndex",
+                    "type": "UINT8"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "relayPubKeyHash",
+                    "type": "ADDRESS"
+                }
+            ]
+        },
+        {
+            "name": "relayPubKeyHashesPacked",
+            "type": "Function",
+            "payable": false,
+            "onlyOwner": false,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "relayPubKeyHashesPacked",
+                    "type": "BYTES"
+                }
+            ]
+        },
+        {
             "name": "setRelayCount",
             "type": "Function",
             "payable": false,
@@ -450,7 +481,7 @@
                 },
                 {
                     "name": "ethereumUser",
-                    "type": "ADDRESS"
+                    "type": "BYTES32"
                 },
                 {
                     "name": "recipient",

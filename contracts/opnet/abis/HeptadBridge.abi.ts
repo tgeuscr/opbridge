@@ -76,7 +76,7 @@ export const HeptadBridgeAbi = [
         name: 'mintWithRelaySignatures',
         inputs: [
             { name: 'asset', type: ABIDataTypes.UINT8 },
-            { name: 'ethereumUser', type: ABIDataTypes.ADDRESS },
+            { name: 'ethereumUser', type: ABIDataTypes.BYTES32 },
             { name: 'recipient', type: ABIDataTypes.ADDRESS },
             { name: 'amount', type: ABIDataTypes.UINT256 },
             { name: 'depositId', type: ABIDataTypes.UINT256 },
@@ -198,6 +198,18 @@ export const HeptadBridgeAbi = [
         type: BitcoinAbiTypes.Function,
     },
     {
+        name: 'relayPubKeyHashAt',
+        inputs: [{ name: 'relayIndex', type: ABIDataTypes.UINT8 }],
+        outputs: [{ name: 'relayPubKeyHash', type: ABIDataTypes.ADDRESS }],
+        type: BitcoinAbiTypes.Function,
+    },
+    {
+        name: 'relayPubKeyHashesPacked',
+        inputs: [],
+        outputs: [{ name: 'relayPubKeyHashesPacked', type: ABIDataTypes.BYTES }],
+        type: BitcoinAbiTypes.Function,
+    },
+    {
         name: 'setRelayCount',
         inputs: [{ name: 'newRelayCount', type: ABIDataTypes.UINT8 }],
         outputs: [],
@@ -270,7 +282,7 @@ export const HeptadBridgeAbi = [
         name: 'computeMintAttestationHash',
         inputs: [
             { name: 'asset', type: ABIDataTypes.UINT8 },
-            { name: 'ethereumUser', type: ABIDataTypes.ADDRESS },
+            { name: 'ethereumUser', type: ABIDataTypes.BYTES32 },
             { name: 'recipient', type: ABIDataTypes.ADDRESS },
             { name: 'amount', type: ABIDataTypes.UINT256 },
             { name: 'depositId', type: ABIDataTypes.UINT256 },

@@ -330,6 +330,7 @@ async function buildPendingAttestation(log, mapping, relaySigners) {
   const token = normalizeHexAddress(words[0]);
   const amount = hexToBigInt(words[1]);
   const recipientBytes32 = words[2].toLowerCase();
+  const depositorBytes32 = bytesToHex(resolveWord32(depositor, "depositor")).toLowerCase();
 
   const asset = mapping.ethereum.assets.find((entry) => entry.assetId === assetId);
   if (!asset) {
@@ -350,7 +351,7 @@ async function buildPendingAttestation(log, mapping, relaySigners) {
     opnetBridge: mapping.opnet.bridgeAddress,
     opnetBridgeHex: mapping.opnet.bridgeHex,
     assetId,
-    ethereumUser: depositor,
+    ethereumUser: depositorBytes32,
     opnetUser: recipientBytes32,
     amount: amount.toString(),
     nonce: depositId.toString(),
