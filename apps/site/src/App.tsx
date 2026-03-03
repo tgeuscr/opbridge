@@ -16,6 +16,12 @@ type EthereumWindow = Window & {
   ethereum?: EthereumProvider;
 };
 
+type OPWalletWindow = Window & {
+  opnet?: {
+    web3?: unknown;
+  };
+};
+
 const SEPOLIA_CHAIN_ID_HEX = '0xaa36a7';
 const SEPOLIA_CHAIN_ID_DEC = 11155111;
 const DEFAULT_STATUS_API_URL = import.meta.env.VITE_STATUS_API_URL?.trim() || '';
@@ -90,6 +96,11 @@ function getEthereumProvider(): EthereumProvider | null {
     return metaMask ?? ethereum.providers[0] ?? null;
   }
   return ethereum;
+}
+
+function hasOPWalletWeb3(): boolean {
+  const opnet = (window as OPWalletWindow).opnet;
+  return Boolean(opnet?.web3);
 }
 
 function padHexToBytes(hexWithoutPrefix: string, bytes: number): string {
@@ -469,14 +480,14 @@ export function App() {
   const depositReady = walletPairReady && onSepolia && Boolean(opRecipientHash);
   const burnReady = walletPairReady && onSepolia;
   const depositConfigReady = Boolean(ETH_VAULT_ADDRESS && ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol]);
-  const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && opnetSigner && opnetAddressObject && walletAddress);
+  const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && opnetAddressObject && walletAddress && (opnetSigner || hasOPWalletWeb3()));
   const claimMintReady = Boolean(opConnected && statusApiUrl.trim() && burnConfigReady && opRecipientHash);
   const claimMintBlockers = [
     !opConnected ? 'OP_WALLET not connected' : '',
     !statusApiUrl.trim() ? 'Status API URL is empty' : '',
     !OPNET_BRIDGE_ADDRESS ? 'OPNet bridge address is missing (VITE_OPNET_BRIDGE_ADDRESS)' : '',
     !opnetProvider ? 'OPNet provider unavailable' : '',
-    !opnetSigner ? 'OPNet signer unavailable' : '',
+    !opnetSigner && !hasOPWalletWeb3() ? 'OPNet signer unavailable (and OP_WALLET web3 bridge missing)' : '',
     !opnetAddressObject ? 'OPNet sender address unavailable' : '',
     !walletAddress ? 'OP_WALLET address unavailable' : '',
     !opRecipientHash ? 'Hashed MLDSA key unavailable' : '',
@@ -567,7 +578,7 @@ export function App() {
   }
 
   async function runLockedBurnFlow() {
-    if (!opnetProvider || !opnetSigner || !opnetAddressObject || !walletAddress) {
+    if (!opnetProvider || (!opnetSigner && !hasOPWalletWeb3()) || !opnetAddressObject || !walletAddress) {
       setBurnStatus('Connect OP_WALLET first (provider/signer unavailable).');
       return;
     }
@@ -606,7 +617,7 @@ export function App() {
 
       setBurnStatus('Simulation OK. Sending burn request transaction...');
       const tx = await simulation.sendTransaction({
-        signer: opnetSigner,
+        signer: opnetSigner ?? null,
         mldsaSigner: null,
         refundTo: walletAddress,
         maximumAllowedSatToSpend: OPNET_MAX_SAT_SPEND,
@@ -629,7 +640,7 @@ export function App() {
       setClaimMintStatus('Set Status API Base URL first.');
       return;
     }
-    if (!opnetProvider || !opnetSigner || !opnetAddressObject || !walletAddress) {
+    if (!opnetProvider || (!opnetSigner && !hasOPWalletWeb3()) || !opnetAddressObject || !walletAddress) {
       try {
         setClaimMintStatus('OP_WALLET signer unavailable. Attempting reconnect...');
         await connectToWallet(SupportedWallets.OP_WALLET);
@@ -788,7 +799,7 @@ export function App() {
 
       setClaimMintStatus(`Simulation OK. Sending mint transaction for depositId=${depositId.toString()}...`);
       const tx = await simulation.sendTransaction({
-        signer: opnetSigner,
+        signer: opnetSigner ?? null,
         mldsaSigner: null,
         refundTo: walletAddress,
         maximumAllowedSatToSpend: OPNET_MAX_SAT_SPEND,
