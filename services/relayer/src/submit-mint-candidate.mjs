@@ -93,16 +93,18 @@ function defaultOpnetRpcUrlForNetwork(name) {
   return normalizeNetworkName(name) === "testnet" ? TESTNET_OPNET_RPC_URL : DEFAULT_OPNET_RPC_URL;
 }
 
-function parseEthereumUserForBridgeAbi(raw, tweakedHex) {
+function parseEthereumUserForBridgeAbi(raw) {
   const bytes = hexToBytes(String(raw ?? "").trim());
   if (bytes.length !== 20 && bytes.length !== 32) {
     throw new Error(`mintSubmission.ethereumUser must be 20 or 32 bytes, got ${bytes.length}.`);
   }
+  if (bytes.length === 20) {
+    // Preserve Ethereum-address semantics for this field. Encoding as a generic
+    // OPNet key address can trigger Schnorr parsing on-chain.
+    return Address.fromString(normalizeHex(raw));
+  }
   const hashHex = bytesToHex(leftPadTo32(bytes, "ethereumUser"));
-  return Address.fromBigInt(
-    BigInt(hashHex),
-    hex32ToBigInt(tweakedHex, "mintSubmission.ethereumUserTweaked"),
-  );
+  return Address.fromBigInt(BigInt(hashHex));
 }
 
 function isLikelyHex(value) {
@@ -375,11 +377,7 @@ Optional:
 
   const bridge = getContract(bridgeAddress, BRIDGE_MINT_ABI, provider, opnetNetwork);
   const recipient = await parseRecipientForBridgeAbi(mintSubmission.recipient, provider, recipientAddressHint);
-  const recipientTweakedHexForEthereumUser = recipient.tweakedToHex();
-  const ethereumUser = parseEthereumUserForBridgeAbi(
-    mintSubmission.ethereumUser,
-    recipientTweakedHexForEthereumUser,
-  );
+  const ethereumUser = parseEthereumUserForBridgeAbi(mintSubmission.ethereumUser);
   const attestationVersion = Number(mintSubmission.attestationVersion);
   if (!Number.isInteger(attestationVersion) || attestationVersion < 0 || attestationVersion > 255) {
     throw new Error(`Invalid mintSubmission.attestationVersion=${mintSubmission.attestationVersion}`);
