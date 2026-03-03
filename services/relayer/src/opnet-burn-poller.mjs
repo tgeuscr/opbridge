@@ -450,7 +450,13 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
             const blockHeight = BigInt(block.height);
             let transactions = [];
             try {
-              transactions = Array.isArray(block.transactions) ? block.transactions : [];
+              // Prefer raw txs. SDK-parsed `block.transactions` can throw when RPC
+              // returns hex ("0x...") for fields expected as base64.
+              if (Array.isArray(block.rawTransactions)) {
+                transactions = block.rawTransactions;
+              } else {
+                transactions = Array.isArray(block.transactions) ? block.transactions : [];
+              }
             } catch (error) {
               console.warn(
                 `[opnet-burn-poller] skipping block=${height.toString()} tx list due to parse error: ${
@@ -459,16 +465,24 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
               );
               continue;
             }
-            for (const tx of transactions) {
+            for (let txIndex = 0; txIndex < transactions.length; txIndex += 1) {
+              const tx = transactions[txIndex];
+              const txHash = String(
+                tx?.hash ?? tx?.id ?? tx?.txid ?? `${block.hash}:${blockHeight.toString()}:${txIndex.toString()}`,
+              );
               try {
-                const bridgeEventsRaw = normalizeEventBuckets(tx.events, mapping.opnet.bridgeAddress, mapping.opnet.bridgeHex);
+                const bridgeEventsRaw = normalizeEventBuckets(
+                  tx?.events ?? tx?.receipt?.events,
+                  mapping.opnet.bridgeAddress,
+                  mapping.opnet.bridgeHex,
+                );
                 if (bridgeEventsRaw.length === 0) continue;
                 let decodedEvents = [];
                 try {
                   decodedEvents = bridge.decodeEvents(bridgeEventsRaw);
                 } catch (error) {
                   console.warn(
-                    `[opnet-burn-poller] skipping tx=${tx.hash} at block=${blockHeight.toString()} due to decode error: ${
+                    `[opnet-burn-poller] skipping tx=${txHash} at block=${blockHeight.toString()} due to decode error: ${
                       error instanceof Error ? error.message : String(error)
                     }`,
                   );
@@ -478,7 +492,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                 for (const evt of decodedEvents) {
                   if (evt.type !== "BurnRequested") continue;
                   const props = evt.properties ?? {};
-                  const observationId = `${tx.hash}:${burnOrdinal}`;
+                  const observationId = `${txHash}:${burnOrdinal}`;
                   burnOrdinal += 1;
                   if (seen.has(observationId)) continue;
                   seen.add(observationId);
@@ -517,8 +531,8 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                       bridgeAddress: mapping.opnet.bridgeAddress,
                       blockNumber: Number(blockHeight),
                       blockHash: block.hash,
-                      txHash: tx.hash,
-                      txIndex: tx.index,
+                      txHash,
+                      txIndex: tx?.index ?? txIndex,
                       eventType: evt.type,
                       eventIndex: burnOrdinal - 1,
                     },
@@ -526,7 +540,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                 }
               } catch (error) {
                 console.warn(
-                  `[opnet-burn-poller] skipping tx=${tx.hash} at block=${blockHeight.toString()} due to event parse error: ${
+                  `[opnet-burn-poller] skipping tx=${txHash} at block=${blockHeight.toString()} due to event parse error: ${
                     error instanceof Error ? error.message : String(error)
                   }`,
                 );
