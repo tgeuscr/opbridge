@@ -831,7 +831,8 @@ export class HeptadBridge extends OP_NET {
         let seenIndexes: u32 = 0;
         const keyWithType = new Uint8Array(2 + RELAY_PUBKEY_BYTES);
         const keyWithTypePtr = keyWithType.dataStart;
-        store<u8>(keyWithTypePtr, 0x01);
+        // Signature method discriminator: 0x02 => MLDSA (runtime SignaturesMethods.MLDSA)
+        store<u8>(keyWithTypePtr, 0x02);
         store<u8>(keyWithTypePtr + 1, 0x00); // Level2 (ML-DSA-44)
 
         for (let i = 0; i < signatures.length; i++) {
@@ -876,9 +877,8 @@ export class HeptadBridge extends OP_NET {
         const writer = new Uint8Array(2 + publicKey.length);
         const ptr = writer.dataStart;
 
-        // Runtime compatibility mode:
-        // Some nodes still expect ML-DSA key type byte as 0x01.
-        store<u8>(ptr, 0x01);
+        // Signature method discriminator: 0x02 => MLDSA (runtime SignaturesMethods.MLDSA)
+        store<u8>(ptr, 0x02);
         store<u8>(ptr + 1, 0x00); // Level2 (ML-DSA-44)
         memory.copy(ptr + 2, publicKey.dataStart, publicKey.length);
 
