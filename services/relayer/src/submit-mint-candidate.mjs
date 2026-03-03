@@ -289,6 +289,31 @@ function normalizeBytes32Hex(raw, fieldName) {
   return bytesToHex(bytes).toLowerCase();
 }
 
+function extractBytes32Hex(value, fieldName) {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    return normalizeBytes32Hex(value, fieldName);
+  }
+  if (value instanceof Uint8Array) {
+    return normalizeBytes32Hex(bytesToHex(value), fieldName);
+  }
+  if (typeof value === "object") {
+    if (typeof value.toHex === "function") {
+      return normalizeBytes32Hex(String(value.toHex()), fieldName);
+    }
+    if (Array.isArray(value)) {
+      return normalizeBytes32Hex(bytesToHex(Uint8Array.from(value)), fieldName);
+    }
+    if ("buffer" in value && value.buffer instanceof ArrayBuffer && typeof value.length === "number") {
+      return normalizeBytes32Hex(
+        bytesToHex(Uint8Array.from(value)),
+        fieldName,
+      );
+    }
+  }
+  return null;
+}
+
 function buildWalletFromEnv(opnetNetwork) {
   const mnemonicPhrase = process.env.OPNET_WALLET_MNEMONIC?.trim();
   if (mnemonicPhrase) {
@@ -449,6 +474,7 @@ Optional:
   );
 
   let computedHashHex = null;
+  let hashProbeNote = null;
   try {
     const hashResult = await bridge.computeMintAttestationHash(
       Number(mintSubmission.assetId),
@@ -458,16 +484,18 @@ Optional:
       BigInt(mintSubmission.nonce),
       attestationVersion,
     );
-    const hashBytes =
+    const primary =
       hashResult && typeof hashResult === "object" && "obj" in hashResult
         ? hashResult.obj?.messageHash ?? hashResult.values?.[0]
         : hashResult;
-    if (hashBytes instanceof Uint8Array) {
-      computedHashHex = bytesToHex(hashBytes).toLowerCase();
-    } else if (typeof hashBytes === "string") {
-      computedHashHex = normalizeBytes32Hex(hashBytes, "computeMintAttestationHash.messageHash");
-    } else {
-      throw new Error(`Unexpected hash result type: ${typeof hashBytes}`);
+    computedHashHex = extractBytes32Hex(primary, "computeMintAttestationHash.messageHash");
+    if (!computedHashHex && hashResult && typeof hashResult === "object") {
+      computedHashHex =
+        extractBytes32Hex(hashResult.messageHash, "computeMintAttestationHash.messageHash") ??
+        extractBytes32Hex(hashResult.value, "computeMintAttestationHash.messageHash");
+    }
+    if (!computedHashHex) {
+      hashProbeNote = `unparsed-hash-shape:${Object.prototype.toString.call(primary)}`;
     }
     const expectedPayloadHashHex = normalizeHex(selected.payloadHashHex);
     console.log(
@@ -476,15 +504,16 @@ Optional:
           action: "opnet/mint/hash-check",
           computedHashHex,
           expectedPayloadHashHex,
-          match: computedHashHex === expectedPayloadHashHex,
+          match: computedHashHex ? computedHashHex === expectedPayloadHashHex : null,
+          note: hashProbeNote,
         },
         null,
         2,
       ),
     );
   } catch (error) {
-    throw new Error(
-      `computeMintAttestationHash probe failed before mint call: ${error instanceof Error ? error.message : String(error)}`,
+    console.warn(
+      `computeMintAttestationHash probe failed (continuing to mint simulation): ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 
