@@ -87,6 +87,21 @@ function loadAttestationEntries(files) {
   return entries;
 }
 
+function canonicalPayloadForMintMessage(message) {
+  const value = message ?? {};
+  return [
+    `v=${value.version}`,
+    `ethVault=${String(value.ethereumVault ?? "").toLowerCase()}`,
+    `bridge=${String(value.opnetBridge ?? "").toLowerCase()}`,
+    `ethUser=${String(value.ethereumUser ?? "").toLowerCase()}`,
+    `opUser=${String(value.opnetUser ?? value.recipient ?? "").toLowerCase()}`,
+    `asset=${value.assetId}`,
+    `amount=${value.amount}`,
+    `d=${value.direction}`,
+    `nonce=${value.nonce}`,
+  ].join("|");
+}
+
 function loadAttestationEntriesFromDb(dbPath) {
   const db = new DatabaseSync(dbPath, { readOnly: true });
   const rows = db.prepare(`
@@ -97,13 +112,15 @@ function loadAttestationEntriesFromDb(dbPath) {
   const entries = [];
   for (const row of rows) {
     try {
+      const message = row.message_json ? JSON.parse(row.message_json) : {};
       entries.push({
         file: `sqlite:${dbPath}`,
         relayerId: row.relayer_id ?? null,
         pending: {
           observationId: row.observation_id,
           payloadHashHex: row.payload_hash_hex,
-          message: row.message_json ? JSON.parse(row.message_json) : {},
+          message,
+          canonicalPayload: canonicalPayloadForMintMessage(message),
           signatures: row.signatures_json ? JSON.parse(row.signatures_json) : [],
           source: row.source_json ? JSON.parse(row.source_json) : null,
         },
@@ -181,7 +198,7 @@ function packCandidate(groupKey, groupEntries, threshold) {
     payloadHashHex: groupKey,
     ready: true,
     message,
-    canonicalPayload: first.pending.canonicalPayload,
+    canonicalPayload: first.pending.canonicalPayload || canonicalPayloadForMintMessage(message),
     observationIds: groupEntries.map((entry) => entry.pending.observationId),
     selectedSignatures: thresholdSignatures.map((entry) => ({
       relayIndex: entry.relayIndex,
