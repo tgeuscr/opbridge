@@ -15,6 +15,24 @@ const TESTNET_OPNET_RPC_URL = "https://testnet.opnet.org";
 
 const BRIDGE_MINT_ABI = [
   {
+    name: "paused",
+    inputs: [],
+    outputs: [{ name: "paused", type: ABIDataTypes.BOOL }],
+    type: BitcoinAbiTypes.Function,
+  },
+  {
+    name: "relayCount",
+    inputs: [],
+    outputs: [{ name: "relayCount", type: ABIDataTypes.UINT8 }],
+    type: BitcoinAbiTypes.Function,
+  },
+  {
+    name: "relayThreshold",
+    inputs: [],
+    outputs: [{ name: "requiredSignatures", type: ABIDataTypes.UINT8 }],
+    type: BitcoinAbiTypes.Function,
+  },
+  {
     name: "computeMintAttestationHash",
     inputs: [
       { name: "asset", type: ABIDataTypes.UINT8 },
@@ -314,6 +332,24 @@ function extractBytes32Hex(value, fieldName) {
   return null;
 }
 
+function extractScalar(value) {
+  if (value == null) return null;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "string") return value;
+  if (typeof value === "bigint") return value.toString();
+  if (Array.isArray(value) && value.length > 0) return extractScalar(value[0]);
+  if (typeof value === "object") {
+    if ("obj" in value && value.obj && typeof value.obj === "object") {
+      const entries = Object.entries(value.obj);
+      if (entries.length > 0) return extractScalar(entries[0][1]);
+    }
+    if ("values" in value && Array.isArray(value.values) && value.values.length > 0) {
+      return extractScalar(value.values[0]);
+    }
+    if ("value" in value) return extractScalar(value.value);
+  }
+  return null;
+}
+
 function buildWalletFromEnv(opnetNetwork) {
   const mnemonicPhrase = process.env.OPNET_WALLET_MNEMONIC?.trim();
   if (mnemonicPhrase) {
@@ -473,6 +509,30 @@ Optional:
     ),
   );
 
+  try {
+    const [pausedResult, relayCountResult, relayThresholdResult] = await Promise.all([
+      bridge.paused(),
+      bridge.relayCount(),
+      bridge.relayThreshold(),
+    ]);
+    console.log(
+      JSON.stringify(
+        {
+          action: "opnet/mint/relay-config",
+          paused: extractScalar(pausedResult),
+          relayCount: extractScalar(relayCountResult),
+          relayThreshold: extractScalar(relayThresholdResult),
+          relayIndexesPackedBytes: relayIndexesPacked.length,
+          relaySignaturesPackedBytes: relaySignaturesPacked.length,
+        },
+        null,
+        2,
+      ),
+    );
+  } catch (error) {
+    console.warn(`relay config probe failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
   let computedHashHex = null;
   let hashProbeNote = null;
   try {
@@ -520,6 +580,35 @@ Optional:
   if (wantsPreflightOnly()) {
     console.log("Preflight only mode enabled; skipping contract simulation and tx submission.");
     return;
+  }
+
+  if (parseBooleanEnv(process.env.MINT_DEBUG_ZERO_SIG_PROBE, false)) {
+    try {
+      const zeroSigProbe = await bridge.mintWithRelaySignatures(
+        Number(mintSubmission.assetId),
+        ethereumUser,
+        recipient,
+        BigInt(mintSubmission.amount),
+        BigInt(mintSubmission.nonce),
+        attestationVersion,
+        relayIndexesPacked,
+        new Uint8Array(relaySignaturesPacked.length),
+      );
+      console.log(
+        JSON.stringify(
+          {
+            action: "opnet/mint/zero-signature-probe",
+            revert: zeroSigProbe?.revert ?? null,
+          },
+          null,
+          2,
+        ),
+      );
+    } catch (error) {
+      console.warn(
+        `zero-signature probe error (continuing): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   const simulation = await bridge.mintWithRelaySignatures(
