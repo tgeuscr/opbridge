@@ -20,6 +20,7 @@ const SEPOLIA_CHAIN_ID_HEX = '0xaa36a7';
 const SEPOLIA_CHAIN_ID_DEC = 11155111;
 const DEFAULT_STATUS_API_URL = import.meta.env.VITE_STATUS_API_URL?.trim() || '';
 const OPNET_BRIDGE_ADDRESS = import.meta.env.VITE_OPNET_BRIDGE_ADDRESS?.trim() || '';
+const ETH_GAS_LIMIT_CAP = Number(import.meta.env.VITE_ETHEREUM_GAS_LIMIT_CAP?.trim() || '15000000');
 const OPNET_FEE_RATE = Number(import.meta.env.VITE_OPNET_FEE_RATE?.trim() || '2');
 const OPNET_MAX_SAT_SPEND = BigInt(import.meta.env.VITE_OPNET_MAX_SAT_SPEND?.trim() || '20000');
 const ERC20_APPROVE_SELECTOR = '0x095ea7b3';
@@ -238,6 +239,32 @@ function parseEvmUint256Result(raw: unknown, fieldName: string): bigint {
     throw new Error(`${fieldName} returned invalid hex.`);
   }
   return BigInt(value);
+}
+
+function toHexQuantity(value: bigint): string {
+  if (value < 0n) throw new Error('Hex quantity cannot be negative.');
+  return `0x${value.toString(16)}`;
+}
+
+function parseHexQuantity(raw: unknown, fieldName: string): bigint {
+  const value = String(raw ?? '').trim();
+  if (!/^0x[0-9a-fA-F]+$/.test(value)) {
+    throw new Error(`${fieldName} must be a hex quantity.`);
+  }
+  return BigInt(value);
+}
+
+async function withEstimatedGasCap(
+  provider: EthereumProvider,
+  tx: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const estimateRaw = await provider.request({ method: 'eth_estimateGas', params: [tx] });
+  const estimated = parseHexQuantity(estimateRaw, 'eth_estimateGas');
+  // 20% headroom + small fixed buffer for calldata-heavy calls.
+  const padded = (estimated * 12n) / 10n + 10000n;
+  const cap = BigInt(Math.max(21000, ETH_GAS_LIMIT_CAP));
+  const gas = padded > cap ? cap : padded;
+  return { ...tx, gas: toHexQuantity(gas) };
 }
 
 function hexToBytes(raw: string, fieldName: string): Uint8Array {
@@ -915,9 +942,14 @@ export function App() {
       const asset = faucetAsset as AssetSymbol;
       const tokenAddress = normalizeEthereumAddress(ETH_TOKEN_ADDRESSES[asset], `${asset} token address`);
       setFaucetStatus(`Submitting ${asset} faucet claim transaction...`);
+      const claimTx = await withEstimatedGasCap(provider, {
+        from: account,
+        to: tokenAddress,
+        data: TEST_TOKEN_CLAIM_SELECTOR,
+      });
       const txHash = (await provider.request({
         method: 'eth_sendTransaction',
-        params: [{ from: account, to: tokenAddress, data: TEST_TOKEN_CLAIM_SELECTOR }],
+        params: [claimTx],
       })) as string;
 
       const receipt = await waitForEthereumReceipt(provider, txHash, `${asset} faucet claim`, setFaucetStatus);
@@ -964,9 +996,14 @@ export function App() {
 
       setDepositStatus(`Submitting ${asset} approve transaction...`);
       const approveData = buildApproveCalldata(vaultAddress, amountRaw);
+      const approveTx = await withEstimatedGasCap(provider, {
+        from: account,
+        to: tokenAddress,
+        data: approveData,
+      });
       const approveTxHash = (await provider.request({
         method: 'eth_sendTransaction',
-        params: [{ from: account, to: tokenAddress, data: approveData }],
+        params: [approveTx],
       })) as string;
 
       const approveReceipt = await waitForEthereumReceipt(provider, approveTxHash, 'Approve', setDepositStatus);
@@ -976,9 +1013,14 @@ export function App() {
 
       setDepositStatus(`Approve confirmed (${approveTxHash}). Submitting vault deposit...`);
       const depositData = buildDepositErc20Calldata(assetId, amountRaw, recipient);
+      const depositTx = await withEstimatedGasCap(provider, {
+        from: account,
+        to: vaultAddress,
+        data: depositData,
+      });
       const depositTxHash = (await provider.request({
         method: 'eth_sendTransaction',
-        params: [{ from: account, to: vaultAddress, data: depositData }],
+        params: [depositTx],
       })) as string;
 
       const depositReceipt = await waitForEthereumReceipt(provider, depositTxHash, 'Deposit', setDepositStatus);
@@ -1385,9 +1427,14 @@ export function App() {
       });
 
       setClaimReleaseStatus(`Submitting withdrawal claim for withdrawalId=${withdrawalId.toString()}...`);
+      const releaseTx = await withEstimatedGasCap(provider, {
+        from: account,
+        to: vaultAddress,
+        data: calldata,
+      });
       const txHash = (await provider.request({
         method: 'eth_sendTransaction',
-        params: [{ from: account, to: vaultAddress, data: calldata }],
+        params: [releaseTx],
       })) as string;
 
       const receipt = await waitForEthereumReceipt(provider, txHash, 'Release', setClaimReleaseStatus);
