@@ -16,12 +16,6 @@ type EthereumWindow = Window & {
   ethereum?: EthereumProvider;
 };
 
-type OPWalletWindow = Window & {
-  opnet?: {
-    web3?: unknown;
-  };
-};
-
 const SEPOLIA_CHAIN_ID_HEX = '0xaa36a7';
 const SEPOLIA_CHAIN_ID_DEC = 11155111;
 const DEFAULT_STATUS_API_URL = import.meta.env.VITE_STATUS_API_URL?.trim() || '';
@@ -96,11 +90,6 @@ function getEthereumProvider(): EthereumProvider | null {
     return metaMask ?? ethereum.providers[0] ?? null;
   }
   return ethereum;
-}
-
-function hasOPWalletWeb3(): boolean {
-  const opnet = (window as OPWalletWindow).opnet;
-  return Boolean(opnet?.web3);
 }
 
 function padHexToBytes(hexWithoutPrefix: string, bytes: number): string {
@@ -239,108 +228,18 @@ function normalizeHex(raw: string): string {
   return value.startsWith('0x') ? value.toLowerCase() : `0x${value.toLowerCase()}`;
 }
 
-function isLikelyHex(raw: string): boolean {
-  const value = normalizeHex(raw);
-  const noPrefix = value.replace(/^0x/, '');
-  return noPrefix.length > 0 && noPrefix.length % 2 === 0 && /^[0-9a-f]+$/.test(noPrefix);
-}
-
-function hex32ToBigInt(raw: string, fieldName: string): bigint {
-  const normalized = normalizeHex(raw);
-  const bytes = hexToBytes(normalized, fieldName);
-  if (bytes.length !== 32) {
-    throw new Error(`${fieldName} must be 32 bytes, got ${bytes.length}.`);
-  }
-  return BigInt(normalized);
-}
-
-async function parseRecipientForMint(
+function parseRecipientForMint(
   rawRecipient: string,
-  provider: unknown,
-  recipientAddressHint: string,
   connectedAddress: Address | null,
-): Promise<Address> {
+): Address {
   const recipientHex = normalizeHex(rawRecipient);
-
-  const isValidResolvedAddress = (value: Address): boolean => {
-    try {
-      const resolvedHex = normalizeHex(typeof (value as { toHex?: () => string }).toHex === 'function' ? value.toHex() : '');
-      if (resolvedHex !== recipientHex) return false;
-      const tweaked = (value as { tweakedToHex?: () => string }).tweakedToHex?.();
-      return isLikelyHex(String(tweaked ?? ''));
-    } catch {
-      return false;
-    }
-  };
-
-  if (connectedAddress && isValidResolvedAddress(connectedAddress)) {
-    return connectedAddress;
+  if (!connectedAddress) throw new Error('Connected OP_WALLET address is unavailable.');
+  const connectedHex = normalizeHex(typeof (connectedAddress as { toHex?: () => string }).toHex === 'function' ? connectedAddress.toHex() : '');
+  if (!connectedHex) throw new Error('Connected OP_WALLET address could not be serialized.');
+  if (connectedHex !== recipientHex) {
+    throw new Error(`Recipient mismatch: candidate=${recipientHex} connectedWallet=${connectedHex}`);
   }
-
-  const tryBuildAddressFromRawInfo = (info: unknown, sourceLabel: string): Address | null => {
-    if (!info || typeof info !== 'object' || Object.hasOwn(info as object, 'error')) return null;
-    const row = info as Record<string, unknown>;
-    const tweakedPubkey = normalizeHex(String(row.tweakedPubkey ?? ''));
-    const mldsaHashedPublicKey = normalizeHex(String(row.mldsaHashedPublicKey ?? ''));
-    if (!isLikelyHex(tweakedPubkey) || !isLikelyHex(mldsaHashedPublicKey)) return null;
-
-    if (mldsaHashedPublicKey !== recipientHex) {
-      throw new Error(
-        [
-          'Resolved OPNet recipient does not match attested recipient hash.',
-          `source=${sourceLabel}`,
-          `resolved=${mldsaHashedPublicKey}`,
-          `attested=${recipientHex}`,
-        ].join(' '),
-      );
-    }
-
-    const tweakedValue = hex32ToBigInt(tweakedPubkey, `${sourceLabel}.tweakedPubkey`);
-    const mldsaHashValue = hex32ToBigInt(mldsaHashedPublicKey, `${sourceLabel}.mldsaHashedPublicKey`);
-    return Address.fromBigInt(mldsaHashValue, tweakedValue);
-  };
-
-  const addressHint = recipientAddressHint.trim();
-  if (addressHint && typeof (provider as { getPublicKeyInfo?: unknown }).getPublicKeyInfo === 'function') {
-    try {
-      const resolved = await (provider as { getPublicKeyInfo: (address: string, trusted: boolean) => Promise<Address> }).getPublicKeyInfo(
-        addressHint,
-        false,
-      );
-      const resolvedHex = normalizeHex(typeof (resolved as { toHex?: () => string }).toHex === 'function' ? resolved.toHex() : '');
-      if (resolvedHex && resolvedHex !== recipientHex) {
-        throw new Error(`Resolved OPNet recipient does not match attested recipient hash. hint=${addressHint} resolved=${resolvedHex} attested=${recipientHex}`);
-      }
-      if (resolvedHex && isValidResolvedAddress(resolved)) return resolved;
-    } catch {
-      // Fallback to raw lookup below.
-    }
-  }
-
-  if (typeof (provider as { getPublicKeysInfoRaw?: unknown }).getPublicKeysInfoRaw === 'function') {
-    try {
-      const keys = [recipientHex];
-      if (addressHint) keys.push(addressHint);
-      const rpcInfoMap = await (provider as { getPublicKeysInfoRaw: (keys: string[]) => Promise<Record<string, unknown>> }).getPublicKeysInfoRaw(keys);
-      const infos: unknown[] = [];
-      if (rpcInfoMap && typeof rpcInfoMap === 'object') {
-        if (Object.hasOwn(rpcInfoMap, recipientHex)) infos.push(rpcInfoMap[recipientHex]);
-        if (Object.hasOwn(rpcInfoMap, rawRecipient)) infos.push(rpcInfoMap[rawRecipient]);
-        if (addressHint && Object.hasOwn(rpcInfoMap, addressHint)) infos.push(rpcInfoMap[addressHint]);
-        infos.push(...Object.values(rpcInfoMap));
-      }
-      for (const info of infos) {
-        const built = tryBuildAddressFromRawInfo(info, 'recipientRawLookup');
-        if (built) return built;
-      }
-    } catch {
-      // Fallback below.
-    }
-  }
-
-  throw new Error(
-    'Unable to resolve a valid recipient Schnorr key for mintSubmission.recipient. Reconnect OP_WALLET and retry.',
-  );
+  return connectedAddress;
 }
 
 function normalizeHexBytes(raw: string, fieldName: string): string {
@@ -369,7 +268,6 @@ export function App() {
     connecting,
     address: opnetAddressObject,
     provider: opnetProvider,
-    signer: opnetSigner,
   } = useWalletConnect();
 
   const [ethAddress, setEthAddress] = useState('');
@@ -590,14 +488,13 @@ export function App() {
   const depositReady = walletPairReady && onSepolia && Boolean(opRecipientHash);
   const burnReady = walletPairReady && onSepolia;
   const depositConfigReady = Boolean(ETH_VAULT_ADDRESS && ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol]);
-  const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && opnetAddressObject && walletAddress && (opnetSigner || hasOPWalletWeb3()));
+  const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && opnetAddressObject && walletAddress);
   const claimMintReady = Boolean(opConnected && statusApiUrl.trim() && burnConfigReady && opRecipientHash);
   const claimMintBlockers = [
     !opConnected ? 'OP_WALLET not connected' : '',
     !statusApiUrl.trim() ? 'Status API URL is empty' : '',
     !OPNET_BRIDGE_ADDRESS ? 'OPNet bridge address is missing (VITE_OPNET_BRIDGE_ADDRESS)' : '',
     !opnetProvider ? 'OPNet provider unavailable' : '',
-    !opnetSigner && !hasOPWalletWeb3() ? 'OPNet signer unavailable (and OP_WALLET web3 bridge missing)' : '',
     !opnetAddressObject ? 'OPNet sender address unavailable' : '',
     !walletAddress ? 'OP_WALLET address unavailable' : '',
     !opRecipientHash ? 'Hashed MLDSA key unavailable' : '',
@@ -688,8 +585,8 @@ export function App() {
   }
 
   async function runLockedBurnFlow() {
-    if (!opnetProvider || (!opnetSigner && !hasOPWalletWeb3()) || !opnetAddressObject || !walletAddress) {
-      setBurnStatus('Connect OP_WALLET first (provider/signer unavailable).');
+    if (!opnetProvider || !opnetAddressObject || !walletAddress) {
+      setBurnStatus('Connect OP_WALLET first (provider/address unavailable).');
       return;
     }
 
@@ -727,7 +624,7 @@ export function App() {
 
       setBurnStatus('Simulation OK. Sending burn request transaction...');
       const tx = await simulation.sendTransaction({
-        signer: opnetSigner ?? null,
+        signer: null,
         mldsaSigner: null,
         refundTo: walletAddress,
         maximumAllowedSatToSpend: OPNET_MAX_SAT_SPEND,
@@ -750,14 +647,8 @@ export function App() {
       setClaimMintStatus('Set Status API Base URL first.');
       return;
     }
-    if (!opnetProvider || (!opnetSigner && !hasOPWalletWeb3()) || !opnetAddressObject || !walletAddress) {
-      try {
-        setClaimMintStatus('OP_WALLET signer unavailable. Attempting reconnect...');
-        await connectToWallet(SupportedWallets.OP_WALLET);
-        setClaimMintStatus('Reconnect requested. If approved in OP_WALLET, tap Claim Mint again.');
-      } catch (error) {
-        setClaimMintStatus(`OP_WALLET reconnect failed: ${formatEthereumError(error)}`);
-      }
+    if (!opnetProvider || !opnetAddressObject || !walletAddress) {
+      setClaimMintStatus('Claim Mint blocked: OP_WALLET provider/address unavailable.');
       return;
     }
     if (!claimMintReady) {
@@ -887,7 +778,7 @@ export function App() {
       if (relaySignaturesPacked.length === 0) throw new Error('relaySignaturesPackedHex cannot be empty.');
 
       const ethereumUser = parseEthereumUserForMint(String(mint.ethereumUser ?? ''));
-      const recipient = await parseRecipientForMint(String(mint.recipient ?? ''), opnetProvider, walletAddress || '', opnetAddressObject);
+      const recipient = parseRecipientForMint(String(mint.recipient ?? ''), opnetAddressObject);
       const bridge = getContract(OPNET_BRIDGE_ADDRESS, BRIDGE_MINT_ABI as never, opnetProvider as never, networks.opnetTestnet);
       if (typeof (bridge as { setSender?: (sender: Address) => void }).setSender === 'function') {
         (bridge as { setSender: (sender: Address) => void }).setSender(opnetAddressObject);
@@ -910,7 +801,7 @@ export function App() {
 
       setClaimMintStatus(`Simulation OK. Sending mint transaction for depositId=${depositId.toString()}...`);
       const tx = await simulation.sendTransaction({
-        signer: opnetSigner ?? null,
+        signer: null,
         mldsaSigner: null,
         refundTo: walletAddress,
         maximumAllowedSatToSpend: OPNET_MAX_SAT_SPEND,
