@@ -233,6 +233,99 @@ function parseEthereumUserForMint(raw: string): Address {
   return Address.fromBigInt(BigInt(hex));
 }
 
+function normalizeHex(raw: string): string {
+  const value = raw.trim();
+  if (!value) return '';
+  return value.startsWith('0x') ? value.toLowerCase() : `0x${value.toLowerCase()}`;
+}
+
+function isLikelyHex(raw: string): boolean {
+  const value = normalizeHex(raw);
+  const noPrefix = value.replace(/^0x/, '');
+  return noPrefix.length > 0 && noPrefix.length % 2 === 0 && /^[0-9a-f]+$/.test(noPrefix);
+}
+
+function hex32ToBigInt(raw: string, fieldName: string): bigint {
+  const normalized = normalizeHex(raw);
+  const bytes = hexToBytes(normalized, fieldName);
+  if (bytes.length !== 32) {
+    throw new Error(`${fieldName} must be 32 bytes, got ${bytes.length}.`);
+  }
+  return BigInt(normalized);
+}
+
+async function parseRecipientForMint(
+  rawRecipient: string,
+  provider: unknown,
+  recipientAddressHint: string,
+): Promise<Address> {
+  const recipientHex = normalizeHex(rawRecipient);
+  const recipientValue = hex32ToBigInt(recipientHex, 'mintSubmission.recipient');
+
+  const tryBuildAddressFromRawInfo = (info: unknown, sourceLabel: string): Address | null => {
+    if (!info || typeof info !== 'object' || Object.hasOwn(info as object, 'error')) return null;
+    const row = info as Record<string, unknown>;
+    const tweakedPubkey = normalizeHex(String(row.tweakedPubkey ?? ''));
+    const mldsaHashedPublicKey = normalizeHex(String(row.mldsaHashedPublicKey ?? ''));
+    if (!isLikelyHex(tweakedPubkey) || !isLikelyHex(mldsaHashedPublicKey)) return null;
+
+    if (mldsaHashedPublicKey !== recipientHex) {
+      throw new Error(
+        [
+          'Resolved OPNet recipient does not match attested recipient hash.',
+          `source=${sourceLabel}`,
+          `resolved=${mldsaHashedPublicKey}`,
+          `attested=${recipientHex}`,
+        ].join(' '),
+      );
+    }
+
+    const tweakedValue = hex32ToBigInt(tweakedPubkey, `${sourceLabel}.tweakedPubkey`);
+    const mldsaHashValue = hex32ToBigInt(mldsaHashedPublicKey, `${sourceLabel}.mldsaHashedPublicKey`);
+    return Address.fromBigInt(mldsaHashValue, tweakedValue);
+  };
+
+  const addressHint = recipientAddressHint.trim();
+  if (addressHint && typeof (provider as { getPublicKeyInfo?: unknown }).getPublicKeyInfo === 'function') {
+    try {
+      const resolved = await (provider as { getPublicKeyInfo: (address: string, trusted: boolean) => Promise<Address> }).getPublicKeyInfo(
+        addressHint,
+        false,
+      );
+      const resolvedHex = normalizeHex(typeof (resolved as { toHex?: () => string }).toHex === 'function' ? resolved.toHex() : '');
+      if (resolvedHex && resolvedHex !== recipientHex) {
+        throw new Error(`Resolved OPNet recipient does not match attested recipient hash. hint=${addressHint} resolved=${resolvedHex} attested=${recipientHex}`);
+      }
+      if (resolvedHex) return resolved;
+    } catch {
+      // Fallback to raw lookup below.
+    }
+  }
+
+  if (typeof (provider as { getPublicKeysInfoRaw?: unknown }).getPublicKeysInfoRaw === 'function') {
+    try {
+      const keys = [recipientHex];
+      if (addressHint) keys.push(addressHint);
+      const rpcInfoMap = await (provider as { getPublicKeysInfoRaw: (keys: string[]) => Promise<Record<string, unknown>> }).getPublicKeysInfoRaw(keys);
+      const infos: unknown[] = [];
+      if (rpcInfoMap && typeof rpcInfoMap === 'object') {
+        if (Object.hasOwn(rpcInfoMap, recipientHex)) infos.push(rpcInfoMap[recipientHex]);
+        if (Object.hasOwn(rpcInfoMap, rawRecipient)) infos.push(rpcInfoMap[rawRecipient]);
+        if (addressHint && Object.hasOwn(rpcInfoMap, addressHint)) infos.push(rpcInfoMap[addressHint]);
+        infos.push(...Object.values(rpcInfoMap));
+      }
+      for (const info of infos) {
+        const built = tryBuildAddressFromRawInfo(info, 'recipientRawLookup');
+        if (built) return built;
+      }
+    } catch {
+      // Fallback below.
+    }
+  }
+
+  return Address.fromBigInt(recipientValue, recipientValue);
+}
+
 function normalizeHexBytes(raw: string, fieldName: string): string {
   const value = raw.trim();
   const normalized = value.startsWith('0x') ? value.slice(2) : value;
@@ -777,6 +870,7 @@ export function App() {
       if (relaySignaturesPacked.length === 0) throw new Error('relaySignaturesPackedHex cannot be empty.');
 
       const ethereumUser = parseEthereumUserForMint(String(mint.ethereumUser ?? ''));
+      const recipient = await parseRecipientForMint(String(mint.recipient ?? ''), opnetProvider, walletAddress || '');
       const bridge = getContract(OPNET_BRIDGE_ADDRESS, BRIDGE_MINT_ABI as never, opnetProvider as never, networks.opnetTestnet);
       if (typeof (bridge as { setSender?: (sender: Address) => void }).setSender === 'function') {
         (bridge as { setSender: (sender: Address) => void }).setSender(opnetAddressObject);
@@ -786,7 +880,7 @@ export function App() {
       const simulation = await (bridge as any).mintWithRelaySignatures(
         assetId,
         ethereumUser,
-        opnetAddressObject,
+        recipient,
         amount,
         depositId,
         attestationVersion,
