@@ -258,9 +258,24 @@ async function parseRecipientForMint(
   rawRecipient: string,
   provider: unknown,
   recipientAddressHint: string,
+  connectedAddress: Address | null,
 ): Promise<Address> {
   const recipientHex = normalizeHex(rawRecipient);
-  const recipientValue = hex32ToBigInt(recipientHex, 'mintSubmission.recipient');
+
+  const isValidResolvedAddress = (value: Address): boolean => {
+    try {
+      const resolvedHex = normalizeHex(typeof (value as { toHex?: () => string }).toHex === 'function' ? value.toHex() : '');
+      if (resolvedHex !== recipientHex) return false;
+      const tweaked = (value as { tweakedToHex?: () => string }).tweakedToHex?.();
+      return isLikelyHex(String(tweaked ?? ''));
+    } catch {
+      return false;
+    }
+  };
+
+  if (connectedAddress && isValidResolvedAddress(connectedAddress)) {
+    return connectedAddress;
+  }
 
   const tryBuildAddressFromRawInfo = (info: unknown, sourceLabel: string): Address | null => {
     if (!info || typeof info !== 'object' || Object.hasOwn(info as object, 'error')) return null;
@@ -296,7 +311,7 @@ async function parseRecipientForMint(
       if (resolvedHex && resolvedHex !== recipientHex) {
         throw new Error(`Resolved OPNet recipient does not match attested recipient hash. hint=${addressHint} resolved=${resolvedHex} attested=${recipientHex}`);
       }
-      if (resolvedHex) return resolved;
+      if (resolvedHex && isValidResolvedAddress(resolved)) return resolved;
     } catch {
       // Fallback to raw lookup below.
     }
@@ -323,7 +338,9 @@ async function parseRecipientForMint(
     }
   }
 
-  return Address.fromBigInt(recipientValue, recipientValue);
+  throw new Error(
+    'Unable to resolve a valid recipient Schnorr key for mintSubmission.recipient. Reconnect OP_WALLET and retry.',
+  );
 }
 
 function normalizeHexBytes(raw: string, fieldName: string): string {
@@ -870,7 +887,7 @@ export function App() {
       if (relaySignaturesPacked.length === 0) throw new Error('relaySignaturesPackedHex cannot be empty.');
 
       const ethereumUser = parseEthereumUserForMint(String(mint.ethereumUser ?? ''));
-      const recipient = await parseRecipientForMint(String(mint.recipient ?? ''), opnetProvider, walletAddress || '');
+      const recipient = await parseRecipientForMint(String(mint.recipient ?? ''), opnetProvider, walletAddress || '', opnetAddressObject);
       const bridge = getContract(OPNET_BRIDGE_ADDRESS, BRIDGE_MINT_ABI as never, opnetProvider as never, networks.opnetTestnet);
       if (typeof (bridge as { setSender?: (sender: Address) => void }).setSender === 'function') {
         (bridge as { setSender: (sender: Address) => void }).setSender(opnetAddressObject);
