@@ -173,6 +173,29 @@ async function parseRecipientForBridgeAbi(rawRecipient, provider, recipientAddre
 
   const addressHint = String(recipientAddressHint ?? "").trim();
   if (addressHint) {
+    // Prefer parsing the connected address string directly. This path yields the
+    // runtime-native address shape and avoids provider-specific serialization quirks.
+    try {
+      const hinted = Address.fromString(addressHint);
+      const hintedHex = normalizeHex(typeof hinted?.toHex === "function" ? hinted.toHex() : "");
+      if (!hintedHex) {
+        throw new Error("Address.fromString() produced an address without toHex().");
+      }
+      if (hintedHex !== recipientHex) {
+        throw new Error(
+          [
+            "Resolved OPNet recipient does not match attested recipient hash.",
+            `hint=${addressHint}`,
+            `resolved=${hintedHex}`,
+            `attested=${recipientHex}`,
+          ].join(" "),
+        );
+      }
+      return hinted;
+    } catch {
+      // Fall through to RPC-based resolution below.
+    }
+
     let primaryError = null;
     if (typeof provider?.getPublicKeyInfo === "function") {
       try {
@@ -337,6 +360,10 @@ function extractScalar(value) {
   if (typeof value === "bigint") return value.toString();
   if (Array.isArray(value) && value.length > 0) return extractScalar(value[0]);
   if (typeof value === "object") {
+    if ("properties" in value && value.properties && typeof value.properties === "object") {
+      const entries = Object.entries(value.properties);
+      if (entries.length > 0) return extractScalar(entries[0][1]);
+    }
     if ("obj" in value && value.obj && typeof value.obj === "object") {
       const entries = Object.entries(value.obj);
       if (entries.length > 0) return extractScalar(entries[0][1]);
