@@ -15,6 +15,19 @@ const TESTNET_OPNET_RPC_URL = "https://testnet.opnet.org";
 
 const BRIDGE_MINT_ABI = [
   {
+    name: "computeMintAttestationHash",
+    inputs: [
+      { name: "asset", type: ABIDataTypes.UINT8 },
+      { name: "ethereumUser", type: ABIDataTypes.ADDRESS },
+      { name: "recipient", type: ABIDataTypes.ADDRESS },
+      { name: "amount", type: ABIDataTypes.UINT256 },
+      { name: "depositId", type: ABIDataTypes.UINT256 },
+      { name: "attestationVersion", type: ABIDataTypes.UINT8 },
+    ],
+    outputs: [{ name: "messageHash", type: ABIDataTypes.BYTES32 }],
+    type: BitcoinAbiTypes.Function,
+  },
+  {
     name: "mintWithRelaySignatures",
     inputs: [
       { name: "asset", type: ABIDataTypes.UINT8 },
@@ -268,6 +281,14 @@ function parseBooleanEnv(raw, defaultValue = false) {
   throw new Error(`Invalid boolean env value: ${raw}`);
 }
 
+function normalizeBytes32Hex(raw, fieldName) {
+  const bytes = hexToBytes(String(raw ?? "").trim());
+  if (bytes.length !== 32) {
+    throw new Error(`${fieldName} must be 32 bytes, got ${bytes.length}.`);
+  }
+  return bytesToHex(bytes).toLowerCase();
+}
+
 function buildWalletFromEnv(opnetNetwork) {
   const mnemonicPhrase = process.env.OPNET_WALLET_MNEMONIC?.trim();
   if (mnemonicPhrase) {
@@ -426,6 +447,47 @@ Optional:
       2,
     ),
   );
+
+  let computedHashHex = null;
+  try {
+    const hashResult = await bridge.computeMintAttestationHash(
+      Number(mintSubmission.assetId),
+      ethereumUser,
+      recipient,
+      BigInt(mintSubmission.amount),
+      BigInt(mintSubmission.nonce),
+      attestationVersion,
+    );
+    const hashBytes =
+      hashResult && typeof hashResult === "object" && "obj" in hashResult
+        ? hashResult.obj?.messageHash ?? hashResult.values?.[0]
+        : hashResult;
+    if (hashBytes instanceof Uint8Array) {
+      computedHashHex = bytesToHex(hashBytes).toLowerCase();
+    } else if (typeof hashBytes === "string") {
+      computedHashHex = normalizeBytes32Hex(hashBytes, "computeMintAttestationHash.messageHash");
+    } else {
+      throw new Error(`Unexpected hash result type: ${typeof hashBytes}`);
+    }
+    const expectedPayloadHashHex = normalizeHex(selected.payloadHashHex);
+    console.log(
+      JSON.stringify(
+        {
+          action: "opnet/mint/hash-check",
+          computedHashHex,
+          expectedPayloadHashHex,
+          match: computedHashHex === expectedPayloadHashHex,
+        },
+        null,
+        2,
+      ),
+    );
+  } catch (error) {
+    throw new Error(
+      `computeMintAttestationHash probe failed before mint call: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
   if (wantsPreflightOnly()) {
     console.log("Preflight only mode enabled; skipping contract simulation and tx submission.");
     return;
