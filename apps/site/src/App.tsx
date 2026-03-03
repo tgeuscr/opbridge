@@ -471,6 +471,16 @@ export function App() {
   const depositConfigReady = Boolean(ETH_VAULT_ADDRESS && ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol]);
   const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && opnetSigner && opnetAddressObject && walletAddress);
   const claimMintReady = Boolean(opConnected && statusApiUrl.trim() && burnConfigReady && opRecipientHash);
+  const claimMintBlockers = [
+    !opConnected ? 'OP_WALLET not connected' : '',
+    !statusApiUrl.trim() ? 'Status API URL is empty' : '',
+    !OPNET_BRIDGE_ADDRESS ? 'OPNet bridge address is missing (VITE_OPNET_BRIDGE_ADDRESS)' : '',
+    !opnetProvider ? 'OPNet provider unavailable' : '',
+    !opnetSigner ? 'OPNet signer unavailable' : '',
+    !opnetAddressObject ? 'OPNet sender address unavailable' : '',
+    !walletAddress ? 'OP_WALLET address unavailable' : '',
+    !opRecipientHash ? 'Hashed MLDSA key unavailable' : '',
+  ].filter(Boolean);
   const claimReleaseReady = Boolean(walletPairReady && onSepolia && statusApiUrl.trim() && ETH_VAULT_ADDRESS && opRecipientHash);
 
   async function waitForEthereumReceipt(
@@ -621,6 +631,10 @@ export function App() {
     }
     if (!opnetProvider || !opnetSigner || !opnetAddressObject || !walletAddress) {
       setClaimMintStatus('Connect OP_WALLET first (provider/signer unavailable).');
+      return;
+    }
+    if (!claimMintReady) {
+      setClaimMintStatus(`Claim Mint blocked: ${claimMintBlockers.join('; ')}`);
       return;
     }
     try {
@@ -1108,7 +1122,7 @@ export function App() {
           <div className="actions">
             <button
               onClick={runClaimMintFlow}
-              disabled={!claimMintReady || claimMintBusy}
+              disabled={claimMintBusy}
             >
               {claimMintBusy ? 'Submitting Mint…' : 'Claim Mint On OPNet'}
             </button>
@@ -1123,7 +1137,7 @@ export function App() {
           <p className={`notice ${claimMintReady ? 'ok' : ''}`}>
             {claimMintReady
               ? 'Mint claim is enabled. It fetches your ready candidate from Relayer API and submits OPNet mint via OP_WALLET.'
-              : 'Connect OP_WALLET and set Status API URL to enable in-site mint claim.'}
+              : `Mint claim blocked: ${claimMintBlockers.join('; ') || 'unknown blocker'}.`}
           </p>
           <p className="muted">
             Config: vault <code>{short(ETH_VAULT_ADDRESS)}</code> | token <code>{short(ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol])}</code>
