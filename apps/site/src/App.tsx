@@ -242,6 +242,17 @@ function parseRecipientForMint(
   return connectedAddress;
 }
 
+function buildConnectedOpnetAddress(recipientHash: string, btcPublicKey: string, fallback: Address | null): Address | null {
+  const hash = recipientHash.trim();
+  const pubKey = btcPublicKey.trim();
+  if (!hash || !pubKey) return fallback;
+  try {
+    return Address.fromString(hash, pubKey);
+  } catch {
+    return fallback;
+  }
+}
+
 function normalizeHexBytes(raw: string, fieldName: string): string {
   const value = raw.trim();
   const normalized = value.startsWith('0x') ? value.slice(2) : value;
@@ -484,18 +495,19 @@ export function App() {
   const ethConnected = Boolean(ethAddress);
   const onSepolia = ethChainId.toLowerCase() === SEPOLIA_CHAIN_ID_HEX;
   const opRecipientHash = hashedMLDSAKey || '';
+  const connectedOpnetAddress = buildConnectedOpnetAddress(opRecipientHash, publicKey || '', opnetAddressObject);
   const walletPairReady = opConnected && ethConnected;
   const depositReady = walletPairReady && onSepolia && Boolean(opRecipientHash);
   const burnReady = walletPairReady && onSepolia;
   const depositConfigReady = Boolean(ETH_VAULT_ADDRESS && ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol]);
-  const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && opnetAddressObject && walletAddress);
+  const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && connectedOpnetAddress && walletAddress);
   const claimMintReady = Boolean(opConnected && statusApiUrl.trim() && burnConfigReady && opRecipientHash);
   const claimMintBlockers = [
     !opConnected ? 'OP_WALLET not connected' : '',
     !statusApiUrl.trim() ? 'Status API URL is empty' : '',
     !OPNET_BRIDGE_ADDRESS ? 'OPNet bridge address is missing (VITE_OPNET_BRIDGE_ADDRESS)' : '',
     !opnetProvider ? 'OPNet provider unavailable' : '',
-    !opnetAddressObject ? 'OPNet sender address unavailable' : '',
+    !connectedOpnetAddress ? 'OPNet sender address unavailable' : '',
     !walletAddress ? 'OP_WALLET address unavailable' : '',
     !opRecipientHash ? 'Hashed MLDSA key unavailable' : '',
   ].filter(Boolean);
@@ -585,7 +597,7 @@ export function App() {
   }
 
   async function runLockedBurnFlow() {
-    if (!opnetProvider || !opnetAddressObject || !walletAddress) {
+    if (!opnetProvider || !connectedOpnetAddress || !walletAddress) {
       setBurnStatus('Connect OP_WALLET first (provider/address unavailable).');
       return;
     }
@@ -606,13 +618,13 @@ export function App() {
 
       const bridge = getContract(OPNET_BRIDGE_ADDRESS, BRIDGE_BURN_ABI as never, opnetProvider as never, networks.opnetTestnet);
       if (typeof (bridge as any).setSender === 'function') {
-        (bridge as any).setSender(opnetAddressObject);
+        (bridge as any).setSender(connectedOpnetAddress);
       }
 
       setBurnStatus('Simulating burn request on OPNet...');
       const simulation = await (bridge as any).requestBurn(
         assetId,
-        opnetAddressObject,
+        connectedOpnetAddress,
         ethereumRecipient,
         amountRaw,
         withdrawalId,
@@ -647,7 +659,7 @@ export function App() {
       setClaimMintStatus('Set Status API Base URL first.');
       return;
     }
-    if (!opnetProvider || !opnetAddressObject || !walletAddress) {
+    if (!opnetProvider || !connectedOpnetAddress || !walletAddress) {
       setClaimMintStatus('Claim Mint blocked: OP_WALLET provider/address unavailable.');
       return;
     }
@@ -778,10 +790,10 @@ export function App() {
       if (relaySignaturesPacked.length === 0) throw new Error('relaySignaturesPackedHex cannot be empty.');
 
       const ethereumUser = parseEthereumUserForMint(String(mint.ethereumUser ?? ''));
-      const recipient = parseRecipientForMint(String(mint.recipient ?? ''), opnetAddressObject);
+      const recipient = parseRecipientForMint(String(mint.recipient ?? ''), connectedOpnetAddress);
       const bridge = getContract(OPNET_BRIDGE_ADDRESS, BRIDGE_MINT_ABI as never, opnetProvider as never, networks.opnetTestnet);
       if (typeof (bridge as { setSender?: (sender: Address) => void }).setSender === 'function') {
-        (bridge as { setSender: (sender: Address) => void }).setSender(opnetAddressObject);
+        (bridge as { setSender: (sender: Address) => void }).setSender(connectedOpnetAddress);
       }
 
       setClaimMintStatus(`Simulating mint for depositId=${depositId.toString()}...`);
