@@ -151,6 +151,14 @@ function u256ToBytes(value) {
   return out;
 }
 
+function bytesToBigInt(bytes) {
+  let value = 0n;
+  for (const byte of bytes) {
+    value = (value << 8n) | BigInt(byte);
+  }
+  return value;
+}
+
 function parseMapping(raw) {
   const parsed = JSON.parse(raw);
   const root = parsed.mapping ?? parsed;
@@ -427,6 +435,46 @@ function normalizeEventBuckets(contractEvents, bridgeAddress, bridgeHex) {
   return buckets;
 }
 
+function byteMapToBytes(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const entries = Object.entries(value)
+    .map(([key, byte]) => [Number(key), Number(byte)])
+    .filter(([idx, byte]) => Number.isInteger(idx) && idx >= 0 && Number.isInteger(byte) && byte >= 0 && byte <= 255)
+    .sort((a, b) => a[0] - b[0]);
+  if (entries.length === 0) return null;
+  for (let i = 0; i < entries.length; i += 1) {
+    if (entries[i][0] !== i) return null;
+  }
+  return Uint8Array.from(entries.map(([, byte]) => byte));
+}
+
+function extractStructuredBurnRequestedEvents(contractEvents, bridgeAddress, bridgeHex) {
+  if (!contractEvents || typeof contractEvents !== "object") return [];
+  const targets = new Set([String(bridgeAddress).toLowerCase(), String(bridgeHex).toLowerCase()]);
+  const out = [];
+  for (const [key, events] of Object.entries(contractEvents)) {
+    if (!targets.has(String(key).toLowerCase()) || !Array.isArray(events)) continue;
+    for (const event of events) {
+      if (!event || typeof event !== "object") continue;
+      if (String(event.type ?? "").trim() !== "BurnRequested") continue;
+      const bytes = byteMapToBytes(event.data);
+      if (!bytes || bytes.length < 129) continue;
+
+      out.push({
+        type: "BurnRequested",
+        properties: {
+          assetId: Number(bytes[0]),
+          from: bytesToHex(bytes.slice(1, 33)),
+          ethereumRecipient: bytesToHex(bytes.slice(33, 65)),
+          amount: bytesToBigInt(bytes.slice(65, 97)).toString(),
+          withdrawalId: bytesToBigInt(bytes.slice(97, 129)).toString(),
+        },
+      });
+    }
+  }
+  return out;
+}
+
 function decodeBridgeEventsSafely(bridge, bridgeEventsRaw, txHash, blockHeight) {
   const decodedEvents = [];
   for (let eventIndex = 0; eventIndex < bridgeEventsRaw.length; eventIndex += 1) {
@@ -571,13 +619,22 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                 tx?.hash ?? tx?.id ?? tx?.txid ?? `${block.hash}:${blockHeight.toString()}:${txIndex.toString()}`,
               );
               try {
+                const contractEvents = tx?.events ?? tx?.receipt?.events;
                 const bridgeEventsRaw = normalizeEventBuckets(
-                  tx?.events ?? tx?.receipt?.events,
+                  contractEvents,
                   mapping.opnet.bridgeAddress,
                   mapping.opnet.bridgeHex,
                 );
-                if (bridgeEventsRaw.length === 0) continue;
-                const decodedEvents = decodeBridgeEventsSafely(bridge, bridgeEventsRaw, txHash, blockHeight);
+                const structuredBurnEvents = extractStructuredBurnRequestedEvents(
+                  contractEvents,
+                  mapping.opnet.bridgeAddress,
+                  mapping.opnet.bridgeHex,
+                );
+                if (bridgeEventsRaw.length === 0 && structuredBurnEvents.length === 0) continue;
+                const decodedEvents = [
+                  ...structuredBurnEvents,
+                  ...decodeBridgeEventsSafely(bridge, bridgeEventsRaw, txHash, blockHeight),
+                ];
                 if (decodedEvents.length === 0) continue;
                 let burnOrdinal = 0;
                 for (const evt of decodedEvents) {
