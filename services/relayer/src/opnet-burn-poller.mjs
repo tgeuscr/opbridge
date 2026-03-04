@@ -22,6 +22,16 @@ const TESTNET_OPNET_RPC_URL = "https://testnet.opnet.org";
 
 const BRIDGE_EVENTS_ABI = [
   {
+    name: "MintFinalized",
+    values: [
+      { name: "assetId", type: ABIDataTypes.UINT8 },
+      { name: "recipient", type: ABIDataTypes.ADDRESS },
+      { name: "amount", type: ABIDataTypes.UINT256 },
+      { name: "depositId", type: ABIDataTypes.UINT256 },
+    ],
+    type: BitcoinAbiTypes.Event,
+  },
+  {
     name: "BurnRequested",
     values: [
       { name: "assetId", type: ABIDataTypes.UINT8 },
@@ -29,6 +39,53 @@ const BRIDGE_EVENTS_ABI = [
       { name: "ethereumRecipient", type: ABIDataTypes.ADDRESS },
       { name: "amount", type: ABIDataTypes.UINT256 },
       { name: "withdrawalId", type: ABIDataTypes.UINT256 },
+    ],
+    type: BitcoinAbiTypes.Event,
+  },
+  {
+    name: "WrappedTokenUpdated",
+    values: [
+      { name: "assetId", type: ABIDataTypes.UINT8 },
+      { name: "token", type: ABIDataTypes.ADDRESS },
+    ],
+    type: BitcoinAbiTypes.Event,
+  },
+  {
+    name: "RelayCountUpdated",
+    values: [{ name: "relayCount", type: ABIDataTypes.UINT8 }],
+    type: BitcoinAbiTypes.Event,
+  },
+  {
+    name: "RelayThresholdUpdated",
+    values: [{ name: "requiredSignatures", type: ABIDataTypes.UINT8 }],
+    type: BitcoinAbiTypes.Event,
+  },
+  {
+    name: "BridgePausedUpdated",
+    values: [{ name: "paused", type: ABIDataTypes.BOOL }],
+    type: BitcoinAbiTypes.Event,
+  },
+  {
+    name: "AttestationVersionAcceptanceUpdated",
+    values: [
+      { name: "version", type: ABIDataTypes.UINT8 },
+      { name: "accepted", type: ABIDataTypes.BOOL },
+    ],
+    type: BitcoinAbiTypes.Event,
+  },
+  {
+    name: "ActiveAttestationVersionUpdated",
+    values: [
+      { name: "previousVersion", type: ABIDataTypes.UINT8 },
+      { name: "nextVersion", type: ABIDataTypes.UINT8 },
+    ],
+    type: BitcoinAbiTypes.Event,
+  },
+  {
+    name: "OwnershipTransferred",
+    values: [
+      { name: "previousOwner", type: ABIDataTypes.ADDRESS },
+      { name: "newOwner", type: ABIDataTypes.ADDRESS },
     ],
     type: BitcoinAbiTypes.Event,
   },
