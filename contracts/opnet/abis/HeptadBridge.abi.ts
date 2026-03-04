@@ -94,7 +94,6 @@ export const HeptadBridgeAbi = [
             { name: 'from', type: ABIDataTypes.ADDRESS },
             { name: 'ethereumRecipient', type: ABIDataTypes.ADDRESS },
             { name: 'amount', type: ABIDataTypes.UINT256 },
-            { name: 'withdrawalId', type: ABIDataTypes.UINT256 },
         ],
         outputs: [],
         type: BitcoinAbiTypes.Function,

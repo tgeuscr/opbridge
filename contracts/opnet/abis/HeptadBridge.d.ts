@@ -284,13 +284,7 @@ export interface IHeptadBridge extends IOP_NETContract {
         relayIndexesPacked: Uint8Array,
         relaySignaturesPacked: Uint8Array,
     ): Promise<MintWithRelaySignatures>;
-    requestBurn(
-        asset: number,
-        from: Address,
-        ethereumRecipient: Address,
-        amount: bigint,
-        withdrawalId: bigint,
-    ): Promise<RequestBurn>;
+    requestBurn(asset: number, from: Address, ethereumRecipient: Address, amount: bigint): Promise<RequestBurn>;
     setRelayPubKey(relayIndex: number, relayPubKey: Uint8Array): Promise<SetRelayPubKey>;
     setRelayPubKeysPacked(relayPubKeysPacked: Uint8Array): Promise<SetRelayPubKeysPacked>;
     setRelaysConfigPacked(relayPubKeysPacked: Uint8Array, newThreshold: number): Promise<SetRelaysConfigPacked>;

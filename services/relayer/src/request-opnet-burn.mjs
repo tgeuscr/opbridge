@@ -15,7 +15,6 @@ const BRIDGE_BURN_ABI = [
       { name: "from", type: ABIDataTypes.ADDRESS },
       { name: "ethereumRecipient", type: ABIDataTypes.ADDRESS },
       { name: "amount", type: ABIDataTypes.UINT256 },
-      { name: "withdrawalId", type: ABIDataTypes.UINT256 },
     ],
     outputs: [],
     type: BitcoinAbiTypes.Function,
@@ -94,7 +93,6 @@ Required:
   OPNET_BRIDGE_ADDRESS
   OPNET_BURN_ASSET_ID (uint8)
   OPNET_BURN_AMOUNT (raw integer, token base units)
-  OPNET_BURN_WITHDRAWAL_ID (uint256 integer)
   OPNET_BURN_ETHEREUM_RECIPIENT (0x... recipient on Ethereum)
 
 Wallet (choose one mode):
@@ -125,7 +123,6 @@ Flags:
   const bridgeAddress = requireEnv("OPNET_BRIDGE_ADDRESS");
   const assetId = parseU8Env("OPNET_BURN_ASSET_ID");
   const amount = parseUintEnv("OPNET_BURN_AMOUNT");
-  const withdrawalId = parseUintEnv("OPNET_BURN_WITHDRAWAL_ID");
   const ethereumRecipient = Address.fromString(requireEnv("OPNET_BURN_ETHEREUM_RECIPIENT"));
   const maxSatSpend = BigInt(process.env.OPNET_MAX_SAT_SPEND?.trim() || "20000");
   const feeRate = Number(process.env.OPNET_FEE_RATE?.trim() || "2");
@@ -136,11 +133,11 @@ Flags:
   const bridge = getContract(bridgeAddress, BRIDGE_BURN_ABI, provider, opnetNetwork);
 
   console.log(
-    `Requesting burn asset=${assetId} amount=${amount.toString()} withdrawalId=${withdrawalId.toString()} send=${String(!simulateOnly)}`,
+    `Requesting burn asset=${assetId} amount=${amount.toString()} send=${String(!simulateOnly)} (withdrawalId generated on-chain)`,
   );
   console.log(`OP_NET RPC transport: ${describeOpnetRpcTransport()} -> ${opnetRpcUrl}`);
 
-  const simulation = await bridge.requestBurn(assetId, wallet.address, ethereumRecipient, amount, withdrawalId);
+  const simulation = await bridge.requestBurn(assetId, wallet.address, ethereumRecipient, amount);
   if (simulation.revert) {
     throw new Error(`Burn simulation revert: ${simulation.revert}`);
   }
@@ -158,7 +155,7 @@ Flags:
     burnRequest: {
       assetId,
       amount: amount.toString(),
-      withdrawalId: withdrawalId.toString(),
+      withdrawalId: "generated-on-chain",
       ethereumRecipient: requireEnv("OPNET_BURN_ETHEREUM_RECIPIENT"),
       from: wallet.address.toHex(),
     },

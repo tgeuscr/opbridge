@@ -123,7 +123,6 @@ type HeptadBridgeContract = {
     from: unknown,
     ethereumRecipient: unknown,
     amount: bigint,
-    withdrawalId: bigint,
   ) => Promise<CallResult>;
   setWrappedToken: (asset: number, token: unknown) => Promise<CallResult>;
   setRelayPubKey: (relayIndex: number, relayPubKey: Uint8Array) => Promise<CallResult>;
@@ -470,7 +469,6 @@ export function App() {
   const [depositId, setDepositId] = useState('1');
   const [dummyDepositId, setDummyDepositId] = useState('1');
   const [mintDepositId, setMintDepositId] = useState('1');
-  const [withdrawalId, setWithdrawalId] = useState('1');
   const [burnEthereumRecipientAddress, setBurnEthereumRecipientAddress] = useState('');
   const [dummyEthereumUserAddress, setDummyEthereumUserAddress] = useState('');
   const [mintEthereumUserAddress, setMintEthereumUserAddress] = useState('');
@@ -3375,10 +3373,6 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
             </button>
           </div>
           <label>
-            Withdrawal ID (uint256)
-            <input value={withdrawalId} onChange={(e) => setWithdrawalId(e.target.value)} />
-          </label>
-          <label>
             Ethereum Recipient (0x...)
             <input
               value={burnEthereumRecipientAddress}
@@ -3417,7 +3411,6 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
                       opnetAddress,
                       ethereumRecipient,
                       rawAmount,
-                      BigInt(withdrawalId || '0'),
                     ),
                   false,
                 );
@@ -3455,7 +3448,6 @@ selectedAssetBalanceRaw: ${selectedAssetBalanceRaw}`}
                       opnetAddress,
                       ethereumRecipient,
                       rawAmount,
-                      BigInt(withdrawalId || '0'),
                     ),
                   true,
                 );

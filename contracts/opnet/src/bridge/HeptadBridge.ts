@@ -39,6 +39,7 @@ const ownerPointer: u16 = Blockchain.nextPointer;
 
 const processedDepositsPointer:    u16 = Blockchain.nextPointer;
 const processedWithdrawalsPointer: u16 = Blockchain.nextPointer;
+const nextWithdrawalNoncePointer:  u16 = Blockchain.nextPointer;
 
 const relayConfigPointer: u16 = Blockchain.nextPointer;
 const ethereumVaultPointer: u16 = Blockchain.nextPointer;
@@ -113,6 +114,7 @@ export class HeptadBridge extends OP_NET {
 
     private _processedDeposits: StoredMapU256 | null = null;
     private _processedWithdrawals: StoredMapU256 | null = null;
+    private _nextWithdrawalNonce: StoredMapU256 | null = null;
 
     public constructor() {
         super();
@@ -233,6 +235,13 @@ export class HeptadBridge extends OP_NET {
         return this._processedWithdrawals!;
     }
 
+    private _nextWithdrawalNonceStore(): StoredMapU256 {
+        if (this._nextWithdrawalNonce === null) {
+            this._nextWithdrawalNonce = new StoredMapU256(nextWithdrawalNoncePointer);
+        }
+        return this._nextWithdrawalNonce!;
+    }
+
     public override onDeployment(_: Calldata): void {
         const deployer = Blockchain.tx.sender;
         const startsPaused = true;
@@ -347,7 +356,6 @@ export class HeptadBridge extends OP_NET {
         { name: 'from', type: ABIDataTypes.ADDRESS },
         { name: 'ethereumRecipient', type: ABIDataTypes.ADDRESS },
         { name: 'amount', type: ABIDataTypes.UINT256 },
-        { name: 'withdrawalId', type: ABIDataTypes.UINT256 },
     )
     @emit('BurnRequested')
     public requestBurn(calldata: Calldata): BytesWriter {
@@ -355,7 +363,7 @@ export class HeptadBridge extends OP_NET {
         const from = calldata.readAddress();
         const ethereumRecipient = calldata.readAddress();
         const amount = calldata.readU256();
-        const withdrawalId = calldata.readU256();
+        const withdrawalId = this._nextWithdrawalId();
 
         this._requireNotPaused();
 
@@ -1091,6 +1099,13 @@ export class HeptadBridge extends OP_NET {
         if (this._processedWithdrawalsStore().get(withdrawalId) > u256.Zero) {
             throw new Revert('Withdrawal already processed');
         }
+    }
+
+    private _nextWithdrawalId(): u256 {
+        const store = this._nextWithdrawalNonceStore();
+        const next = store.get(u256.Zero);
+        store.set(u256.Zero, next + u256.One);
+        return next;
     }
 
     private _setRelaysConfigPacked(relayPubKeysPacked: Uint8Array, newThreshold: u8): void {

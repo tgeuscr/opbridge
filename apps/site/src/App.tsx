@@ -68,7 +68,6 @@ const BRIDGE_BURN_ABI = [
       { name: 'from', type: ABIDataTypes.ADDRESS },
       { name: 'ethereumRecipient', type: ABIDataTypes.ADDRESS },
       { name: 'amount', type: ABIDataTypes.UINT256 },
-      { name: 'withdrawalId', type: ABIDataTypes.UINT256 },
     ],
     outputs: [],
     type: BitcoinAbiTypes.Function,
@@ -544,7 +543,6 @@ export function App() {
   const [claimMintBusy, setClaimMintBusy] = useState(false);
   const [claimMintStatus, setClaimMintStatus] = useState('No mint claim started yet.');
   const [claimMintPreflight, setClaimMintPreflight] = useState('No mint preflight captured yet.');
-  const [burnWithdrawalId, setBurnWithdrawalId] = useState('0');
   const [burnBusy, setBurnBusy] = useState(false);
   const [burnStatus, setBurnStatus] = useState('No burn started yet.');
   const [claimWithdrawalId, setClaimWithdrawalId] = useState('');
@@ -1093,10 +1091,6 @@ export function App() {
       const { assetId, decimals } = ETH_ASSET_CONFIG[asset];
       const amountRaw = parseHumanAmount(burnAmount, decimals);
       if (amountRaw <= 0n) throw new Error('Amount must be greater than zero.');
-      if (!/^\d+$/.test(burnWithdrawalId.trim())) {
-        throw new Error('Withdrawal ID must be a non-negative integer.');
-      }
-      const withdrawalId = BigInt(burnWithdrawalId.trim());
       const ethereumRecipient = ethereumAddressToAddressWord(ethAddress);
       const sender = await resolveConnectedSender();
       if (!sender) throw new Error('Connected OP_WALLET sender address is unavailable.');
@@ -1112,7 +1106,6 @@ export function App() {
         sender,
         ethereumRecipient,
         amountRaw,
-        withdrawalId,
       );
 
       if (simulation?.revert) {
@@ -1134,7 +1127,7 @@ export function App() {
       });
 
       setBurnStatus(
-        `Burn request sent. asset=${asset} amount=${burnAmount} withdrawalId=${withdrawalId.toString()} tx=${short((tx as { transactionId?: string })?.transactionId || null)}`,
+        `Burn request sent. asset=${asset} amount=${burnAmount} withdrawalId=auto(on-chain) tx=${short((tx as { transactionId?: string })?.transactionId || null)}`,
       );
     } catch (error) {
       setBurnStatus(`Burn failed: ${formatEthereumError(error)}`);
@@ -1828,15 +1821,6 @@ export function App() {
               onChange={(e) => setBurnAmount(e.target.value)}
               placeholder="0.0"
               inputMode="decimal"
-            />
-          </label>
-          <label className="field">
-            <span>Withdrawal ID (uint256)</span>
-            <input
-              value={burnWithdrawalId}
-              onChange={(e) => setBurnWithdrawalId(e.target.value)}
-              placeholder="0"
-              inputMode="numeric"
             />
           </label>
           <div className="route-box">
