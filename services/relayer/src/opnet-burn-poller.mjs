@@ -505,6 +505,16 @@ function isLikelyTxHash(raw) {
   return /^[0-9a-f]{64}$/.test(value);
 }
 
+function txIdentifierCandidates(tx) {
+  const out = [];
+  for (const key of ["id", "txid", "hash", "transactionHash", "transactionId"]) {
+    const value = String(tx?.[key] ?? "").trim().toLowerCase();
+    if (!value || !isLikelyTxHash(value) || out.includes(value)) continue;
+    out.push(value);
+  }
+  return out;
+}
+
 async function main() {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     console.log(`OP_NET Burn Poller (OP_NET -> ETH release attestations)
@@ -638,11 +648,10 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
             }
             for (let txIndex = 0; txIndex < transactions.length; txIndex += 1) {
               let tx = transactions[txIndex];
-              const txHash = String(
-                tx?.hash ?? tx?.id ?? tx?.txid ?? `${block.hash}:${blockHeight.toString()}:${txIndex.toString()}`,
-              );
+              const txIds = txIdentifierCandidates(tx);
+              const txHash = txIds[0] ?? `${block.hash}:${blockHeight.toString()}:${txIndex.toString()}`;
               try {
-                if (usedRawFallback && isLikelyTxHash(txHash)) {
+                if (usedRawFallback && txIds.length > 0) {
                   const rawEvents = tx?.events ?? tx?.receipt?.events;
                   const hasRawEvents = rawEvents && typeof rawEvents === "object" && Object.keys(rawEvents).length > 0;
                   const rawHasStructuredBurnRequested = hasStructuredBurnRequested(
@@ -654,17 +663,21 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                   // Some block-level raw tx entries include bridge payloads that are malformed/mis-encoded.
                   const shouldHydrate = !hasRawEvents || !rawHasStructuredBurnRequested;
                   if (shouldHydrate) {
-                    try {
-                      const hydrated = await provider.getTransaction(txHash);
-                      if (hydrated && typeof hydrated === "object") {
-                        tx = hydrated;
+                    let hydratedOk = false;
+                    for (const candidate of txIds) {
+                      try {
+                        const hydrated = await provider.getTransaction(candidate);
+                        if (hydrated && typeof hydrated === "object") {
+                          tx = hydrated;
+                          hydratedOk = true;
+                          break;
+                        }
+                      } catch {
+                        // Try next candidate id/hash form.
                       }
-                    } catch (error) {
-                      console.warn(
-                        `[opnet-burn-poller] tx=${txHash} hydration failed in fallback mode: ${
-                          error instanceof Error ? error.message : String(error)
-                        }`,
-                      );
+                    }
+                    if (!hydratedOk) {
+                      console.warn(`[opnet-burn-poller] tx=${txHash} hydration failed for ids=[${txIds.join(",")}].`);
                     }
                   }
                 }
