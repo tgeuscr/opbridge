@@ -44,7 +44,7 @@ expectContains(
 
 expectContains(
   bridgeSource,
-  "payload.writeU8(attestationVersion);\n        payload.writeAddress(this._ethereumVaultStore().value);\n        payload.writeAddress(this.address);\n        payload.writeAddress(ethereumUser);\n        payload.writeAddress(opnetUser);\n        payload.writeU8(asset);\n        payload.writeU256(amount);\n        payload.writeU8(DIRECTION_ETH_TO_OP_MINT);\n        payload.writeU256(depositId);",
+  "payload.writeU8(attestationVersion);\n        payload.writeAddress(this._ethereumVaultStore().value);\n        payload.writeAddress(this.address);\n        payload.writeBytes(ethereumUser);\n        payload.writeAddress(opnetUser);\n        payload.writeU8(asset);\n        payload.writeU256(amount);\n        payload.writeU8(DIRECTION_ETH_TO_OP_MINT);\n        payload.writeU256(depositId);",
   'mint attestation hash must use the canonical field order',
 );
 
