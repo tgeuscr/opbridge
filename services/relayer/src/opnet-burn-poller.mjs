@@ -376,6 +376,18 @@ function normalizeEventBuckets(contractEvents, bridgeAddress, bridgeHex) {
   if (!contractEvents || typeof contractEvents !== "object") return [];
   const targets = new Set([String(bridgeAddress).toLowerCase(), String(bridgeHex).toLowerCase()]);
   const buckets = [];
+  const byteMapToBase64 = (value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const entries = Object.entries(value)
+      .map(([key, byte]) => [Number(key), Number(byte)])
+      .filter(([idx, byte]) => Number.isInteger(idx) && idx >= 0 && Number.isInteger(byte) && byte >= 0 && byte <= 255)
+      .sort((a, b) => a[0] - b[0]);
+    if (entries.length === 0) return null;
+    for (let i = 0; i < entries.length; i += 1) {
+      if (entries[i][0] !== i) return null;
+    }
+    return Buffer.from(entries.map(([, byte]) => byte)).toString("base64");
+  };
   for (const [key, events] of Object.entries(contractEvents)) {
     if (!Array.isArray(events)) continue;
     if (targets.has(String(key).toLowerCase())) {
@@ -388,6 +400,10 @@ function normalizeEventBuckets(contractEvents, bridgeAddress, bridgeHex) {
             payload = payload.data;
           } else if (typeof payload.payload === "string") {
             payload = payload.payload;
+          } else if (payload.data && typeof payload.data === "object") {
+            // Some OPNet RPC responses return structured events:
+            // { type: "BurnRequested", data: { "0": <byte>, ... } }.
+            payload = byteMapToBase64(payload.data);
           }
         }
 
