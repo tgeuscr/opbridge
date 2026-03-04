@@ -495,6 +495,11 @@ function decodeBridgeEventsSafely(bridge, bridgeEventsRaw, txHash, blockHeight) 
   return decodedEvents;
 }
 
+function hasStructuredBurnRequested(contractEvents, bridgeAddress, bridgeHex) {
+  const structured = extractStructuredBurnRequestedEvents(contractEvents, bridgeAddress, bridgeHex);
+  return structured.length > 0;
+}
+
 function isLikelyTxHash(raw) {
   const value = String(raw ?? "").trim().toLowerCase();
   return /^[0-9a-f]{64}$/.test(value);
@@ -640,7 +645,20 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                 if (usedRawFallback && isLikelyTxHash(txHash)) {
                   const rawEvents = tx?.events ?? tx?.receipt?.events;
                   const hasRawEvents = rawEvents && typeof rawEvents === "object" && Object.keys(rawEvents).length > 0;
-                  if (!hasRawEvents) {
+                  const rawBridgePayloads = normalizeEventBuckets(
+                    rawEvents,
+                    mapping.opnet.bridgeAddress,
+                    mapping.opnet.bridgeHex,
+                  );
+                  const rawHasStructuredBurnRequested = hasStructuredBurnRequested(
+                    rawEvents,
+                    mapping.opnet.bridgeAddress,
+                    mapping.opnet.bridgeHex,
+                  );
+                  // In fallback mode, hydrate when tx has no events OR lacks bridge BurnRequested.
+                  // Some block-level raw tx entries include token events but omit/garble bridge events.
+                  const shouldHydrate = !hasRawEvents || (rawBridgePayloads.length === 0 && !rawHasStructuredBurnRequested);
+                  if (shouldHydrate) {
                     try {
                       const hydrated = await provider.getTransaction(txHash);
                       if (hydrated && typeof hydrated === "object") {
