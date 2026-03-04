@@ -16,6 +16,7 @@ contract HeptadVault {
     error WithdrawalAlreadyProcessed();
     error InvalidSourceBridge();
     error InvalidFeeConfig();
+    error InvalidWhitelistAddress();
 
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event VaultPausedUpdated(bool paused);
@@ -28,6 +29,7 @@ contract HeptadVault {
     event RelayCountUpdated(uint8 previousCount, uint8 nextCount);
     event FeeBpsUpdated(uint16 previousFeeBps, uint16 nextFeeBps);
     event FeeRecipientUpdated(address indexed previousRecipient, address indexed nextRecipient);
+    event FeeWhitelistUpdated(address indexed account, bool whitelisted);
     event DepositFeeCollected(
         uint256 indexed depositId,
         uint8 indexed assetId,
@@ -88,6 +90,7 @@ contract HeptadVault {
     mapping(uint8 => AssetConfig) public assets;
     mapping(uint8 => address) public relaySigners;
     mapping(uint256 => bool) public processedWithdrawals;
+    mapping(address => bool) public feeWhitelist;
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -144,6 +147,12 @@ contract HeptadVault {
         address previous = feeRecipient;
         feeRecipient = nextFeeRecipient;
         emit FeeRecipientUpdated(previous, nextFeeRecipient);
+    }
+
+    function setFeeWhitelist(address account, bool whitelisted) external onlyOwner {
+        if (account == address(0)) revert InvalidWhitelistAddress();
+        feeWhitelist[account] = whitelisted;
+        emit FeeWhitelistUpdated(account, whitelisted);
     }
 
     function setAttestationVersionAccepted(uint8 version, bool accepted) external onlyOwner whenPaused {
@@ -276,7 +285,7 @@ contract HeptadVault {
 
         _verifyRelaySignatures(attestationHash, threshold, count, relayIndexesPacked, relaySignaturesPacked);
 
-        (uint256 netAmount, uint256 feeAmount) = _splitAmountFee(request.amount);
+        (uint256 netAmount, uint256 feeAmount) = _splitAmountFee(request.amount, request.recipient);
 
         processedWithdrawals[request.withdrawalId] = true;
         _transferAndEmitWithdrawalRelease(
@@ -368,7 +377,7 @@ contract HeptadVault {
         if (!ok) revert TokenTransferFailed();
 
         depositId = _nextDepositId();
-        (uint256 netAmount, uint256 feeAmount) = _splitAmountFee(amount);
+        (uint256 netAmount, uint256 feeAmount) = _splitAmountFee(amount, msg.sender);
         if (feeAmount > 0) {
             bool feeOk = IERC20(config.token).transfer(feeRecipient, feeAmount);
             if (!feeOk) revert TokenTransferFailed();
@@ -385,7 +394,10 @@ contract HeptadVault {
         );
     }
 
-    function _splitAmountFee(uint256 grossAmount) private view returns (uint256 netAmount, uint256 feeAmount) {
+    function _splitAmountFee(uint256 grossAmount, address account) private view returns (uint256 netAmount, uint256 feeAmount) {
+        if (feeWhitelist[account]) {
+            return (grossAmount, 0);
+        }
         if (feeBps > 10_000 || feeRecipient == address(0)) revert InvalidFeeConfig();
         // Overflow-safe equivalent of floor(grossAmount * feeBps / 10_000).
         uint256 whole = grossAmount / 10_000;

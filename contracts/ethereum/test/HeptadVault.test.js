@@ -119,6 +119,48 @@ describe("HeptadVault", function () {
       .withArgs(100, 150);
   });
 
+  it("manages fee whitelist without pause guard and enforces owner-only access", async function () {
+    const [owner, user] = await ethers.getSigners();
+    const vaultFactory = factoryFor("HeptadVault", compiled, owner);
+    const vault = await vaultFactory.deploy(owner.address);
+    await vault.waitForDeployment();
+
+    await vault.setPaused(false);
+    await expect(vault.setFeeWhitelist(user.address, true))
+      .to.emit(vault, "FeeWhitelistUpdated")
+      .withArgs(user.address, true);
+    expect(await vault.feeWhitelist(user.address)).to.equal(true);
+
+    await expect(vault.connect(user).setFeeWhitelist(owner.address, true))
+      .to.be.revertedWithCustomError(vault, "NotOwner");
+    await expect(vault.setFeeWhitelist(ethers.ZeroAddress, true))
+      .to.be.revertedWithCustomError(vault, "InvalidWhitelistAddress");
+  });
+
+  it("waives deposit fee for whitelisted users", async function () {
+    const { vault, owner, user } = await deployFixture();
+    const assetId = 0;
+    const recipient = ethers.zeroPadValue("0xabcd", 32);
+    const amount = ethers.parseUnits("100", 18);
+
+    const tokenFactory = factoryFor("MockERC20", compiled, user);
+    const token = await tokenFactory.deploy(ethers.parseUnits("1000000", 18));
+    await token.waitForDeployment();
+
+    await token.transfer(user.address, amount);
+    await vault.configureAsset(assetId, await token.getAddress(), true);
+    await vault.setFeeWhitelist(user.address, true);
+    await vault.setPaused(false);
+    await token.connect(user).approve(await vault.getAddress(), amount);
+
+    await expect(vault.connect(user).depositERC20(assetId, amount, recipient))
+      .to.emit(vault, "DepositInitiated")
+      .withArgs(0n, assetId, user.address, await token.getAddress(), amount, recipient, anyValue);
+
+    expect(await token.balanceOf(await vault.getAddress())).to.equal(amount);
+    expect(await token.balanceOf(owner.address)).to.equal(0n);
+  });
+
   it("releases tokens with threshold relay signatures and blocks replay", async function () {
     const [owner, recipient, feeCollector] = await ethers.getSigners();
     const relay0 = ethers.Wallet.createRandom();
@@ -257,6 +299,63 @@ describe("HeptadVault", function () {
         ethers.concat([sig0, badSig1]),
       )
     ).to.be.revertedWithCustomError(vault, "InvalidRelaySignature");
+  });
+
+  it("waives withdrawal fee for whitelisted release recipient", async function () {
+    const [owner, recipient, feeCollector] = await ethers.getSigners();
+    const relay0 = ethers.Wallet.createRandom();
+    const relay1 = ethers.Wallet.createRandom();
+    const vaultFactory = factoryFor("HeptadVault", compiled, owner);
+    const vault = await vaultFactory.deploy(owner.address);
+    await vault.waitForDeployment();
+
+    const tokenFactory = factoryFor("MockERC20", compiled, owner);
+    const token = await tokenFactory.deploy(ethers.parseUnits("1000000", 18));
+    await token.waitForDeployment();
+
+    const assetId = 0;
+    const amount = ethers.parseUnits("25", 18);
+    const withdrawalId = 43n;
+    const opnetUser = ethers.zeroPadValue("0x1235", 32);
+    const attestationVersion = 1;
+    const opnetBridgeHex = ethers.zeroPadValue("0xbeef", 32);
+
+    await vault.configureAsset(assetId, await token.getAddress(), true);
+    await token.transfer(await vault.getAddress(), amount);
+    await vault.setOpnetBridgeHex(opnetBridgeHex);
+    await vault.setRelayCount(2);
+    await vault.setRelayThreshold(2);
+    await vault.setRelaySigner(0, relay0.address);
+    await vault.setRelaySigner(1, relay1.address);
+    await vault.setFeeRecipient(feeCollector.address);
+    await vault.setFeeWhitelist(recipient.address, true);
+    await vault.setPaused(false);
+
+    const attestationHash = await vault.computeReleaseAttestationHash(
+      assetId,
+      opnetUser,
+      recipient.address,
+      amount,
+      withdrawalId,
+      attestationVersion,
+    );
+
+    const sig0 = relay0.signingKey.sign(attestationHash).serialized;
+    const sig1 = relay1.signingKey.sign(attestationHash).serialized;
+
+    await vault.releaseWithRelaySignatures(
+      assetId,
+      opnetUser,
+      recipient.address,
+      amount,
+      withdrawalId,
+      attestationVersion,
+      ethers.concat([ethers.toBeHex(0, 1), ethers.toBeHex(1, 1)]),
+      ethers.concat([sig0, sig1]),
+    );
+
+    expect(await token.balanceOf(recipient.address)).to.equal(amount);
+    expect(await token.balanceOf(feeCollector.address)).to.equal(0n);
   });
 });
 
