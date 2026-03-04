@@ -645,19 +645,14 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                 if (usedRawFallback && isLikelyTxHash(txHash)) {
                   const rawEvents = tx?.events ?? tx?.receipt?.events;
                   const hasRawEvents = rawEvents && typeof rawEvents === "object" && Object.keys(rawEvents).length > 0;
-                  const rawBridgePayloads = normalizeEventBuckets(
-                    rawEvents,
-                    mapping.opnet.bridgeAddress,
-                    mapping.opnet.bridgeHex,
-                  );
                   const rawHasStructuredBurnRequested = hasStructuredBurnRequested(
                     rawEvents,
                     mapping.opnet.bridgeAddress,
                     mapping.opnet.bridgeHex,
                   );
-                  // In fallback mode, hydrate when tx has no events OR lacks bridge BurnRequested.
-                  // Some block-level raw tx entries include token events but omit/garble bridge events.
-                  const shouldHydrate = !hasRawEvents || (rawBridgePayloads.length === 0 && !rawHasStructuredBurnRequested);
+                  // In fallback mode, hydrate when tx has no events OR lacks structured BurnRequested.
+                  // Some block-level raw tx entries include bridge payloads that are malformed/mis-encoded.
+                  const shouldHydrate = !hasRawEvents || !rawHasStructuredBurnRequested;
                   if (shouldHydrate) {
                     try {
                       const hydrated = await provider.getTransaction(txHash);
