@@ -1,17 +1,17 @@
 {
   "network": "sepolia",
   "chainId": 11155111,
-  "deployedAt": "2026-03-04T07:40:39.799Z",
+  "deployedAt": "2026-03-04T17:39:28.683Z",
   "deployer": "0xDBC112f28da61cA54e8F2A802866Dcc516Fa6D86",
   "owner": "0xDBC112f28da61cA54e8F2A802866Dcc516Fa6D86",
   "feeRecipient": "0x7c72d96895627928B8060942E37e6f0a43a1Dba4",
-  "vaultAddress": "0xfFd0A988E8605CBE50ede894DAdBDDf6f17598DD",
+  "vaultAddress": "0x9a27a441132AD4a86a8d781Bb2617a741104F342",
   "assets": [
     {
       "assetId": 0,
       "symbol": "USDT",
       "decimals": 6,
-      "tokenAddress": "0x48B33fC198f93C498a1af1580CAce7aD31782E53",
+      "tokenAddress": "0x70642a53a64aDF15AA1F8311425D38efc04Ef02a",
       "faucet": {
         "enabled": true,
         "claimAmountRaw": "5000",
@@ -22,7 +22,7 @@
       "assetId": 1,
       "symbol": "WBTC",
       "decimals": 8,
-      "tokenAddress": "0x95f22b72fB6E358484aBdC82aAA4c6412d50df15",
+      "tokenAddress": "0x9D42E00B0D72B6F54e181c68F31f1F53944EA969",
       "faucet": {
         "enabled": true,
         "claimAmountRaw": "0.1",
@@ -33,7 +33,7 @@
       "assetId": 2,
       "symbol": "WETH",
       "decimals": 18,
-      "tokenAddress": "0xF5143950dAdBCf74B72aC423ca0B174eACAFeCbc",
+      "tokenAddress": "0x96DA5575B1bD0c3CF4786733355513Dff2A9334D",
       "faucet": {
         "enabled": true,
         "claimAmountRaw": "2",
@@ -44,7 +44,7 @@
       "assetId": 3,
       "symbol": "PAXG",
       "decimals": 18,
-      "tokenAddress": "0x8d4d0b2E7c37277ABb12a031f6D5dD76BC1dA05D",
+      "tokenAddress": "0xD8CD8E95b0461D4e76C2A97C705be7695539fA7E",
       "faucet": {
         "enabled": true,
         "claimAmountRaw": "1",
@@ -53,14 +53,14 @@
     }
   ],
   "opnet": {
-    "network": "regtest",
-    "bridgeAddress": "opt1sqqr297re8xauwn8t7rxq0lnr90gsdwprtvmsxg66",
-    "bridgeHex": "0x232ae4595e0b06c09fdacaede01fc1202ea4352c667620661048d6fe12b22b5e",
+    "network": "testnet",
+    "bridgeAddress": "opt1sqq3sffh6wasa9pdstgc2dtlrswfm2t878vp0hc8j",
+    "bridgeHex": "0x7b47f9d39c855c13ec94e3a7a9750a5f386a4ae58f96242194549f643ce6afd7",
     "wrappedTokens": {
-      "USDT": "opt1sqq6ucw4e5uy25f888ud5s6h33m9wl4w7av49rzve",
-      "WBTC": "opt1sqp6zxa2wedf7n2jptgp8xtcp23njvhx3z5rkcd06",
-      "WETH": "opt1sqq549c85xzhvua0rv57ehqurzjtmxwv3f5psf0w5",
-      "PAXG": "opt1sqzzdsj0ygeut7gvnm3uyvc0xu7knwym5zcs2075n"
+      "USDT": "opt1sqr8ayy2476cv7zrrnp2gsq2lk67d0tdc9y2uzw55",
+      "WBTC": "opt1sqqhqx4r78fgzgv0vfkx038983fh68chkkutqvzzx",
+      "WETH": "opt1sqqawsa9nu30345wu29l97ql4nphndnrn5s99v7ac",
+      "PAXG": "opt1sqpr0re5zchswwxqxpje844a636lhl4f5t5pdfzjx"
     }
   }
 }
