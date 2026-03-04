@@ -354,6 +354,26 @@ function normalizeEventBuckets(contractEvents, bridgeAddress, bridgeHex) {
   return buckets;
 }
 
+function decodeBridgeEventsSafely(bridge, bridgeEventsRaw, txHash, blockHeight) {
+  const decodedEvents = [];
+  for (let eventIndex = 0; eventIndex < bridgeEventsRaw.length; eventIndex += 1) {
+    const payload = bridgeEventsRaw[eventIndex];
+    try {
+      const decoded = bridge.decodeEvents([payload]);
+      if (Array.isArray(decoded) && decoded.length > 0) {
+        decodedEvents.push(...decoded);
+      }
+    } catch (error) {
+      console.warn(
+        `[opnet-burn-poller] skipping malformed bridge event payload tx=${txHash} block=${blockHeight.toString()} index=${eventIndex}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+  return decodedEvents;
+}
+
 async function main() {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     console.log(`OP_NET Burn Poller (OP_NET -> ETH release attestations)
@@ -432,6 +452,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
       const head = await provider.getBlockNumber();
       if (head >= nextFromBlock) {
         const pending = [];
+        let retryFromBlock = null;
         let cursor = nextFromBlock;
         while (cursor <= head) {
           const end = cursor + BigInt(maxBlockRange) - 1n <= head ? cursor + BigInt(maxBlockRange) - 1n : head;
@@ -441,10 +462,13 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
               block = await provider.getBlock(height, true);
             } catch (error) {
               console.warn(
-                `[opnet-burn-poller] skipping block=${height.toString()} due to block fetch/parse error: ${
+                `[opnet-burn-poller] block=${height.toString()} fetch/parse error; will retry from this block: ${
                   error instanceof Error ? error.message : String(error)
                 }`,
               );
+              if (retryFromBlock == null || height < retryFromBlock) {
+                retryFromBlock = height;
+              }
               continue;
             }
             const blockHeight = BigInt(block.height);
@@ -463,6 +487,9 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                   error instanceof Error ? error.message : String(error)
                 }`,
               );
+              if (retryFromBlock == null || height < retryFromBlock) {
+                retryFromBlock = height;
+              }
               continue;
             }
             for (let txIndex = 0; txIndex < transactions.length; txIndex += 1) {
@@ -477,17 +504,8 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                   mapping.opnet.bridgeHex,
                 );
                 if (bridgeEventsRaw.length === 0) continue;
-                let decodedEvents = [];
-                try {
-                  decodedEvents = bridge.decodeEvents(bridgeEventsRaw);
-                } catch (error) {
-                  console.warn(
-                    `[opnet-burn-poller] skipping tx=${txHash} at block=${blockHeight.toString()} due to decode error: ${
-                      error instanceof Error ? error.message : String(error)
-                    }`,
-                  );
-                  continue;
-                }
+                const decodedEvents = decodeBridgeEventsSafely(bridge, bridgeEventsRaw, txHash, blockHeight);
+                if (decodedEvents.length === 0) continue;
                 let burnOrdinal = 0;
                 for (const evt of decodedEvents) {
                   if (evt.type !== "BurnRequested") continue;
@@ -585,7 +603,14 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
             );
           }
         }
-        nextFromBlock = head + 1n;
+        if (retryFromBlock != null) {
+          nextFromBlock = retryFromBlock;
+          console.log(
+            `[opnet-burn-poller] retaining cursor at block=${nextFromBlock.toString()} for retry after parse failures.`,
+          );
+        } else {
+          nextFromBlock = head + 1n;
+        }
       }
     } catch (error) {
       console.error(`[opnet-burn-poller-error] ${error instanceof Error ? error.message : String(error)}`);
