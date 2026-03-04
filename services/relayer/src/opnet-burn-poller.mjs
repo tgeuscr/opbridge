@@ -500,40 +500,6 @@ function isLikelyTxHash(raw) {
   return /^[0-9a-f]{64}$/.test(value);
 }
 
-function addWatchedAddress(target, raw) {
-  const value = String(raw ?? "").trim();
-  if (!value) return;
-  target.add(value.toLowerCase());
-  try {
-    target.add(normalizeOpnetAddressHex32(value).toLowerCase());
-  } catch {
-    // Ignore non-address-like values.
-  }
-}
-
-function txTouchesWatchedContracts(tx, watchedContracts) {
-  const candidates = [
-    tx?.to,
-    tx?.recipient,
-    tx?.contractAddress,
-    tx?.address,
-    tx?.call?.to,
-    tx?.interaction?.to,
-  ];
-  for (const candidate of candidates) {
-    if (candidate == null) continue;
-    const raw = String(candidate).trim();
-    if (!raw) continue;
-    if (watchedContracts.has(raw.toLowerCase())) return true;
-    try {
-      if (watchedContracts.has(normalizeOpnetAddressHex32(raw).toLowerCase())) return true;
-    } catch {
-      // Ignore parse failures and continue.
-    }
-  }
-  return false;
-}
-
 async function main() {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     console.log(`OP_NET Burn Poller (OP_NET -> ETH release attestations)
@@ -587,12 +553,6 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
     mapping.opnet.bridgeHex = await resolveOpnetAddressViaRpcToHex32(String(mapping.opnet.bridgeAddress), provider);
   }
   const bridge = getContract(mapping.opnet.bridgeAddress, BRIDGE_EVENTS_ABI, provider, opnetNetwork);
-  const watchedContracts = new Set();
-  addWatchedAddress(watchedContracts, mapping.opnet.bridgeAddress);
-  addWatchedAddress(watchedContracts, mapping.opnet.bridgeHex);
-  for (const wrappedAddress of Object.values(mapping.opnet.wrappedTokens ?? {})) {
-    addWatchedAddress(watchedContracts, wrappedAddress);
-  }
   const relaySigners = loadRelaySigners(relayerId);
 
   fs.mkdirSync(path.dirname(outputFile), { recursive: true });
@@ -680,7 +640,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                 if (usedRawFallback && isLikelyTxHash(txHash)) {
                   const rawEvents = tx?.events ?? tx?.receipt?.events;
                   const hasRawEvents = rawEvents && typeof rawEvents === "object" && Object.keys(rawEvents).length > 0;
-                  if (!hasRawEvents && txTouchesWatchedContracts(tx, watchedContracts)) {
+                  if (!hasRawEvents) {
                     try {
                       const hydrated = await provider.getTransaction(txHash);
                       if (hydrated && typeof hydrated === "object") {
