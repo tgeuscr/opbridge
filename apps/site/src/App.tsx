@@ -60,6 +60,39 @@ type FaucetAssetState = {
   error?: string;
 };
 
+type MintSubmission = {
+  assetId?: number | string;
+  ethereumUser?: string;
+  recipient?: string;
+  amount?: string;
+  nonce?: string;
+  attestationVersion?: number | string;
+  relayIndexesPackedHex?: string;
+  relaySignaturesPackedHex?: string;
+};
+
+type MintCandidate = {
+  depositId?: string;
+  ready?: boolean;
+  mintSubmission?: MintSubmission;
+};
+
+type ReleaseSubmission = {
+  assetId?: number | string;
+  opnetUser?: string;
+  recipient?: string;
+  amount?: string;
+  withdrawalId?: string;
+  attestationVersion?: number | string;
+  relayIndexesPackedHex?: string;
+  relaySignaturesPackedHex?: string;
+};
+
+type ReleaseCandidate = {
+  withdrawalId?: string;
+  releaseSubmission?: ReleaseSubmission;
+};
+
 const BRIDGE_BURN_ABI = [
   {
     name: 'requestBurn',
@@ -231,6 +264,21 @@ function formatTokenAmount(raw: bigint, decimals: number): string {
   if (fraction === 0n) return whole.toString();
   const fractionText = fraction.toString().padStart(decimals, '0').replace(/0+$/, '');
   return `${whole.toString()}.${fractionText}`;
+}
+
+function symbolForAssetId(assetId: number): AssetSymbol | null {
+  const entries = Object.entries(ETH_ASSET_CONFIG) as Array<[AssetSymbol, { assetId: number; decimals: number }]>;
+  const match = entries.find(([, cfg]) => cfg.assetId === assetId);
+  return match?.[0] ?? null;
+}
+
+function formatCandidateAmount(assetIdRaw: unknown, amountRaw: unknown): string {
+  const assetId = Number(assetIdRaw);
+  const amount = BigInt(String(amountRaw ?? '0'));
+  if (!Number.isInteger(assetId) || amount <= 0n) return String(amountRaw ?? '-');
+  const symbol = symbolForAssetId(assetId);
+  if (!symbol) return amount.toString();
+  return `${formatTokenAmount(amount, ETH_ASSET_CONFIG[symbol].decimals)} ${symbol}`;
 }
 
 function parseEvmUint256Result(raw: unknown, fieldName: string): bigint {
@@ -539,13 +587,15 @@ export function App() {
   const [burnAmount, setBurnAmount] = useState('');
   const [depositBusy, setDepositBusy] = useState(false);
   const [depositStatus, setDepositStatus] = useState('No deposit started yet.');
-  const [claimDepositId, setClaimDepositId] = useState('');
+  const [readyMintCandidates, setReadyMintCandidates] = useState<MintCandidate[]>([]);
+  const [readyMintCandidatesBusy, setReadyMintCandidatesBusy] = useState(false);
   const [claimMintBusy, setClaimMintBusy] = useState(false);
   const [claimMintStatus, setClaimMintStatus] = useState('No mint claim started yet.');
   const [claimMintPreflight, setClaimMintPreflight] = useState('No mint preflight captured yet.');
   const [burnBusy, setBurnBusy] = useState(false);
   const [burnStatus, setBurnStatus] = useState('No burn started yet.');
-  const [claimWithdrawalId, setClaimWithdrawalId] = useState('');
+  const [readyReleaseCandidates, setReadyReleaseCandidates] = useState<ReleaseCandidate[]>([]);
+  const [readyReleaseCandidatesBusy, setReadyReleaseCandidatesBusy] = useState(false);
   const [claimReleaseBusy, setClaimReleaseBusy] = useState(false);
   const [claimReleaseStatus, setClaimReleaseStatus] = useState('No withdrawal claim started yet.');
   const [fallbackSigner, setFallbackSigner] = useState<UnisatSigner | null>(null);
@@ -1136,7 +1186,43 @@ export function App() {
     }
   }
 
-  async function runClaimMintFlow() {
+  async function fetchReadyMintCandidates() {
+    if (!statusApiUrl.trim()) throw new Error('Set Status API Base URL first.');
+    const base = statusApiUrl.replace(/\/$/, '');
+    const recipientHash = normalizeBytes32Hex(opRecipientHash, 'Connected OP_WALLET hashed MLDSA key');
+    const query = new URLSearchParams({
+      recipientHash: recipientHash.toLowerCase(),
+      ready: 'true',
+      limit: '20',
+    });
+    if (ethAddress.trim()) {
+      query.set('ethereumUser', ethAddress.toLowerCase());
+    }
+    const response = await fetch(`${base}/mint-candidates?${query.toString()}`);
+    const body = (await response.json()) as { items?: MintCandidate[] };
+    if (!response.ok) throw new Error(`mint-candidates HTTP ${response.status}`);
+    const items = Array.isArray(body.items) ? body.items : [];
+    setReadyMintCandidates(items);
+    return items;
+  }
+
+  async function refreshReadyMintCandidates() {
+    try {
+      setReadyMintCandidatesBusy(true);
+      const items = await fetchReadyMintCandidates();
+      setClaimMintStatus(
+        items.length === 0
+          ? 'No ready mint candidate yet for this wallet pair.'
+          : `Loaded ${items.length} ready mint candidate(s).`,
+      );
+    } catch (error) {
+      setClaimMintStatus(`Failed to load ready mint candidates: ${formatEthereumError(error)}`);
+    } finally {
+      setReadyMintCandidatesBusy(false);
+    }
+  }
+
+  async function runClaimMintFlow(explicitDepositId?: string) {
     if (!statusApiUrl.trim()) {
       setClaimMintStatus('Set Status API Base URL first.');
       return;
@@ -1156,43 +1242,12 @@ export function App() {
       setClaimMintStatus('Fetching ready mint candidates from Relayer API...');
       const base = statusApiUrl.replace(/\/$/, '');
       const recipientHash = normalizeBytes32Hex(opRecipientHash, 'Connected OP_WALLET hashed MLDSA key');
-      const wantedDepositId = claimDepositId.trim();
-      let selected:
-        | {
-            depositId?: string;
-            ready?: boolean;
-            mintSubmission?: {
-              assetId?: number | string;
-              ethereumUser?: string;
-              recipient?: string;
-              amount?: string;
-              nonce?: string;
-              attestationVersion?: number | string;
-              relayIndexesPackedHex?: string;
-              relaySignaturesPackedHex?: string;
-            };
-          }
-        | undefined;
+      const wantedDepositId = explicitDepositId?.trim() || '';
+      let selected: MintCandidate | undefined;
 
       if (wantedDepositId) {
         const response = await fetch(`${base}/deposits/${encodeURIComponent(wantedDepositId)}`);
-        const body = (await response.json()) as {
-          ok?: boolean;
-          mintCandidate?: {
-            depositId?: string;
-            ready?: boolean;
-            mintSubmission?: {
-              assetId?: number | string;
-              ethereumUser?: string;
-              recipient?: string;
-              amount?: string;
-              nonce?: string;
-              attestationVersion?: number | string;
-              relayIndexesPackedHex?: string;
-              relaySignaturesPackedHex?: string;
-            };
-          };
-        };
+        const body = (await response.json()) as { ok?: boolean; mintCandidate?: MintCandidate };
         if (!response.ok) {
           throw new Error(`deposits/${wantedDepositId} HTTP ${response.status}`);
         }
@@ -1206,35 +1261,7 @@ export function App() {
           return;
         }
       } else {
-        const query = new URLSearchParams({
-          recipientHash: recipientHash.toLowerCase(),
-          ready: 'true',
-          limit: '20',
-        });
-        if (ethAddress.trim()) {
-          query.set('ethereumUser', ethAddress.toLowerCase());
-        }
-        const response = await fetch(`${base}/mint-candidates?${query.toString()}`);
-        const body = (await response.json()) as {
-          ok?: boolean;
-          items?: Array<{
-            depositId?: string;
-            mintSubmission?: {
-              assetId?: number | string;
-              ethereumUser?: string;
-              recipient?: string;
-              amount?: string;
-              nonce?: string;
-              attestationVersion?: number | string;
-              relayIndexesPackedHex?: string;
-              relaySignaturesPackedHex?: string;
-            };
-          }>;
-        };
-        if (!response.ok) {
-          throw new Error(`mint-candidates HTTP ${response.status}`);
-        }
-        const items = Array.isArray(body.items) ? body.items : [];
+        const items = await fetchReadyMintCandidates();
         if (items.length === 0) {
           setClaimMintStatus('No ready mint candidate yet for this wallet pair. Wait for relayer aggregation and retry.');
           return;
@@ -1340,6 +1367,7 @@ export function App() {
       setClaimMintStatus(
         `Mint sent. depositId=${depositId.toString()} amount=${amount.toString()} tx=${short((tx as { transactionId?: string })?.transactionId || null)}`,
       );
+      await fetchReadyMintCandidates();
     } catch (error) {
       const baseMessage = `Mint claim failed: ${formatEthereumError(error)}`;
       if (preflightDetails) {
@@ -1353,7 +1381,49 @@ export function App() {
     }
   }
 
-  async function runClaimReleaseFlow() {
+  async function fetchReadyReleaseCandidates(connectedAccount?: string) {
+    if (!statusApiUrl.trim()) throw new Error('Set Status API Base URL first.');
+    const base = statusApiUrl.replace(/\/$/, '');
+    const recipient = normalizeEthereumAddress(connectedAccount || ethAddress, 'Connected MetaMask address');
+    const opnetUser = normalizeBytes32Hex(opRecipientHash, 'Connected OP_WALLET hashed MLDSA key');
+    const query = new URLSearchParams({
+      recipient: recipient.toLowerCase(),
+      opnetUser: opnetUser.toLowerCase(),
+      ready: 'true',
+      limit: '20',
+    });
+    const response = await fetch(`${base}/release-candidates?${query.toString()}`);
+    const body = (await response.json()) as { items?: ReleaseCandidate[] };
+    if (!response.ok) throw new Error(`release-candidates HTTP ${response.status}`);
+    const items = Array.isArray(body.items) ? body.items : [];
+    setReadyReleaseCandidates(items);
+    return items;
+  }
+
+  async function refreshReadyReleaseCandidates() {
+    const provider = getEthereumProvider();
+    if (!provider) {
+      setClaimReleaseStatus('MetaMask provider not found.');
+      return;
+    }
+    try {
+      setReadyReleaseCandidatesBusy(true);
+      const [account] = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
+      setEthAddress(account ?? '');
+      const items = await fetchReadyReleaseCandidates(account ?? '');
+      setClaimReleaseStatus(
+        items.length === 0
+          ? 'No ready release candidate yet for this wallet pair.'
+          : `Loaded ${items.length} ready release candidate(s).`,
+      );
+    } catch (error) {
+      setClaimReleaseStatus(`Failed to load ready release candidates: ${formatEthereumError(error)}`);
+    } finally {
+      setReadyReleaseCandidatesBusy(false);
+    }
+  }
+
+  async function runClaimReleaseFlow(explicitWithdrawalId?: string) {
     const provider = getEthereumProvider();
     if (!provider) {
       setClaimReleaseStatus('MetaMask provider not found.');
@@ -1380,43 +1450,17 @@ export function App() {
         throw new Error(`Wrong network. Expected Sepolia (${SEPOLIA_CHAIN_ID_HEX}), got ${chainId || '-'}.`);
       }
 
-      const base = statusApiUrl.replace(/\/$/, '');
       const recipient = normalizeEthereumAddress(account, 'Connected MetaMask address');
       const opnetUser = normalizeBytes32Hex(opRecipientHash, 'Connected OP_WALLET hashed MLDSA key');
-      const query = new URLSearchParams({
-        recipient: recipient.toLowerCase(),
-        opnetUser: opnetUser.toLowerCase(),
-        ready: 'true',
-        limit: '20',
-      });
 
       setClaimReleaseStatus('Fetching ready release candidates from Relayer API...');
-      const response = await fetch(`${base}/release-candidates?${query.toString()}`);
-      const body = (await response.json()) as {
-        items?: Array<{
-          withdrawalId?: string;
-          releaseSubmission?: {
-            assetId?: number | string;
-            opnetUser?: string;
-            recipient?: string;
-            amount?: string;
-            withdrawalId?: string;
-            attestationVersion?: number | string;
-            relayIndexesPackedHex?: string;
-            relaySignaturesPackedHex?: string;
-          };
-        }>;
-      };
-      if (!response.ok) {
-        throw new Error(`release-candidates HTTP ${response.status}`);
-      }
-      const items = Array.isArray(body.items) ? body.items : [];
+      const items = await fetchReadyReleaseCandidates(account);
       if (items.length === 0) {
         setClaimReleaseStatus('No ready release candidate yet for this wallet pair. Wait for relayer aggregation and retry.');
         return;
       }
 
-      const wantedWithdrawalId = claimWithdrawalId.trim();
+      const wantedWithdrawalId = explicitWithdrawalId?.trim() || '';
       const selected = wantedWithdrawalId
         ? items.find((entry) => String(entry.withdrawalId ?? entry.releaseSubmission?.withdrawalId ?? '') === wantedWithdrawalId)
         : items[0];
@@ -1489,6 +1533,7 @@ export function App() {
       }
       setWithdrawalLookupId(withdrawalId.toString());
       setClaimReleaseStatus(`Withdrawal released. withdrawalId=${withdrawalId.toString()} tx=${short(txHash)}`);
+      await fetchReadyReleaseCandidates(account);
     } catch (error) {
       setClaimReleaseStatus(`Withdrawal claim failed: ${formatEthereumError(error)}`);
     } finally {
@@ -1759,23 +1804,40 @@ export function App() {
               {depositBusy ? 'Submitting Deposit…' : 'Approve + Deposit (Locked Recipient)'}
             </button>
           </div>
-          <label className="field">
-            <span>Claim Deposit ID (optional)</span>
-            <input
-              value={claimDepositId}
-              onChange={(e) => setClaimDepositId(e.target.value)}
-              placeholder="Leave blank for latest ready candidate"
-              inputMode="numeric"
-            />
-          </label>
           <div className="actions">
+            <button onClick={() => void refreshReadyMintCandidates()} disabled={readyMintCandidatesBusy}>
+              {readyMintCandidatesBusy ? 'Refreshing…' : 'Refresh Ready Mints'}
+            </button>
             <button
-              onClick={runClaimMintFlow}
-              disabled={claimMintBusy}
+              onClick={() => void runClaimMintFlow()}
+              disabled={claimMintBusy || !claimMintReady}
             >
-              {claimMintBusy ? 'Submitting Mint…' : 'Claim Mint On OPNet'}
+              {claimMintBusy ? 'Submitting Mint…' : 'Claim Latest Ready Mint'}
             </button>
           </div>
+          {readyMintCandidates.length === 0 ? (
+            <p className="muted">No ready mint candidates loaded yet.</p>
+          ) : (
+            <ul className="heartbeat-list">
+              {readyMintCandidates.map((candidate, index) => {
+                const id = String(candidate.depositId ?? candidate.mintSubmission?.nonce ?? '');
+                const amountLabel = formatCandidateAmount(candidate.mintSubmission?.assetId, candidate.mintSubmission?.amount);
+                return (
+                  <li key={`${id || 'mint'}:${index}`}>
+                    <code>depositId={id || '-'}</code> <span className="muted">{amountLabel}</span>
+                    <div className="actions">
+                      <button
+                        onClick={() => void runClaimMintFlow(id)}
+                        disabled={claimMintBusy || !claimMintReady || !id}
+                      >
+                        {claimMintBusy ? 'Submitting…' : 'Claim This Mint'}
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
           <p className={`notice ${depositReady ? 'ok' : ''}`}>
             {depositReady
               ? depositConfigReady
@@ -1842,23 +1904,40 @@ export function App() {
               {burnBusy ? 'Submitting Burn…' : 'Request Burn (Locked Recipient)'}
             </button>
           </div>
-          <label className="field">
-            <span>Claim Withdrawal ID (optional)</span>
-            <input
-              value={claimWithdrawalId}
-              onChange={(e) => setClaimWithdrawalId(e.target.value)}
-              placeholder="Leave blank for latest ready candidate"
-              inputMode="numeric"
-            />
-          </label>
           <div className="actions">
+            <button onClick={() => void refreshReadyReleaseCandidates()} disabled={readyReleaseCandidatesBusy}>
+              {readyReleaseCandidatesBusy ? 'Refreshing…' : 'Refresh Ready Withdrawals'}
+            </button>
             <button
-              onClick={runClaimReleaseFlow}
+              onClick={() => void runClaimReleaseFlow()}
               disabled={!claimReleaseReady || claimReleaseBusy}
             >
-              {claimReleaseBusy ? 'Submitting Release…' : 'Claim Withdraw On Sepolia'}
+              {claimReleaseBusy ? 'Submitting Release…' : 'Claim Latest Ready Withdraw'}
             </button>
           </div>
+          {readyReleaseCandidates.length === 0 ? (
+            <p className="muted">No ready release candidates loaded yet.</p>
+          ) : (
+            <ul className="heartbeat-list">
+              {readyReleaseCandidates.map((candidate, index) => {
+                const id = String(candidate.withdrawalId ?? candidate.releaseSubmission?.withdrawalId ?? '');
+                const amountLabel = formatCandidateAmount(candidate.releaseSubmission?.assetId, candidate.releaseSubmission?.amount);
+                return (
+                  <li key={`${id || 'release'}:${index}`}>
+                    <code>withdrawalId={id || '-'}</code> <span className="muted">{amountLabel}</span>
+                    <div className="actions">
+                      <button
+                        onClick={() => void runClaimReleaseFlow(id)}
+                        disabled={claimReleaseBusy || !claimReleaseReady || !id}
+                      >
+                        {claimReleaseBusy ? 'Submitting…' : 'Claim This Withdraw'}
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
           <p className={`notice ${burnReady ? 'ok' : ''}`}>
             {burnReady
               ? burnConfigReady
