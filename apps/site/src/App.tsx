@@ -1196,7 +1196,8 @@ export function App() {
       limit: '20',
     });
     if (ethAddress.trim()) {
-      query.set('ethereumUser', ethAddress.toLowerCase());
+      const normalizedEth = normalizeEthereumAddress(ethAddress, 'Connected EVM address').toLowerCase();
+      query.set('ethereumUser', `0x${encodeAddressWord(normalizedEth)}`);
     }
     const response = await fetch(`${base}/mint-candidates?${query.toString()}`);
     const body = (await response.json()) as { items?: MintCandidate[] };
