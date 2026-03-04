@@ -495,6 +495,45 @@ function decodeBridgeEventsSafely(bridge, bridgeEventsRaw, txHash, blockHeight) 
   return decodedEvents;
 }
 
+function isLikelyTxHash(raw) {
+  const value = String(raw ?? "").trim().toLowerCase();
+  return /^[0-9a-f]{64}$/.test(value);
+}
+
+function addWatchedAddress(target, raw) {
+  const value = String(raw ?? "").trim();
+  if (!value) return;
+  target.add(value.toLowerCase());
+  try {
+    target.add(normalizeOpnetAddressHex32(value).toLowerCase());
+  } catch {
+    // Ignore non-address-like values.
+  }
+}
+
+function txTouchesWatchedContracts(tx, watchedContracts) {
+  const candidates = [
+    tx?.to,
+    tx?.recipient,
+    tx?.contractAddress,
+    tx?.address,
+    tx?.call?.to,
+    tx?.interaction?.to,
+  ];
+  for (const candidate of candidates) {
+    if (candidate == null) continue;
+    const raw = String(candidate).trim();
+    if (!raw) continue;
+    if (watchedContracts.has(raw.toLowerCase())) return true;
+    try {
+      if (watchedContracts.has(normalizeOpnetAddressHex32(raw).toLowerCase())) return true;
+    } catch {
+      // Ignore parse failures and continue.
+    }
+  }
+  return false;
+}
+
 async function main() {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     console.log(`OP_NET Burn Poller (OP_NET -> ETH release attestations)
@@ -548,6 +587,12 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
     mapping.opnet.bridgeHex = await resolveOpnetAddressViaRpcToHex32(String(mapping.opnet.bridgeAddress), provider);
   }
   const bridge = getContract(mapping.opnet.bridgeAddress, BRIDGE_EVENTS_ABI, provider, opnetNetwork);
+  const watchedContracts = new Set();
+  addWatchedAddress(watchedContracts, mapping.opnet.bridgeAddress);
+  addWatchedAddress(watchedContracts, mapping.opnet.bridgeHex);
+  for (const wrappedAddress of Object.values(mapping.opnet.wrappedTokens ?? {})) {
+    addWatchedAddress(watchedContracts, wrappedAddress);
+  }
   const relaySigners = loadRelaySigners(relayerId);
 
   fs.mkdirSync(path.dirname(outputFile), { recursive: true });
@@ -594,6 +639,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
             }
             const blockHeight = BigInt(block.height);
             let transactions = [];
+            let usedRawFallback = false;
             try {
               // Prefer SDK-parsed transactions first because some RPC variants do
               // not populate usable event payloads on `rawTransactions`.
@@ -611,6 +657,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
               try {
                 if (Array.isArray(block.rawTransactions)) {
                   transactions = block.rawTransactions;
+                  usedRawFallback = true;
                 }
               } catch (error) {
                 console.warn(
@@ -625,11 +672,29 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
               }
             }
             for (let txIndex = 0; txIndex < transactions.length; txIndex += 1) {
-              const tx = transactions[txIndex];
+              let tx = transactions[txIndex];
               const txHash = String(
                 tx?.hash ?? tx?.id ?? tx?.txid ?? `${block.hash}:${blockHeight.toString()}:${txIndex.toString()}`,
               );
               try {
+                if (usedRawFallback && isLikelyTxHash(txHash)) {
+                  const rawEvents = tx?.events ?? tx?.receipt?.events;
+                  const hasRawEvents = rawEvents && typeof rawEvents === "object" && Object.keys(rawEvents).length > 0;
+                  if (!hasRawEvents && txTouchesWatchedContracts(tx, watchedContracts)) {
+                    try {
+                      const hydrated = await provider.getTransaction(txHash);
+                      if (hydrated && typeof hydrated === "object") {
+                        tx = hydrated;
+                      }
+                    } catch (error) {
+                      console.warn(
+                        `[opnet-burn-poller] tx=${txHash} hydration failed in fallback mode: ${
+                          error instanceof Error ? error.message : String(error)
+                        }`,
+                      );
+                    }
+                  }
+                }
                 const contractEvents = tx?.events ?? tx?.receipt?.events;
                 const bridgeEventsRaw = normalizeEventBuckets(
                   contractEvents,
