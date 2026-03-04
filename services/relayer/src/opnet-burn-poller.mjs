@@ -595,12 +595,12 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
             const blockHeight = BigInt(block.height);
             let transactions = [];
             try {
-              // Prefer raw txs. SDK-parsed `block.transactions` can throw when RPC
-              // returns hex ("0x...") for fields expected as base64.
-              if (Array.isArray(block.rawTransactions)) {
+              // Prefer SDK-parsed transactions first because some RPC variants do
+              // not populate usable event payloads on `rawTransactions`.
+              if (Array.isArray(block.transactions) && block.transactions.length > 0) {
+                transactions = block.transactions;
+              } else if (Array.isArray(block.rawTransactions)) {
                 transactions = block.rawTransactions;
-              } else {
-                transactions = Array.isArray(block.transactions) ? block.transactions : [];
               }
             } catch (error) {
               console.warn(
