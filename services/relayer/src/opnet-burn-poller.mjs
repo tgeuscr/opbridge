@@ -599,19 +599,30 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
               // not populate usable event payloads on `rawTransactions`.
               if (Array.isArray(block.transactions) && block.transactions.length > 0) {
                 transactions = block.transactions;
-              } else if (Array.isArray(block.rawTransactions)) {
-                transactions = block.rawTransactions;
               }
             } catch (error) {
               console.warn(
-                `[opnet-burn-poller] skipping block=${height.toString()} tx list due to parse error: ${
+                `[opnet-burn-poller] block=${height.toString()} parsed tx list error: ${
                   error instanceof Error ? error.message : String(error)
-                }`,
+                }; falling back to rawTransactions.`,
               );
-              if (retryFromBlock == null || height < retryFromBlock) {
-                retryFromBlock = height;
+            }
+            if (transactions.length === 0) {
+              try {
+                if (Array.isArray(block.rawTransactions)) {
+                  transactions = block.rawTransactions;
+                }
+              } catch (error) {
+                console.warn(
+                  `[opnet-burn-poller] skipping block=${height.toString()} raw tx list parse error: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`,
+                );
+                if (retryFromBlock == null || height < retryFromBlock) {
+                  retryFromBlock = height;
+                }
+                continue;
               }
-              continue;
             }
             for (let txIndex = 0; txIndex < transactions.length; txIndex += 1) {
               const tx = transactions[txIndex];
