@@ -48,6 +48,7 @@ const ETH_ASSET_CONFIG = {
   WETH: { assetId: 2, decimals: 18 },
   PAXG: { assetId: 3, decimals: 18 },
 } as const;
+const UX_GUIDE_DISMISSED_KEY = 'heptad.site.uxGuideDismissed.v1';
 
 type AssetSymbol = keyof typeof ETH_ASSET_CONFIG;
 
@@ -600,6 +601,16 @@ export function App() {
   const [claimReleaseStatus, setClaimReleaseStatus] = useState('No withdrawal claim started yet.');
   const [fallbackSigner, setFallbackSigner] = useState<UnisatSigner | null>(null);
   const [fallbackSignerError, setFallbackSignerError] = useState<string | null>(null);
+  const [showUxGuide, setShowUxGuide] = useState(false);
+
+  useEffect(() => {
+    try {
+      const dismissed = window.localStorage.getItem(UX_GUIDE_DISMISSED_KEY);
+      setShowUxGuide(dismissed !== '1');
+    } catch {
+      setShowUxGuide(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (!statusApiUrl) {
@@ -784,10 +795,25 @@ export function App() {
     try {
       setEthStatus('Connecting...');
       const [address] = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
-      const chainId = (await provider.request({ method: 'eth_chainId' })) as string;
+      let chainId = (await provider.request({ method: 'eth_chainId' })) as string;
+      if (chainId?.toLowerCase() !== SEPOLIA_CHAIN_ID_HEX) {
+        try {
+          await provider.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }],
+          });
+          chainId = (await provider.request({ method: 'eth_chainId' })) as string;
+        } catch {
+          // Keep current chain and surface a clear status message below.
+        }
+      }
       setEthAddress(address ?? '');
       setEthChainId(chainId ?? '');
-      setEthStatus('Connected');
+      setEthStatus(
+        chainId?.toLowerCase() === SEPOLIA_CHAIN_ID_HEX
+          ? 'Connected (Sepolia)'
+          : 'Connected but wrong network. Switch to Sepolia.',
+      );
     } catch (error) {
       setEthStatus(`Connection failed: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -819,18 +845,22 @@ export function App() {
   const opConnected = Boolean(walletAddress);
   const ethConnected = Boolean(ethAddress);
   const onSepolia = ethChainId.toLowerCase() === SEPOLIA_CHAIN_ID_HEX;
+  const opOnTestnet = (network?.network ?? '').toLowerCase().includes('testnet');
+  const opWalletReady = opConnected && opOnTestnet;
+  const ethWalletReady = ethConnected && onSepolia;
   const opRecipientHash = hashedMLDSAKey || '';
-  const walletPairReady = opConnected && ethConnected;
-  const faucetReady = ethConnected && onSepolia;
+  const walletPairReady = opWalletReady && ethWalletReady;
+  const faucetReady = ethWalletReady;
   const faucetConfigReady = Boolean(ETH_TOKEN_ADDRESSES[faucetAsset]);
   const faucetState = faucetStateByAsset[faucetAsset as AssetSymbol];
-  const depositReady = walletPairReady && onSepolia && Boolean(opRecipientHash);
-  const burnReady = walletPairReady && onSepolia;
+  const depositReady = walletPairReady && Boolean(opRecipientHash);
+  const burnReady = walletPairReady;
   const depositConfigReady = Boolean(ETH_VAULT_ADDRESS && ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol]);
-  const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && opnetAddressObject && walletAddress);
-  const claimMintReady = Boolean(opConnected && statusApiUrl.trim() && burnConfigReady && opRecipientHash);
+  const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && opnetAddressObject && walletAddress && opOnTestnet);
+  const claimMintReady = Boolean(opWalletReady && statusApiUrl.trim() && burnConfigReady && opRecipientHash);
   const claimMintBlockers = [
     !opConnected ? 'OP_WALLET not connected' : '',
+    opConnected && !opOnTestnet ? 'OP_WALLET must be on OPNet testnet' : '',
     !statusApiUrl.trim() ? 'Status API URL is empty' : '',
     !OPNET_BRIDGE_ADDRESS ? 'OPNet bridge address is missing (VITE_OPNET_BRIDGE_ADDRESS)' : '',
     !opnetProvider ? 'OPNet provider unavailable' : '',
@@ -838,7 +868,17 @@ export function App() {
     !walletAddress ? 'OP_WALLET address unavailable' : '',
     !opRecipientHash ? 'Hashed MLDSA key unavailable' : '',
   ].filter(Boolean);
-  const claimReleaseReady = Boolean(walletPairReady && onSepolia && statusApiUrl.trim() && ETH_VAULT_ADDRESS && opRecipientHash);
+  const claimReleaseReady = Boolean(walletPairReady && statusApiUrl.trim() && ETH_VAULT_ADDRESS && opRecipientHash);
+
+  function closeUxGuide(remember: boolean) {
+    setShowUxGuide(false);
+    if (!remember) return;
+    try {
+      window.localStorage.setItem(UX_GUIDE_DISMISSED_KEY, '1');
+    } catch {
+      // Ignore localStorage write errors and continue.
+    }
+  }
 
   const resolveConnectedSender = async (): Promise<Address | null> => {
     if (!opnetAddressObject) return null;
@@ -1543,128 +1583,107 @@ export function App() {
   }
 
   return (
-    <main className="landing">
+    <>
+      {showUxGuide ? (
+        <div className="ux-guide-overlay" role="presentation">
+          <section className="ux-guide-dialog card" role="dialog" aria-modal="true" aria-labelledby="ux-guide-title">
+            <p className="eyebrow">Bridge Quick Guide</p>
+            <h2 id="ux-guide-title">How this bridge works right now</h2>
+            <ol className="ux-guide-list">
+              <li>Connect both wallets first: OP_WALLET and MetaMask.</li>
+              <li>Keep MetaMask on Sepolia for all Ethereum-side steps.</li>
+              <li>Recipients are locked in this phase for safety.</li>
+              <li>Sepolia to OPNet: deposit from connected MetaMask, then claim mint to connected OP_WALLET.</li>
+              <li>OPNet to Sepolia: request burn from connected OP_WALLET, then claim release to connected MetaMask.</li>
+              <li>Use Status API lookups below to monitor deposit and withdrawal IDs.</li>
+            </ol>
+            <p className="muted">
+              Tip: if you are new, use the faucet section first, then run one small deposit and one small withdrawal.
+            </p>
+            <div className="actions">
+              <button className="primary" onClick={() => closeUxGuide(false)}>
+                Start Using Bridge
+              </button>
+              <button onClick={() => closeUxGuide(true)}>Don&apos;t show again</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      <main className="landing">
       <section className="hero card">
-        <p className="eyebrow">Heptad Bridge Preview</p>
-        <h1>Connect OP_WALLET + MetaMask</h1>
-        <p className="lede">
-          Beta bridge flow with strict recipient locking: deposits always go from your connected MetaMask address to
-          your connected OP_WALLET, and burns return only to your connected MetaMask address.
-        </p>
-        <div className="banner" role="status">
-          Testnet Only: Use Sepolia and non-production wallets/funds.
+        <img className="brand-wordmark" src="/branding/heptad-wordmark.svg" alt="Heptad" />
+        <p className="eyebrow">HEPTAD BRIDGE TESTNET LIVE</p>
+        <div className="powered-by" aria-label="Powered by OPNet">
+          <span>Powered by</span>
+          <img src="/branding/opnet-logo.svg" alt="OPNet" />
         </div>
       </section>
 
-      <section className="grid">
-        <article className="card wallet">
-          <div className="card-head">
-            <h2>OP_WALLET</h2>
-            <span className={opConnected ? 'pill ok' : 'pill'}>{opConnected ? 'Connected' : 'Not Connected'}</span>
+      <section className="wallet-linker-section">
+        <article className="card wallet-linker">
+          <div className="wallet-linker-rail">
+            <button
+              className={`network-side-button ${opWalletReady ? 'ready' : ''}`}
+              onClick={connectOpWallet}
+              disabled={connecting}
+              aria-label="Connect OP Wallet"
+              title="Connect OP Wallet (OPNet testnet)"
+            >
+              <span className="network-mark">
+                <img className="network-base-logo" src="/branding/btc.svg" alt="Bitcoin" />
+                <span className="network-overlay-badge">
+                  <img src="/branding/op.svg" alt="OP Wallet" />
+                </span>
+              </span>
+            </button>
+
+            <div className="wallet-center">
+              <img className="heptad-symbol" src="/branding/heptad-logo.svg" alt="Heptad symbol" />
+              <p className={`link-copy ${walletPairReady ? 'linked' : ''}`}>
+                <span className="word-connect">connect</span>
+                <span className="word-linked">connected</span>
+              </p>
+            </div>
+
+            <button
+              className={`network-side-button ${ethWalletReady ? 'ready' : ''}`}
+              onClick={connectMetaMask}
+              aria-label="Connect Ethereum Wallet"
+              title="Connect MetaMask (Sepolia)"
+            >
+              <span className="network-mark">
+                <img className="network-base-logo" src="/branding/eth.svg" alt="Ethereum" />
+                <span className="network-overlay-badge">
+                  <img src="/branding/metamask.svg" alt="MetaMask" />
+                </span>
+              </span>
+            </button>
+          </div>
+
+          <div className="mini-grid">
+            <div>
+              <h3>OP Wallet</h3>
+              <p><strong>Status:</strong> {opWalletReady ? 'Connected (OPNet testnet)' : opConnected ? 'Wrong network (switch OP_WALLET to testnet)' : 'Not connected'}</p>
+              <p><strong>Address:</strong> <code>{short(walletAddress)}</code></p>
+            </div>
+            <div>
+              <h3>Ethereum Wallet</h3>
+              <p><strong>Status:</strong> {ethWalletReady ? `Connected (Sepolia ${SEPOLIA_CHAIN_ID_DEC})` : ethConnected ? 'Wrong network (switch to Sepolia)' : 'Not connected'}</p>
+              <p><strong>Address:</strong> <code>{short(ethAddress)}</code></p>
+            </div>
           </div>
 
           <p className="muted">
-            Connect your OP wallet extension to prepare for OPNet deposit/burn actions in the bridge UI.
+            Click OP and ETH icons to connect. Bridge actions unlock only when OP_WALLET is on OPNet testnet and MetaMask is on Sepolia.
           </p>
 
           <div className="actions">
-            <button className="primary" onClick={connectOpWallet} disabled={connecting}>
-              {connecting ? 'Connecting…' : 'Connect OP_WALLET'}
-            </button>
-            <button onClick={disconnect}>Disconnect OP</button>
+            <button onClick={disconnect} disabled={!opConnected}>Disconnect OP</button>
+            <button onClick={disconnectMetaMask} disabled={!ethConnected}>Disconnect ETH</button>
+            <button onClick={() => switchToSepolia()} disabled={!ethConnected || onSepolia}>Switch ETH To Sepolia</button>
           </div>
-
-          <dl className="kv">
-            <div>
-              <dt>Wallet Address</dt>
-              <dd>{walletAddress ?? '-'}</dd>
-            </div>
-            <div>
-              <dt>Wallet Type</dt>
-              <dd>{walletType ?? '-'}</dd>
-            </div>
-            <div>
-              <dt>Network</dt>
-              <dd>{network?.network ?? '-'}</dd>
-            </div>
-            <div>
-              <dt>Public Key</dt>
-              <dd>{short(publicKey)}</dd>
-            </div>
-            <div>
-              <dt>Hashed MLDSA Key</dt>
-              <dd>{short(hashedMLDSAKey)}</dd>
-            </div>
-          </dl>
         </article>
-
-        <article className="card wallet">
-          <div className="card-head">
-            <h2>MetaMask (Ethereum)</h2>
-            <span className={ethConnected ? 'pill ok' : 'pill'}>{ethConnected ? 'Connected' : 'Not Connected'}</span>
-          </div>
-
-          <p className="muted">
-            Connect MetaMask on Sepolia. This will be used for Ethereum-side deposits and release receipts.
-          </p>
-
-          <div className="actions">
-            <button className="primary" onClick={connectMetaMask}>
-              Connect MetaMask
-            </button>
-            <button onClick={disconnectMetaMask} disabled={!ethConnected}>
-              Disconnect MetaMask
-            </button>
-            <button onClick={() => switchToSepolia()} disabled={!ethConnected || onSepolia}>
-              {onSepolia ? 'On Sepolia' : 'Switch To Sepolia'}
-            </button>
-          </div>
-
-          <dl className="kv">
-            <div>
-              <dt>Address</dt>
-              <dd>{ethAddress || '-'}</dd>
-            </div>
-            <div>
-              <dt>Chain</dt>
-              <dd>
-                {ethChainId || '-'}{' '}
-                {ethChainId
-                  ? onSepolia
-                    ? `(Sepolia ${SEPOLIA_CHAIN_ID_DEC})`
-                    : '(Wrong network)'
-                  : ''}
-              </dd>
-            </div>
-            <div>
-              <dt>Status</dt>
-              <dd>{ethStatus}</dd>
-            </div>
-          </dl>
-        </article>
-      </section>
-
-      <section className="card flow-policy">
-        <div className="card-head">
-          <h2>Bridge Policy (MVP)</h2>
-          <span className={`pill ${walletPairReady ? 'ok' : ''}`}>{walletPairReady ? 'Wallet Pair Ready' : 'Connect Both Wallets'}</span>
-        </div>
-        <p className="muted">
-          Custom recipients are disabled for now. This reduces recipient mismatches and uses the connected OP_WALLET
-          identity directly for OPNet-side actions.
-        </p>
-        <div className="mini-grid">
-          <div>
-            <h3>Ethereum → OPNet</h3>
-            <p><strong>From:</strong> connected MetaMask address</p>
-            <p><strong>To:</strong> connected OP_WALLET hashed MLDSA key (locked)</p>
-          </div>
-          <div>
-            <h3>OPNet → Ethereum</h3>
-            <p><strong>From:</strong> connected OP_WALLET address</p>
-            <p><strong>To:</strong> connected MetaMask address (locked)</p>
-          </div>
-        </div>
       </section>
 
       <section className="card flow-card">
@@ -2038,6 +2057,7 @@ export function App() {
           </div>
         </div>
       </section>
-    </main>
+      </main>
+    </>
   );
 }
