@@ -49,8 +49,25 @@ const ETH_ASSET_CONFIG = {
   PAXG: { assetId: 3, decimals: 18 },
 } as const;
 const UX_GUIDE_DISMISSED_KEY = 'heptad.site.uxGuideDismissed.v1';
+const PROCESSED_MINT_IDS_KEY = 'heptad.site.processedMintIds.v1';
+const PROCESSED_RELEASE_IDS_KEY = 'heptad.site.processedReleaseIds.v1';
 
 type AssetSymbol = keyof typeof ETH_ASSET_CONFIG;
+const ASSET_OPTIONS: Array<{ symbol: AssetSymbol; logo: string; alt: string }> = [
+  { symbol: 'USDT', logo: '/branding/usdt.svg', alt: 'Tether USD' },
+  { symbol: 'WBTC', logo: '/branding/btc.svg', alt: 'Wrapped Bitcoin' },
+  { symbol: 'WETH', logo: '/branding/eth.svg', alt: 'Wrapped Ether' },
+  { symbol: 'PAXG', logo: '/branding/paxg.svg', alt: 'PAX Gold' },
+];
+type BridgeDirection = 'ethToBtc' | 'btcToEth';
+type BridgeConfirmState = {
+  direction: BridgeDirection;
+  asset: AssetSymbol;
+  amountText: string;
+  receivedText: string;
+  fromAddress: string;
+  toAddress: string;
+};
 
 type FaucetAssetState = {
   balanceRaw: bigint | null;
@@ -75,6 +92,10 @@ type MintSubmission = {
 type MintCandidate = {
   depositId?: string;
   ready?: boolean;
+  status?: string;
+  state?: string;
+  processed?: boolean | number | string;
+  message?: Record<string, unknown> | null;
   mintSubmission?: MintSubmission;
 };
 
@@ -91,6 +112,10 @@ type ReleaseSubmission = {
 
 type ReleaseCandidate = {
   withdrawalId?: string;
+  status?: string;
+  state?: string;
+  processed?: boolean | number | string;
+  message?: Record<string, unknown> | null;
   releaseSubmission?: ReleaseSubmission;
 };
 
@@ -301,6 +326,70 @@ function parseHexQuantity(raw: unknown, fieldName: string): bigint {
     throw new Error(`${fieldName} must be a hex quantity.`);
   }
   return BigInt(value);
+}
+
+function normalizeStatusValue(raw: unknown): string {
+  return String(raw ?? '').trim().toLowerCase();
+}
+
+function isTruthyFlag(raw: unknown): boolean {
+  if (raw === true) return true;
+  if (typeof raw === 'number') return raw > 0;
+  const value = normalizeStatusValue(raw);
+  return value === '1' || value === 'true' || value === 'yes';
+}
+
+function hasTerminalStatus(raw: unknown): boolean {
+  const status = normalizeStatusValue(raw);
+  return (
+    status === 'processed' ||
+    status === 'completed' ||
+    status === 'claimed' ||
+    status === 'minted' ||
+    status === 'released' ||
+    status === 'consumed' ||
+    status === 'finalized' ||
+    status === 'executed' ||
+    status === 'settled' ||
+    status === 'done'
+  );
+}
+
+function toRecord(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== 'object') return {};
+  return raw as Record<string, unknown>;
+}
+
+function hasProcessedSignals(candidateRaw: unknown, submissionField: 'mintSubmission' | 'releaseSubmission'): boolean {
+  const candidate = toRecord(candidateRaw);
+  const submission = toRecord(candidate[submissionField]);
+  const message = toRecord(candidate.message);
+  const records = [candidate, submission, message];
+  const statusKeys = ['status', 'state', 'stage'];
+  for (const record of records) {
+    for (const key of statusKeys) {
+      if (hasTerminalStatus(record[key])) return true;
+    }
+  }
+  const flagKeys = ['processed', 'isProcessed', 'claimed', 'minted', 'released', 'consumed', 'executed', 'completed'];
+  for (const record of records) {
+    for (const key of flagKeys) {
+      if (isTruthyFlag(record[key])) return true;
+    }
+  }
+  return false;
+}
+
+function readStoredIds(storageKey: string): Set<string> {
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return new Set<string>();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set<string>();
+    return new Set(parsed.map((value) => String(value).trim()).filter(Boolean));
+  } catch {
+    return new Set<string>();
+  }
 }
 
 async function withEstimatedGasCap(
@@ -572,7 +661,7 @@ export function App() {
   const [withdrawalLookupId, setWithdrawalLookupId] = useState('0');
   const [withdrawalLookupBusy, setWithdrawalLookupBusy] = useState(false);
   const [withdrawalLookupResult, setWithdrawalLookupResult] = useState('No withdrawal lookup yet.');
-  const [depositAsset, setDepositAsset] = useState('USDT');
+  const [depositAsset, setDepositAsset] = useState<AssetSymbol>('USDT');
   const [depositAmount, setDepositAmount] = useState('');
   const [faucetAsset, setFaucetAsset] = useState<AssetSymbol>('USDT');
   const [faucetBusy, setFaucetBusy] = useState(false);
@@ -584,7 +673,7 @@ export function App() {
     WETH: { balanceRaw: null, claimAmountRaw: null, claimCooldownSec: null, claimableAtSec: null, faucetEnabled: null },
     PAXG: { balanceRaw: null, claimAmountRaw: null, claimCooldownSec: null, claimableAtSec: null, faucetEnabled: null },
   });
-  const [burnAsset, setBurnAsset] = useState('USDT');
+  const [burnAsset, setBurnAsset] = useState<AssetSymbol>('USDT');
   const [burnAmount, setBurnAmount] = useState('');
   const [depositBusy, setDepositBusy] = useState(false);
   const [depositStatus, setDepositStatus] = useState('No deposit started yet.');
@@ -595,6 +684,10 @@ export function App() {
   const [claimMintPreflight, setClaimMintPreflight] = useState('No mint preflight captured yet.');
   const [burnBusy, setBurnBusy] = useState(false);
   const [burnStatus, setBurnStatus] = useState('No burn started yet.');
+  const [bridgeDirection, setBridgeDirection] = useState<BridgeDirection | null>(null);
+  const [bridgeConfirm, setBridgeConfirm] = useState<BridgeConfirmState | null>(null);
+  const [processedMintIds, setProcessedMintIds] = useState<Set<string>>(() => new Set<string>());
+  const [processedReleaseIds, setProcessedReleaseIds] = useState<Set<string>>(() => new Set<string>());
   const [readyReleaseCandidates, setReadyReleaseCandidates] = useState<ReleaseCandidate[]>([]);
   const [readyReleaseCandidatesBusy, setReadyReleaseCandidatesBusy] = useState(false);
   const [claimReleaseBusy, setClaimReleaseBusy] = useState(false);
@@ -610,6 +703,8 @@ export function App() {
     } catch {
       setShowUxGuide(true);
     }
+    setProcessedMintIds(readStoredIds(PROCESSED_MINT_IDS_KEY));
+    setProcessedReleaseIds(readStoredIds(PROCESSED_RELEASE_IDS_KEY));
   }, []);
 
   useEffect(() => {
@@ -700,6 +795,89 @@ export function App() {
       active = false;
     };
   }, [walletAddress, opnetSigner, walletType, network?.network]);
+
+  function openBridgeConfirm(direction: BridgeDirection) {
+    if (direction === 'ethToBtc') {
+      try {
+        const decimals = ETH_ASSET_CONFIG[depositAsset].decimals;
+        const amountRaw = parseHumanAmount(depositAmount, decimals);
+        if (amountRaw <= 0n) throw new Error('Amount must be greater than zero.');
+        const receivedRaw = (amountRaw * 99n) / 100n;
+        setBridgeConfirm({
+          direction,
+          asset: depositAsset,
+          amountText: formatTokenAmount(amountRaw, decimals),
+          receivedText: formatTokenAmount(receivedRaw, decimals),
+          fromAddress: ethAddress || '-',
+          toAddress: walletAddress || '-',
+        });
+      } catch (error) {
+        setDepositStatus(`Bridge preflight failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      return;
+    }
+    try {
+      const decimals = ETH_ASSET_CONFIG[burnAsset].decimals;
+      const amountRaw = parseHumanAmount(burnAmount, decimals);
+      if (amountRaw <= 0n) throw new Error('Amount must be greater than zero.');
+      const receivedRaw = (amountRaw * 99n) / 100n;
+      setBridgeConfirm({
+        direction,
+        asset: burnAsset,
+        amountText: formatTokenAmount(amountRaw, decimals),
+        receivedText: formatTokenAmount(receivedRaw, decimals),
+        fromAddress: walletAddress || '-',
+        toAddress: ethAddress || '-',
+      });
+    } catch (error) {
+      setBurnStatus(`Bridge preflight failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  function confirmBridgeTransaction() {
+    if (!bridgeConfirm) return;
+    const direction = bridgeConfirm.direction;
+    setBridgeConfirm(null);
+    if (direction === 'ethToBtc') {
+      void runLockedDepositFlow();
+      return;
+    }
+    void runLockedBurnFlow();
+  }
+
+  function rememberProcessedMintId(idRaw: string) {
+    const id = idRaw.trim();
+    if (!id) return;
+    setProcessedMintIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      try {
+        window.localStorage.setItem(PROCESSED_MINT_IDS_KEY, JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+    setReadyMintCandidates((prev) =>
+      prev.filter((entry) => String(entry.depositId ?? entry.mintSubmission?.nonce ?? '').trim() !== id),
+    );
+  }
+
+  function rememberProcessedReleaseId(idRaw: string) {
+    const id = idRaw.trim();
+    if (!id) return;
+    setProcessedReleaseIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      try {
+        window.localStorage.setItem(PROCESSED_RELEASE_IDS_KEY, JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+    setReadyReleaseCandidates((prev) =>
+      prev.filter((entry) => String(entry.withdrawalId ?? entry.releaseSubmission?.withdrawalId ?? '').trim() !== id),
+    );
+  }
 
   async function runDepositLookup() {
     if (!statusApiUrl.trim()) {
@@ -1233,6 +1411,7 @@ export function App() {
     const query = new URLSearchParams({
       recipientHash: recipientHash.toLowerCase(),
       ready: 'true',
+      processed: 'false',
       limit: '20',
     });
     if (ethAddress.trim()) {
@@ -1242,7 +1421,13 @@ export function App() {
     const response = await fetch(`${base}/mint-candidates?${query.toString()}`);
     const body = (await response.json()) as { items?: MintCandidate[] };
     if (!response.ok) throw new Error(`mint-candidates HTTP ${response.status}`);
-    const items = Array.isArray(body.items) ? body.items : [];
+    const rawItems = Array.isArray(body.items) ? body.items : [];
+    const items = rawItems.filter((entry) => {
+      const id = String(entry.depositId ?? entry.mintSubmission?.nonce ?? '').trim();
+      if (id && processedMintIds.has(id)) return false;
+      if (hasProcessedSignals(entry, 'mintSubmission')) return false;
+      return true;
+    });
     setReadyMintCandidates(items);
     return items;
   }
@@ -1408,6 +1593,7 @@ export function App() {
       setClaimMintStatus(
         `Mint sent. depositId=${depositId.toString()} amount=${amount.toString()} tx=${short((tx as { transactionId?: string })?.transactionId || null)}`,
       );
+      rememberProcessedMintId(depositId.toString());
       await fetchReadyMintCandidates();
     } catch (error) {
       const baseMessage = `Mint claim failed: ${formatEthereumError(error)}`;
@@ -1431,12 +1617,19 @@ export function App() {
       recipient: recipient.toLowerCase(),
       opnetUser: opnetUser.toLowerCase(),
       ready: 'true',
+      processed: 'false',
       limit: '20',
     });
     const response = await fetch(`${base}/release-candidates?${query.toString()}`);
     const body = (await response.json()) as { items?: ReleaseCandidate[] };
     if (!response.ok) throw new Error(`release-candidates HTTP ${response.status}`);
-    const items = Array.isArray(body.items) ? body.items : [];
+    const rawItems = Array.isArray(body.items) ? body.items : [];
+    const items = rawItems.filter((entry) => {
+      const id = String(entry.withdrawalId ?? entry.releaseSubmission?.withdrawalId ?? '').trim();
+      if (id && processedReleaseIds.has(id)) return false;
+      if (hasProcessedSignals(entry, 'releaseSubmission')) return false;
+      return true;
+    });
     setReadyReleaseCandidates(items);
     return items;
   }
@@ -1574,6 +1767,7 @@ export function App() {
       }
       setWithdrawalLookupId(withdrawalId.toString());
       setClaimReleaseStatus(`Withdrawal released. withdrawalId=${withdrawalId.toString()} tx=${short(txHash)}`);
+      rememberProcessedReleaseId(withdrawalId.toString());
       await fetchReadyReleaseCandidates(account);
     } catch (error) {
       setClaimReleaseStatus(`Withdrawal claim failed: ${formatEthereumError(error)}`);
@@ -1694,15 +1888,28 @@ export function App() {
         <p className="muted">
           Testnet users should claim bridge-enabled tokens here before attempting deposit/withdraw flows.
         </p>
-        <label className="field">
-          <span>Asset</span>
-          <select value={faucetAsset} onChange={(e) => setFaucetAsset(e.target.value as AssetSymbol)}>
-            <option>USDT</option>
-            <option>WBTC</option>
-            <option>WETH</option>
-            <option>PAXG</option>
-          </select>
-        </label>
+        <div className="field">
+          <span>Select Token</span>
+          <div className="token-picker" role="radiogroup" aria-label="Select test asset to claim">
+            {ASSET_OPTIONS.map((option) => {
+              const selected = faucetAsset === option.symbol;
+              return (
+                <button
+                  key={option.symbol}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  className={`token-choice ${selected ? 'selected' : ''}`}
+                  onClick={() => setFaucetAsset(option.symbol)}
+                  title={`Select ${option.symbol}`}
+                >
+                  <img src={option.logo} alt={option.alt} />
+                  <span>{option.symbol}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div className="route-box">
           <div>
             <h3>Token</h3>
@@ -1774,219 +1981,251 @@ export function App() {
         <pre className="log-box">{faucetStatus}</pre>
       </section>
 
-      <section className="flow-grid">
-        <article className="card flow-card">
-          <div className="card-head">
-            <h2>Deposit (Sepolia → OPNet)</h2>
-            <span className={`pill ${depositReady ? 'ok' : ''}`}>{depositReady ? 'Ready' : 'Blocked'}</span>
-          </div>
-          <p className="muted">
-            Recipient is locked to the connected OP_WALLET. The Ethereum vault deposit will carry the hashed MLDSA key.
-          </p>
-          <label className="field">
-            <span>Asset</span>
-            <select value={depositAsset} onChange={(e) => setDepositAsset(e.target.value)}>
-              <option>USDT</option>
-              <option>WBTC</option>
-              <option>WETH</option>
-              <option>PAXG</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>Amount</span>
-            <input
-              value={depositAmount}
-              onChange={(e) => setDepositAmount(e.target.value)}
-              placeholder="0.0"
-              inputMode="decimal"
-            />
-          </label>
-          <div className="route-box">
-            <div>
-              <h3>From MetaMask (locked)</h3>
-              <p>{ethAddress || '-'}</p>
-            </div>
-            <div>
-              <h3>To OP_WALLET Address (locked)</h3>
-              <p>{walletAddress || '-'}</p>
-            </div>
-            <div>
-              <h3>To Hashed MLDSA Key (vault recipient bytes32)</h3>
-              <p>{opRecipientHash || '-'}</p>
-            </div>
-          </div>
-          <div className="actions">
-            <button
-              className="primary"
-              onClick={runLockedDepositFlow}
-              disabled={!depositReady || !depositConfigReady || depositBusy}
-            >
-              {depositBusy ? 'Submitting Deposit…' : 'Approve + Deposit (Locked Recipient)'}
-            </button>
-          </div>
-          <div className="actions">
-            <button onClick={() => void refreshReadyMintCandidates()} disabled={readyMintCandidatesBusy}>
-              {readyMintCandidatesBusy ? 'Refreshing…' : 'Refresh Ready Mints'}
-            </button>
-            <button
-              onClick={() => void runClaimMintFlow()}
-              disabled={claimMintBusy || !claimMintReady}
-            >
-              {claimMintBusy ? 'Submitting Mint…' : 'Claim Latest Ready Mint'}
-            </button>
-          </div>
-          {readyMintCandidates.length === 0 ? (
-            <p className="muted">No ready mint candidates loaded yet.</p>
-          ) : (
-            <ul className="heartbeat-list">
-              {readyMintCandidates.map((candidate, index) => {
-                const id = String(candidate.depositId ?? candidate.mintSubmission?.nonce ?? '');
-                const amountLabel = formatCandidateAmount(candidate.mintSubmission?.assetId, candidate.mintSubmission?.amount);
-                return (
-                  <li key={`${id || 'mint'}:${index}`}>
-                    <code>depositId={id || '-'}</code> <span className="muted">{amountLabel}</span>
-                    <div className="actions">
-                      <button
-                        onClick={() => void runClaimMintFlow(id)}
-                        disabled={claimMintBusy || !claimMintReady || !id}
-                      >
-                        {claimMintBusy ? 'Submitting…' : 'Claim This Mint'}
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          <p className={`notice ${depositReady ? 'ok' : ''}`}>
-            {depositReady
-              ? depositConfigReady
-                ? 'Deposit flow is enabled and uses the connected OP_WALLET hashed MLDSA key as the vault recipient.'
-                : 'Wallets are ready, but vault/token addresses are missing. Set Vercel env vars to enable deposits.'
-              : 'Connect OP_WALLET + MetaMask on Sepolia to enable the deposit flow.'}
-          </p>
-          <p className={`notice ${claimMintReady ? 'ok' : ''}`}>
-            {claimMintReady
-              ? 'Mint claim is enabled. It fetches your ready candidate from Relayer API and submits OPNet mint via OP_WALLET.'
-              : `Mint claim blocked: ${claimMintBlockers.join('; ') || 'unknown blocker'}.`}
-          </p>
-          <p className="muted">
-            Config: vault <code>{short(ETH_VAULT_ADDRESS)}</code> | token <code>{short(ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol])}</code>
-          </p>
-          <pre className="log-box">{depositStatus}</pre>
-          <pre className="log-box">{claimMintStatus}</pre>
-          <p className="muted">Last Mint Preflight (persistent)</p>
-          <pre className="log-box">{claimMintPreflight}</pre>
-        </article>
+      <section className="card flow-card bridge-card">
+        <div className="card-head">
+          <h2>Bridge</h2>
+          <span className={`pill ${bridgeDirection ? 'ok' : ''}`}>{bridgeDirection ? 'Direction Selected' : 'Choose Direction'}</span>
+        </div>
+        <div className="bridge-direction-picker" role="radiogroup" aria-label="Select bridge direction">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={bridgeDirection === 'ethToBtc'}
+            className={`bridge-direction-choice ${bridgeDirection === 'ethToBtc' ? 'selected' : ''}`}
+            onClick={() => {
+              setBridgeDirection('ethToBtc');
+            }}
+          >
+            <span className="flow-icon-title" aria-hidden="true">
+              <img src="/branding/eth.svg" alt="Ethereum" />
+              <span>→</span>
+              <img src="/branding/btc.svg" alt="Bitcoin" />
+            </span>
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={bridgeDirection === 'btcToEth'}
+            className={`bridge-direction-choice ${bridgeDirection === 'btcToEth' ? 'selected' : ''}`}
+            onClick={() => {
+              setBridgeDirection('btcToEth');
+            }}
+          >
+            <span className="flow-icon-title" aria-hidden="true">
+              <img src="/branding/btc.svg" alt="Bitcoin" />
+              <span>→</span>
+              <img src="/branding/eth.svg" alt="Ethereum" />
+            </span>
+          </button>
+        </div>
 
-        <article className="card flow-card">
-          <div className="card-head">
-            <h2>Withdraw (OPNet → Sepolia)</h2>
-            <span className={`pill ${burnReady ? 'ok' : ''}`}>{burnReady ? 'Ready' : 'Blocked'}</span>
-          </div>
-          <p className="muted">
-            Burn requests will return funds only to the connected MetaMask address during beta.
-          </p>
-          <label className="field">
-            <span>Asset</span>
-            <select value={burnAsset} onChange={(e) => setBurnAsset(e.target.value)}>
-              <option>USDT</option>
-              <option>WBTC</option>
-              <option>WETH</option>
-              <option>PAXG</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>Amount</span>
-            <input
-              value={burnAmount}
-              onChange={(e) => setBurnAmount(e.target.value)}
-              placeholder="0.0"
-              inputMode="decimal"
-            />
-          </label>
-          <div className="route-box">
-            <div>
-              <h3>From OP_WALLET (locked)</h3>
-              <p>{walletAddress || '-'}</p>
-            </div>
-            <div>
-              <h3>To MetaMask (locked)</h3>
-              <p>{ethAddress || '-'}</p>
-            </div>
-          </div>
-          <div className="actions">
-            <button
-              className="primary"
-              onClick={runLockedBurnFlow}
-              disabled={!burnReady || !burnConfigReady || burnBusy}
-            >
-              {burnBusy ? 'Submitting Burn…' : 'Request Burn (Locked Recipient)'}
-            </button>
-          </div>
-          <div className="actions">
-            <button onClick={() => void refreshReadyReleaseCandidates()} disabled={readyReleaseCandidatesBusy}>
-              {readyReleaseCandidatesBusy ? 'Refreshing…' : 'Refresh Ready Withdrawals'}
-            </button>
-            <button
-              onClick={() => void runClaimReleaseFlow()}
-              disabled={!claimReleaseReady || claimReleaseBusy}
-            >
-              {claimReleaseBusy ? 'Submitting Release…' : 'Claim Latest Ready Withdraw'}
-            </button>
-          </div>
-          {readyReleaseCandidates.length === 0 ? (
-            <p className="muted">No ready release candidates loaded yet.</p>
-          ) : (
-            <ul className="heartbeat-list">
-              {readyReleaseCandidates.map((candidate, index) => {
-                const id = String(candidate.withdrawalId ?? candidate.releaseSubmission?.withdrawalId ?? '');
-                const amountLabel = formatCandidateAmount(candidate.releaseSubmission?.assetId, candidate.releaseSubmission?.amount);
-                return (
-                  <li key={`${id || 'release'}:${index}`}>
-                    <code>withdrawalId={id || '-'}</code> <span className="muted">{amountLabel}</span>
-                    <div className="actions">
-                      <button
-                        onClick={() => void runClaimReleaseFlow(id)}
-                        disabled={claimReleaseBusy || !claimReleaseReady || !id}
-                      >
-                        {claimReleaseBusy ? 'Submitting…' : 'Claim This Withdraw'}
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          <p className={`notice ${burnReady ? 'ok' : ''}`}>
-            {burnReady
-              ? burnConfigReady
-                ? 'Burn flow is enabled and locks the Ethereum recipient to the connected MetaMask address.'
-                : 'Wallets are ready, but OPNet bridge/signer config is missing. Set Vercel env vars and connect OP_WALLET.'
-              : 'Connect both wallets and switch MetaMask to Sepolia to enable the withdrawal flow.'}
-          </p>
-          <p className={`notice ${claimReleaseReady ? 'ok' : ''}`}>
-            {claimReleaseReady
-              ? 'Withdrawal claim is enabled. It fetches your ready release candidate and submits Sepolia release via MetaMask.'
-              : 'Connect both wallets, use Sepolia, and set Status API URL to enable in-site withdrawal claim.'}
-          </p>
-          <p className="muted">
-            Config: bridge <code>{short(OPNET_BRIDGE_ADDRESS)}</code> | OPNet wallet network <code>{network?.network ?? '-'}</code>
-          </p>
-          <pre className="log-box">{burnStatus}</pre>
-          <pre className="log-box">{claimReleaseStatus}</pre>
-        </article>
-      </section>
+        {!bridgeDirection ? <p className="muted">Select a direction to open token, amount, and transaction actions.</p> : null}
 
-      <section className="card checklist">
-        <h2>Next Steps</h2>
-        <ol>
-          <li>Keep `apps/web` as the internal dev/ops bridge console.</li>
-          <li>Wire deposit button to the existing Ethereum vault deposit flow using the connected OP_WALLET hashed MLDSA key.</li>
-          <li>Wire burn button to OPNet burn request flow using the connected MetaMask address as the locked return address.</li>
-          <li>Keep custom recipients disabled until the recipient-resolution path is fully hardened.</li>
-        </ol>
+        {bridgeDirection === 'ethToBtc' ? (
+          <div className="bridge-panel">
+            <div className="card-head flow-direction-head">
+              <h3 className="flow-icon-title" aria-label="Deposit direction: Ethereum to Bitcoin">
+                <img src="/branding/eth.svg" alt="Ethereum" />
+                <span aria-hidden="true">→</span>
+                <img src="/branding/btc.svg" alt="Bitcoin" />
+              </h3>
+              <span className={`pill ${depositReady ? 'ok' : ''}`}>{depositReady ? 'Ready' : 'Blocked'}</span>
+            </div>
+            <div className="field">
+              <span>Select Token</span>
+              <div className="token-picker" role="radiogroup" aria-label="Select asset to deposit">
+                {ASSET_OPTIONS.map((option) => {
+                  const selected = depositAsset === option.symbol;
+                  return (
+                    <button
+                      key={`deposit:${option.symbol}`}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      className={`token-choice ${selected ? 'selected' : ''}`}
+                      onClick={() => setDepositAsset(option.symbol)}
+                      title={`Select ${option.symbol}`}
+                    >
+                      <img src={option.logo} alt={option.alt} />
+                      <span>{option.symbol}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <label className="field">
+              <span>Amount</span>
+              <input
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                placeholder="0.0"
+                inputMode="decimal"
+              />
+            </label>
+            <div className="actions">
+              <button
+                className="primary"
+                onClick={() => openBridgeConfirm('ethToBtc')}
+                disabled={!depositReady || !depositConfigReady || depositBusy}
+              >
+                {depositBusy ? 'Submitting Deposit…' : 'Bridge to Bitcoin'}
+              </button>
+            </div>
+            <div className="actions">
+              <button onClick={() => void refreshReadyMintCandidates()} disabled={readyMintCandidatesBusy}>
+                {readyMintCandidatesBusy ? 'Refreshing…' : 'Refresh Ready Mints'}
+              </button>
+              <button
+                onClick={() => void runClaimMintFlow()}
+                disabled={claimMintBusy || !claimMintReady}
+              >
+                {claimMintBusy ? 'Submitting Mint…' : 'Claim Latest Ready Mint'}
+              </button>
+            </div>
+            {readyMintCandidates.length === 0 ? (
+              <p className="muted">No ready mint candidates loaded yet.</p>
+            ) : (
+              <ul className="heartbeat-list">
+                {readyMintCandidates.map((candidate, index) => {
+                  const id = String(candidate.depositId ?? candidate.mintSubmission?.nonce ?? '');
+                  const amountLabel = formatCandidateAmount(candidate.mintSubmission?.assetId, candidate.mintSubmission?.amount);
+                  return (
+                    <li key={`${id || 'mint'}:${index}`}>
+                      <code>depositId={id || '-'}</code> <span className="muted">{amountLabel}</span>
+                      <div className="actions">
+                        <button
+                          onClick={() => void runClaimMintFlow(id)}
+                          disabled={claimMintBusy || !claimMintReady || !id}
+                        >
+                          {claimMintBusy ? 'Submitting…' : 'Claim This Mint'}
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <pre className="log-box">{depositStatus}</pre>
+            <pre className="log-box">{claimMintStatus}</pre>
+          </div>
+        ) : null}
+
+        {bridgeDirection === 'btcToEth' ? (
+          <div className="bridge-panel">
+            <div className="card-head flow-direction-head">
+              <h3 className="flow-icon-title" aria-label="Withdraw direction: Bitcoin to Ethereum">
+                <img src="/branding/btc.svg" alt="Bitcoin" />
+                <span aria-hidden="true">→</span>
+                <img src="/branding/eth.svg" alt="Ethereum" />
+              </h3>
+              <span className={`pill ${burnReady ? 'ok' : ''}`}>{burnReady ? 'Ready' : 'Blocked'}</span>
+            </div>
+            <div className="field">
+              <span>Select Token</span>
+              <div className="token-picker" role="radiogroup" aria-label="Select asset to withdraw">
+                {ASSET_OPTIONS.map((option) => {
+                  const selected = burnAsset === option.symbol;
+                  return (
+                    <button
+                      key={`withdraw:${option.symbol}`}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      className={`token-choice ${selected ? 'selected' : ''}`}
+                      onClick={() => setBurnAsset(option.symbol)}
+                      title={`Select ${option.symbol}`}
+                    >
+                      <img src={option.logo} alt={option.alt} />
+                      <span>{option.symbol}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <label className="field">
+              <span>Amount</span>
+              <input
+                value={burnAmount}
+                onChange={(e) => setBurnAmount(e.target.value)}
+                placeholder="0.0"
+                inputMode="decimal"
+              />
+            </label>
+            <div className="actions">
+              <button
+                className="primary"
+                onClick={() => openBridgeConfirm('btcToEth')}
+                disabled={!burnReady || !burnConfigReady || burnBusy}
+              >
+                {burnBusy ? 'Submitting Burn…' : 'Withdraw to Ethereum'}
+              </button>
+            </div>
+            <div className="actions">
+              <button onClick={() => void refreshReadyReleaseCandidates()} disabled={readyReleaseCandidatesBusy}>
+                {readyReleaseCandidatesBusy ? 'Refreshing…' : 'Refresh Ready Withdrawals'}
+              </button>
+              <button
+                onClick={() => void runClaimReleaseFlow()}
+                disabled={!claimReleaseReady || claimReleaseBusy}
+              >
+                {claimReleaseBusy ? 'Submitting Release…' : 'Claim Latest Ready Withdraw'}
+              </button>
+            </div>
+            {readyReleaseCandidates.length === 0 ? (
+              <p className="muted">No ready release candidates loaded yet.</p>
+            ) : (
+              <ul className="heartbeat-list">
+                {readyReleaseCandidates.map((candidate, index) => {
+                  const id = String(candidate.withdrawalId ?? candidate.releaseSubmission?.withdrawalId ?? '');
+                  const amountLabel = formatCandidateAmount(candidate.releaseSubmission?.assetId, candidate.releaseSubmission?.amount);
+                  return (
+                    <li key={`${id || 'release'}:${index}`}>
+                      <code>withdrawalId={id || '-'}</code> <span className="muted">{amountLabel}</span>
+                      <div className="actions">
+                        <button
+                          onClick={() => void runClaimReleaseFlow(id)}
+                          disabled={claimReleaseBusy || !claimReleaseReady || !id}
+                        >
+                          {claimReleaseBusy ? 'Submitting…' : 'Claim This Withdraw'}
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <pre className="log-box">{burnStatus}</pre>
+            <pre className="log-box">{claimReleaseStatus}</pre>
+          </div>
+        ) : null}
       </section>
+      {bridgeConfirm ? (
+        <div className="tx-confirm-overlay" role="dialog" aria-modal="true" aria-label="Bridge confirmation">
+          <div className="card tx-confirm-dialog">
+            <h3>Confirm Bridge Transaction</h3>
+            <p className="muted">
+              You are bridging <strong>{bridgeConfirm.amountText} {bridgeConfirm.asset}</strong> from{' '}
+              <code>{bridgeConfirm.fromAddress}</code> to <code>{bridgeConfirm.toAddress}</code>.
+            </p>
+            <p className="muted">
+              After bridge fees, you will receive{' '}
+              <strong>{bridgeConfirm.receivedText} {bridgeConfirm.asset}</strong>{' '}
+              on <strong>{bridgeConfirm.direction === 'ethToBtc' ? 'Bitcoin' : 'Ethereum'}</strong>.
+            </p>
+            <p className="muted">
+              {bridgeConfirm.direction === 'ethToBtc'
+                ? 'MetaMask will ask you to approve token spend first, then confirm the bridge deposit transaction.'
+                : 'OP_WALLET will ask you to sign and confirm the burn transaction to release funds to Ethereum.'}
+            </p>
+            <div className="actions">
+              <button type="button" onClick={() => setBridgeConfirm(null)}>Cancel</button>
+              <button className="primary" type="button" onClick={confirmBridgeTransaction}>
+                I Understand
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <section className="card status-panel">
         <div className="card-head">

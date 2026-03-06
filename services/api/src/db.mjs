@@ -104,6 +104,26 @@ export function openApiDb(dbPath) {
     CREATE INDEX IF NOT EXISTS idx_release_candidates_withdrawal_id ON release_candidates(withdrawal_id);
     CREATE INDEX IF NOT EXISTS idx_release_candidates_opnet_user ON release_candidates(opnet_user);
     CREATE INDEX IF NOT EXISTS idx_release_candidates_eth_recipient ON release_candidates(ethereum_recipient);
+
+    CREATE TABLE IF NOT EXISTS processed_mints (
+      deposit_id TEXT PRIMARY KEY,
+      source_chain TEXT,
+      tx_hash TEXT,
+      block_number TEXT,
+      source_file TEXT,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_processed_mints_tx_hash ON processed_mints(tx_hash);
+
+    CREATE TABLE IF NOT EXISTS processed_releases (
+      withdrawal_id TEXT PRIMARY KEY,
+      source_chain TEXT,
+      tx_hash TEXT,
+      block_number TEXT,
+      source_file TEXT,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_processed_releases_tx_hash ON processed_releases(tx_hash);
   `);
   return db;
 }
@@ -324,23 +344,83 @@ export function upsertReleaseCandidate(db, candidate, sourceFile = null) {
   });
 }
 
+export function upsertProcessedMint(db, item, sourceFile = null) {
+  const depositId = String(item?.depositId ?? '').trim();
+  if (!depositId) return false;
+  const now = new Date().toISOString();
+  const stmt = db.prepare(`
+    INSERT INTO processed_mints (
+      deposit_id, source_chain, tx_hash, block_number, source_file, updated_at
+    ) VALUES (
+      @deposit_id, @source_chain, @tx_hash, @block_number, @source_file, @updated_at
+    )
+    ON CONFLICT(deposit_id) DO UPDATE SET
+      source_chain=excluded.source_chain,
+      tx_hash=excluded.tx_hash,
+      block_number=excluded.block_number,
+      source_file=excluded.source_file,
+      updated_at=excluded.updated_at
+  `);
+  stmt.run({
+    deposit_id: depositId,
+    source_chain: item?.sourceChain ? String(item.sourceChain) : null,
+    tx_hash: item?.txHash ? String(item.txHash).toLowerCase() : null,
+    block_number: item?.blockNumber != null ? String(item.blockNumber) : null,
+    source_file: sourceFile,
+    updated_at: now,
+  });
+  return true;
+}
+
+export function upsertProcessedRelease(db, item, sourceFile = null) {
+  const withdrawalId = String(item?.withdrawalId ?? '').trim();
+  if (!withdrawalId) return false;
+  const now = new Date().toISOString();
+  const stmt = db.prepare(`
+    INSERT INTO processed_releases (
+      withdrawal_id, source_chain, tx_hash, block_number, source_file, updated_at
+    ) VALUES (
+      @withdrawal_id, @source_chain, @tx_hash, @block_number, @source_file, @updated_at
+    )
+    ON CONFLICT(withdrawal_id) DO UPDATE SET
+      source_chain=excluded.source_chain,
+      tx_hash=excluded.tx_hash,
+      block_number=excluded.block_number,
+      source_file=excluded.source_file,
+      updated_at=excluded.updated_at
+  `);
+  stmt.run({
+    withdrawal_id: withdrawalId,
+    source_chain: item?.sourceChain ? String(item.sourceChain) : null,
+    tx_hash: item?.txHash ? String(item.txHash).toLowerCase() : null,
+    block_number: item?.blockNumber != null ? String(item.blockNumber) : null,
+    source_file: sourceFile,
+    updated_at: now,
+  });
+  return true;
+}
+
 export function getApiSummary(db) {
   const counts = db.prepare(`
     SELECT
       (SELECT COUNT(*) FROM mint_candidates) AS mint_candidates,
       (SELECT COUNT(*) FROM mint_candidates WHERE ready = 1) AS mint_candidates_ready,
+      (SELECT COUNT(*) FROM processed_mints) AS mint_candidates_processed,
       (SELECT COUNT(*) FROM mint_attestations) AS mint_attestations,
       (SELECT COUNT(*) FROM release_candidates) AS release_candidates,
       (SELECT COUNT(*) FROM release_candidates WHERE ready = 1) AS release_candidates_ready,
+      (SELECT COUNT(*) FROM processed_releases) AS release_candidates_processed,
       (SELECT COUNT(*) FROM release_attestations) AS release_attestations,
       (SELECT COUNT(*) FROM relayer_heartbeats) AS relayer_heartbeats
   `).get();
   return counts ?? {
     mint_candidates: 0,
     mint_candidates_ready: 0,
+    mint_candidates_processed: 0,
     mint_attestations: 0,
     release_candidates: 0,
     release_candidates_ready: 0,
+    release_candidates_processed: 0,
     release_attestations: 0,
     relayer_heartbeats: 0,
   };

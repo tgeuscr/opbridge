@@ -59,6 +59,20 @@ export async function publishReleaseAttestationsSnapshot(snapshot, sourceFile) {
   });
 }
 
+export async function publishProcessedMintsSnapshot(snapshot, sourceFile) {
+  return postJson('/ingest/processed-mints', {
+    ...snapshot,
+    sourceFile: sourceFile ?? null,
+  });
+}
+
+export async function publishProcessedReleasesSnapshot(snapshot, sourceFile) {
+  return postJson('/ingest/processed-releases', {
+    ...snapshot,
+    sourceFile: sourceFile ?? null,
+  });
+}
+
 export async function publishRelayerHeartbeat({ relayerName, role, status = 'ok', detail }) {
   return postJson('/ingest/heartbeat', {
     relayerName,

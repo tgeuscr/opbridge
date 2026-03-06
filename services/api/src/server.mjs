@@ -10,6 +10,8 @@ import {
   upsertHeartbeat,
   upsertMintAttestation,
   upsertReleaseAttestation,
+  upsertProcessedMint,
+  upsertProcessedRelease,
 } from './db.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -17,13 +19,67 @@ const SERVICE_ROOT = path.resolve(SCRIPT_DIR, '..');
 const DEFAULT_DB_PATH = path.resolve(SERVICE_ROOT, '.data/relayer-api.sqlite');
 const HOST = process.env.RELAYER_API_HOST?.trim() || '0.0.0.0';
 const PORT = Number(process.env.RELAYER_API_PORT?.trim() || '8787');
+const CORS_ALLOWED_ORIGINS =
+  process.env.RELAYER_API_CORS_ALLOWED_ORIGINS?.trim() ||
+  'https://heptad.app,https://www.heptad.app,https://*.vercel.app,http://localhost:5173,http://127.0.0.1:5173';
+const CORS_ALLOW_HEADERS = 'content-type, x-relayer-token';
+const CORS_ALLOW_METHODS = 'GET, POST, OPTIONS';
+const CORS_MAX_AGE_SECONDS = '600';
+const ORIGIN_RULES = buildOriginRules(CORS_ALLOWED_ORIGINS);
 
-function json(res, statusCode, body) {
+function json(req, res, statusCode, body) {
   res.writeHead(statusCode, {
+    ...corsHeaders(req),
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
   });
   res.end(JSON.stringify(body, (_, v) => (typeof v === 'bigint' ? v.toString() : v), 2));
+}
+
+function empty(req, res, statusCode) {
+  res.writeHead(statusCode, {
+    ...corsHeaders(req),
+    'cache-control': 'no-store',
+  });
+  res.end();
+}
+
+function buildOriginRules(raw) {
+  return raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => {
+      if (value === '*') return { any: true };
+      if (!value.includes('*')) return { exact: value };
+      const pattern = value
+        .split('*')
+        .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('.*');
+      return { regex: new RegExp(`^${pattern}$`) };
+    });
+}
+
+function isOriginAllowed(origin) {
+  if (!origin) return false;
+  for (const rule of ORIGIN_RULES) {
+    if (rule.any) return true;
+    if (rule.exact && rule.exact === origin) return true;
+    if (rule.regex && rule.regex.test(origin)) return true;
+  }
+  return false;
+}
+
+function corsHeaders(req) {
+  const origin = String(req.headers.origin || '').trim();
+  if (!origin || !isOriginAllowed(origin)) return {};
+  return {
+    'access-control-allow-origin': ORIGIN_RULES.some((rule) => rule.any) ? '*' : origin,
+    'access-control-allow-methods': CORS_ALLOW_METHODS,
+    'access-control-allow-headers': CORS_ALLOW_HEADERS,
+    'access-control-max-age': CORS_MAX_AGE_SECONDS,
+    vary: 'Origin',
+  };
 }
 
 function readJsonBody(req) {
@@ -70,6 +126,9 @@ function withMintCandidate(row) {
     canonicalPayload: row.canonical_payload,
     message: safeJson(row.message_json),
     mintSubmission: safeJson(row.mint_submission_json),
+    processed: row.processed === 1,
+    processedTxHash: row.processed_tx_hash ?? null,
+    processedAt: row.processed_at ?? null,
     sourceFile: row.source_file,
     updatedAt: row.updated_at,
   };
@@ -91,6 +150,9 @@ function withReleaseCandidate(row) {
     canonicalPayload: row.canonical_payload,
     message: safeJson(row.message_json),
     releaseSubmission: safeJson(row.release_submission_json),
+    processed: row.processed === 1,
+    processedTxHash: row.processed_tx_hash ?? null,
+    processedAt: row.processed_at ?? null,
     sourceFile: row.source_file,
     updatedAt: row.updated_at,
   };
@@ -111,8 +173,12 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
     const method = req.method || 'GET';
     const pathname = normalizePath(req.url || '/');
 
+    if (method === 'OPTIONS') {
+      return empty(req, res, 204);
+    }
+
     if (method === 'GET' && pathname === '/health') {
-      return json(res, 200, {
+      return json(req, res, 200, {
         ok: true,
         service: 'heptad-relayer-api',
         time: new Date().toISOString(),
@@ -121,7 +187,7 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
     }
 
     if (method === 'POST' && pathname === '/ingest/mint-candidates') {
-      if (!isAuthorized(req)) return json(res, 401, { ok: false, error: 'Unauthorized' });
+      if (!isAuthorized(req)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
       return void readJsonBody(req)
         .then((body) => {
           const candidates = Array.isArray(body?.candidates) ? body.candidates : [];
@@ -130,18 +196,18 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
             if (!candidate?.payloadHashHex) continue;
             upsertMintCandidate(db, candidate, source);
           }
-          json(res, 200, {
+          json(req, res, 200, {
             ok: true,
             imported: candidates.length,
             sourceFile: source,
             generatedAt: body?.generatedAt ?? null,
           });
         })
-        .catch((error) => json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }));
+        .catch((error) => json(req, res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }));
     }
 
     if (method === 'POST' && pathname === '/ingest/release-candidates') {
-      if (!isAuthorized(req)) return json(res, 401, { ok: false, error: 'Unauthorized' });
+      if (!isAuthorized(req)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
       return void readJsonBody(req)
         .then((body) => {
           const candidates = Array.isArray(body?.candidates) ? body.candidates : [];
@@ -150,25 +216,25 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
             if (!candidate?.payloadHashHex) continue;
             upsertReleaseCandidate(db, candidate, source);
           }
-          json(res, 200, {
+          json(req, res, 200, {
             ok: true,
             imported: candidates.length,
             sourceFile: source,
             generatedAt: body?.generatedAt ?? null,
           });
         })
-        .catch((error) => json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }));
+        .catch((error) => json(req, res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }));
     }
 
     if (method === 'POST' && pathname === '/ingest/heartbeat') {
-      if (!isAuthorized(req)) return json(res, 401, { ok: false, error: 'Unauthorized' });
+      if (!isAuthorized(req)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
       return void readJsonBody(req)
         .then((body) => {
           const relayerName = String(body?.relayerName ?? '').trim();
           const role = String(body?.role ?? '').trim();
           const status = String(body?.status ?? '').trim() || 'ok';
           if (!relayerName || !role) {
-            return json(res, 400, { ok: false, error: 'relayerName and role are required' });
+            return json(req, res, 400, { ok: false, error: 'relayerName and role are required' });
           }
           upsertHeartbeat(db, {
             relayerName,
@@ -177,13 +243,13 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
             detail: body?.detail ? String(body.detail) : null,
             updatedAt: body?.updatedAt ? String(body.updatedAt) : new Date().toISOString(),
           });
-          json(res, 200, { ok: true, relayerName, role, status });
+          json(req, res, 200, { ok: true, relayerName, role, status });
         })
-        .catch((error) => json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }));
+        .catch((error) => json(req, res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }));
     }
 
     if (method === 'POST' && pathname === '/ingest/mint-attestations') {
-      if (!isAuthorized(req)) return json(res, 401, { ok: false, error: 'Unauthorized' });
+      if (!isAuthorized(req)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
       return void readJsonBody(req)
         .then((body) => {
           const pending = Array.isArray(body?.pending) ? body.pending : [];
@@ -196,13 +262,13 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
             upsertMintAttestation(db, entry, { relayerId, generatedAt, sourceFile });
             imported += 1;
           }
-          json(res, 200, { ok: true, imported, relayerId, generatedAt });
+          json(req, res, 200, { ok: true, imported, relayerId, generatedAt });
         })
-        .catch((error) => json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }));
+        .catch((error) => json(req, res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }));
     }
 
     if (method === 'POST' && pathname === '/ingest/release-attestations') {
-      if (!isAuthorized(req)) return json(res, 401, { ok: false, error: 'Unauthorized' });
+      if (!isAuthorized(req)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
       return void readJsonBody(req)
         .then((body) => {
           const pending = Array.isArray(body?.pending) ? body.pending : [];
@@ -215,9 +281,39 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
             upsertReleaseAttestation(db, entry, { relayerId, generatedAt, sourceFile });
             imported += 1;
           }
-          json(res, 200, { ok: true, imported, relayerId, generatedAt });
+          json(req, res, 200, { ok: true, imported, relayerId, generatedAt });
         })
-        .catch((error) => json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }));
+        .catch((error) => json(req, res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }));
+    }
+
+    if (method === 'POST' && pathname === '/ingest/processed-mints') {
+      if (!isAuthorized(req)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
+      return void readJsonBody(req)
+        .then((body) => {
+          const processed = Array.isArray(body?.processed) ? body.processed : [];
+          const source = body?.sourceFile ? String(body.sourceFile) : null;
+          let imported = 0;
+          for (const item of processed) {
+            if (upsertProcessedMint(db, item, source)) imported += 1;
+          }
+          json(req, res, 200, { ok: true, imported, sourceFile: source });
+        })
+        .catch((error) => json(req, res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }));
+    }
+
+    if (method === 'POST' && pathname === '/ingest/processed-releases') {
+      if (!isAuthorized(req)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
+      return void readJsonBody(req)
+        .then((body) => {
+          const processed = Array.isArray(body?.processed) ? body.processed : [];
+          const source = body?.sourceFile ? String(body.sourceFile) : null;
+          let imported = 0;
+          for (const item of processed) {
+            if (upsertProcessedRelease(db, item, source)) imported += 1;
+          }
+          json(req, res, 200, { ok: true, imported, sourceFile: source });
+        })
+        .catch((error) => json(req, res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }));
     }
 
     if (method === 'GET' && pathname === '/status') {
@@ -227,7 +323,7 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
         FROM relayer_heartbeats
         ORDER BY relayer_name ASC
       `).all();
-      return json(res, 200, {
+      return json(req, res, 200, {
         ok: true,
         service: 'heptad-relayer-api',
         time: new Date().toISOString(),
@@ -248,62 +344,83 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
       const recipientHash = url.searchParams.get('recipientHash')?.trim()?.toLowerCase();
       const ethereumUser = url.searchParams.get('ethereumUser')?.trim()?.toLowerCase();
       const ready = url.searchParams.get('ready');
+      const processed = url.searchParams.get('processed');
       const limitRaw = Number(url.searchParams.get('limit') || '20');
       const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, Math.trunc(limitRaw))) : 20;
 
       const clauses = [];
       const params = {};
       if (depositId) {
-        clauses.push('deposit_id = @deposit_id');
+        clauses.push('mc.deposit_id = @deposit_id');
         params.deposit_id = depositId;
       }
       if (recipientHash) {
-        clauses.push('recipient_hash = @recipient_hash');
+        clauses.push('mc.recipient_hash = @recipient_hash');
         params.recipient_hash = recipientHash;
       }
       if (ethereumUser) {
-        clauses.push('ethereum_user = @ethereum_user');
+        clauses.push('mc.ethereum_user = @ethereum_user');
         params.ethereum_user = ethereumUser;
       }
       if (ready === '1' || ready === 'true') {
-        clauses.push('ready = 1');
+        clauses.push('mc.ready = 1');
       } else if (ready === '0' || ready === 'false') {
-        clauses.push('ready = 0');
+        clauses.push('mc.ready = 0');
+      }
+      if (processed === '1' || processed === 'true') {
+        clauses.push('pm.deposit_id IS NOT NULL');
+      } else if (processed === '0' || processed === 'false') {
+        clauses.push('pm.deposit_id IS NULL');
       }
 
       const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
       const rows = db.prepare(`
-        SELECT *
-        FROM mint_candidates
+        SELECT
+          mc.*,
+          CASE WHEN pm.deposit_id IS NULL THEN 0 ELSE 1 END AS processed,
+          pm.tx_hash AS processed_tx_hash,
+          pm.updated_at AS processed_at
+        FROM mint_candidates mc
+        LEFT JOIN processed_mints pm ON pm.deposit_id = mc.deposit_id
         ${where}
-        ORDER BY CAST(deposit_id AS INTEGER) DESC, updated_at DESC
+        ORDER BY CAST(mc.deposit_id AS INTEGER) DESC, mc.updated_at DESC
         LIMIT ${limit}
       `).all(params);
-      return json(res, 200, { ok: true, count: rows.length, items: rows.map(withMintCandidate) });
+      return json(req, res, 200, { ok: true, count: rows.length, items: rows.map(withMintCandidate) });
     }
 
     if (method === 'GET' && pathname.startsWith('/mint-candidates/')) {
       const depositId = decodeURIComponent(pathname.slice('/mint-candidates/'.length));
       const rows = db.prepare(`
-        SELECT *
-        FROM mint_candidates
-        WHERE deposit_id = ?
-        ORDER BY updated_at DESC
+        SELECT
+          mc.*,
+          CASE WHEN pm.deposit_id IS NULL THEN 0 ELSE 1 END AS processed,
+          pm.tx_hash AS processed_tx_hash,
+          pm.updated_at AS processed_at
+        FROM mint_candidates mc
+        LEFT JOIN processed_mints pm ON pm.deposit_id = mc.deposit_id
+        WHERE mc.deposit_id = ?
+        ORDER BY mc.updated_at DESC
       `).all(depositId);
-      return json(res, 200, { ok: true, depositId, count: rows.length, items: rows.map(withMintCandidate) });
+      return json(req, res, 200, { ok: true, depositId, count: rows.length, items: rows.map(withMintCandidate) });
     }
 
     if (method === 'GET' && pathname.startsWith('/deposits/')) {
       const depositId = decodeURIComponent(pathname.slice('/deposits/'.length));
       const row = db.prepare(`
-        SELECT *
-        FROM mint_candidates
-        WHERE deposit_id = ?
-        ORDER BY ready DESC, updated_at DESC
+        SELECT
+          mc.*,
+          CASE WHEN pm.deposit_id IS NULL THEN 0 ELSE 1 END AS processed,
+          pm.tx_hash AS processed_tx_hash,
+          pm.updated_at AS processed_at
+        FROM mint_candidates mc
+        LEFT JOIN processed_mints pm ON pm.deposit_id = mc.deposit_id
+        WHERE mc.deposit_id = ?
+        ORDER BY mc.ready DESC, mc.updated_at DESC
         LIMIT 1
       `).get(depositId);
-      if (!row) return json(res, 404, { ok: false, error: 'Not found', depositId });
-      return json(res, 200, { ok: true, depositId, mintCandidate: withMintCandidate(row) });
+      if (!row) return json(req, res, 404, { ok: false, error: 'Not found', depositId });
+      return json(req, res, 200, { ok: true, depositId, mintCandidate: withMintCandidate(row) });
     }
 
     if (method === 'GET' && pathname === '/mint-attestations') {
@@ -330,7 +447,7 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
         ORDER BY updated_at DESC
         LIMIT ${limit}
       `).all(params);
-      return json(res, 200, {
+      return json(req, res, 200, {
         ok: true,
         count: rows.length,
         items: rows.map((row) => ({
@@ -358,49 +475,62 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
       const opnetUser = url.searchParams.get('opnetUser')?.trim()?.toLowerCase();
       const recipient = url.searchParams.get('recipient')?.trim()?.toLowerCase();
       const ready = url.searchParams.get('ready');
+      const processed = url.searchParams.get('processed');
       const limitRaw = Number(url.searchParams.get('limit') || '20');
       const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, Math.trunc(limitRaw))) : 20;
       const clauses = [];
       const params = {};
       if (withdrawalId) {
-        clauses.push('withdrawal_id = @withdrawal_id');
+        clauses.push('rc.withdrawal_id = @withdrawal_id');
         params.withdrawal_id = withdrawalId;
       }
       if (opnetUser) {
-        clauses.push('opnet_user = @opnet_user');
+        clauses.push('rc.opnet_user = @opnet_user');
         params.opnet_user = opnetUser;
       }
       if (recipient) {
-        clauses.push('ethereum_recipient = @ethereum_recipient');
+        clauses.push('rc.ethereum_recipient = @ethereum_recipient');
         params.ethereum_recipient = recipient;
       }
-      if (ready === '1' || ready === 'true') clauses.push('ready = 1');
-      if (ready === '0' || ready === 'false') clauses.push('ready = 0');
+      if (ready === '1' || ready === 'true') clauses.push('rc.ready = 1');
+      if (ready === '0' || ready === 'false') clauses.push('rc.ready = 0');
+      if (processed === '1' || processed === 'true') clauses.push('pr.withdrawal_id IS NOT NULL');
+      if (processed === '0' || processed === 'false') clauses.push('pr.withdrawal_id IS NULL');
       const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
       const rows = db.prepare(`
-        SELECT *
-        FROM release_candidates
+        SELECT
+          rc.*,
+          CASE WHEN pr.withdrawal_id IS NULL THEN 0 ELSE 1 END AS processed,
+          pr.tx_hash AS processed_tx_hash,
+          pr.updated_at AS processed_at
+        FROM release_candidates rc
+        LEFT JOIN processed_releases pr ON pr.withdrawal_id = rc.withdrawal_id
         ${where}
-        ORDER BY CAST(withdrawal_id AS INTEGER) DESC, updated_at DESC
+        ORDER BY CAST(rc.withdrawal_id AS INTEGER) DESC, rc.updated_at DESC
         LIMIT ${limit}
       `).all(params);
-      return json(res, 200, { ok: true, count: rows.length, items: rows.map(withReleaseCandidate) });
+      return json(req, res, 200, { ok: true, count: rows.length, items: rows.map(withReleaseCandidate) });
     }
 
     if (method === 'GET' && pathname.startsWith('/withdrawals/')) {
       const withdrawalId = decodeURIComponent(pathname.slice('/withdrawals/'.length));
       const row = db.prepare(`
-        SELECT *
-        FROM release_candidates
-        WHERE withdrawal_id = ?
-        ORDER BY ready DESC, updated_at DESC
+        SELECT
+          rc.*,
+          CASE WHEN pr.withdrawal_id IS NULL THEN 0 ELSE 1 END AS processed,
+          pr.tx_hash AS processed_tx_hash,
+          pr.updated_at AS processed_at
+        FROM release_candidates rc
+        LEFT JOIN processed_releases pr ON pr.withdrawal_id = rc.withdrawal_id
+        WHERE rc.withdrawal_id = ?
+        ORDER BY rc.ready DESC, rc.updated_at DESC
         LIMIT 1
       `).get(withdrawalId);
-      if (!row) return json(res, 404, { ok: false, error: 'Not found', withdrawalId });
-      return json(res, 200, { ok: true, withdrawalId, releaseCandidate: withReleaseCandidate(row) });
+      if (!row) return json(req, res, 404, { ok: false, error: 'Not found', withdrawalId });
+      return json(req, res, 200, { ok: true, withdrawalId, releaseCandidate: withReleaseCandidate(row) });
     }
 
-    return json(res, 404, {
+    return json(req, res, 404, {
       ok: false,
       error: 'Not found',
       endpoints: [
@@ -416,6 +546,8 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
         'POST /ingest/release-attestations',
         'POST /ingest/mint-candidates',
         'POST /ingest/release-candidates',
+        'POST /ingest/processed-mints',
+        'POST /ingest/processed-releases',
         'POST /ingest/heartbeat',
       ],
     });

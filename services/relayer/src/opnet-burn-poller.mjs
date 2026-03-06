@@ -8,7 +8,11 @@ import { Address } from "@btc-vision/transaction";
 import { ABIDataTypes, BitcoinAbiTypes, getContract } from "opnet";
 import { ethers } from "ethers";
 import { createOpnetJsonRpcProvider, describeOpnetRpcTransport } from "./opnet-rpc-provider.mjs";
-import { publishReleaseAttestationsSnapshot, publishRelayerHeartbeat } from "./relayer-api-publish.mjs";
+import {
+  publishProcessedMintsSnapshot,
+  publishReleaseAttestationsSnapshot,
+  publishRelayerHeartbeat,
+} from "./relayer-api-publish.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
@@ -475,6 +479,31 @@ function extractStructuredBurnRequestedEvents(contractEvents, bridgeAddress, bri
   return out;
 }
 
+function extractStructuredMintFinalizedEvents(contractEvents, bridgeAddress, bridgeHex) {
+  if (!contractEvents || typeof contractEvents !== "object") return [];
+  const targets = new Set([String(bridgeAddress).toLowerCase(), String(bridgeHex).toLowerCase()]);
+  const out = [];
+  for (const [key, events] of Object.entries(contractEvents)) {
+    if (!targets.has(String(key).toLowerCase()) || !Array.isArray(events)) continue;
+    for (const event of events) {
+      if (!event || typeof event !== "object") continue;
+      if (String(event.type ?? "").trim() !== "MintFinalized") continue;
+      const bytes = byteMapToBytes(event.data);
+      if (!bytes || bytes.length < 97) continue;
+      out.push({
+        type: "MintFinalized",
+        properties: {
+          assetId: Number(bytes[0]),
+          recipient: bytesToHex(bytes.slice(1, 33)),
+          amount: bytesToBigInt(bytes.slice(33, 65)).toString(),
+          depositId: bytesToBigInt(bytes.slice(65, 97)).toString(),
+        },
+      });
+    }
+  }
+  return out;
+}
+
 function decodeBridgeEventsSafely(bridge, bridgeEventsRaw, txHash, blockHeight) {
   const decodedEvents = [];
   for (let eventIndex = 0; eventIndex < bridgeEventsRaw.length; eventIndex += 1) {
@@ -593,6 +622,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
       const head = await provider.getBlockNumber();
       if (head >= nextFromBlock) {
         const pending = [];
+        const processedMints = [];
         let retryFromBlock = null;
         let cursor = nextFromBlock;
         while (cursor <= head) {
@@ -692,14 +722,34 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                   mapping.opnet.bridgeAddress,
                   mapping.opnet.bridgeHex,
                 );
-                if (bridgeEventsRaw.length === 0 && structuredBurnEvents.length === 0) continue;
+                const structuredMintEvents = extractStructuredMintFinalizedEvents(
+                  contractEvents,
+                  mapping.opnet.bridgeAddress,
+                  mapping.opnet.bridgeHex,
+                );
+                if (bridgeEventsRaw.length === 0 && structuredBurnEvents.length === 0 && structuredMintEvents.length === 0) continue;
                 const decodedEvents = [
+                  ...structuredMintEvents,
                   ...structuredBurnEvents,
                   ...decodeBridgeEventsSafely(bridge, bridgeEventsRaw, txHash, blockHeight),
                 ];
                 if (decodedEvents.length === 0) continue;
                 let burnOrdinal = 0;
                 for (const evt of decodedEvents) {
+                  if (evt.type === "MintFinalized") {
+                    const depositId = String(evt?.properties?.depositId ?? "").trim();
+                    if (!depositId) continue;
+                    const processedId = `mint:${depositId}`;
+                    if (seen.has(processedId)) continue;
+                    seen.add(processedId);
+                    processedMints.push({
+                      depositId,
+                      sourceChain: "opnet-testnet",
+                      txHash: txHash.toLowerCase(),
+                      blockNumber: Number(blockHeight),
+                    });
+                    continue;
+                  }
                   if (evt.type !== "BurnRequested") continue;
                   const props = evt.properties ?? {};
                   const observationId = `${txHash}:${burnOrdinal}`;
@@ -793,6 +843,29 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
             console.log(
               `[opnet-burn-poller] burn tx=${entry.source.txHash} withdrawalId=${entry.message.nonce} asset=${entry.message.assetId} amount=${entry.message.amount} recipient=${entry.message.ethereumUser}`,
             );
+          }
+        }
+        if (processedMints.length > 0) {
+          const snapshot = {
+            generatedAt: new Date().toISOString(),
+            relayerId,
+            mappingSource: mappingFile,
+            count: processedMints.length,
+            processed: processedMints,
+          };
+          const disableFileOutput =
+            process.env.RELAYER_DISABLE_FILE_OUTPUT?.trim() === "1" ||
+            process.env.RELAYER_DISABLE_FILE_OUTPUT?.trim()?.toLowerCase() === "true";
+          try {
+            const published = await publishProcessedMintsSnapshot(snapshot, disableFileOutput ? null : outputFile);
+            if (published?.skipped) {
+              console.log(`[opnet-burn-poller] processed mint publish skipped: ${published.reason}`);
+            } else {
+              console.log(`[opnet-burn-poller] Published ${processedMints.length} processed mint(s) to relayer API.`);
+            }
+          } catch (error) {
+            console.error(`[opnet-burn-poller] processed mint API publish failed: ${error instanceof Error ? error.message : String(error)}`);
+            if (disableFileOutput) throw error;
           }
         }
         if (retryFromBlock != null) {

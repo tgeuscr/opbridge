@@ -4,10 +4,16 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { networks } from "@btc-vision/bitcoin";
 import { Address, MLDSASecurityLevel, QuantumBIP32Factory } from "@btc-vision/transaction";
-import { publishMintAttestationsSnapshot, publishRelayerHeartbeat } from "./relayer-api-publish.mjs";
+import {
+  publishMintAttestationsSnapshot,
+  publishProcessedReleasesSnapshot,
+  publishRelayerHeartbeat,
+} from "./relayer-api-publish.mjs";
 
 const DEPOSIT_INITIATED_TOPIC0 =
   "0x3fb1c794079291b42d6d8707ba973ad40ab31522db5ff4280e7606823b71be73";
+const WITHDRAWAL_RELEASED_TOPIC0 =
+  "0xf508cb4e522554ecdc6cdaed6e06898939fadca9fe07857fa51c68ddc2bead4a";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
@@ -407,6 +413,18 @@ async function buildPendingAttestation(log, mapping, relaySigners) {
   };
 }
 
+function buildProcessedRelease(log) {
+  if (!Array.isArray(log.topics) || log.topics.length < 2) {
+    throw new Error(`Unexpected withdrawal log topics length: ${log.topics?.length ?? 0}`);
+  }
+  return {
+    withdrawalId: hexToBigInt(log.topics[1]).toString(),
+    sourceChain: "ethereum-sepolia",
+    txHash: String(log.transactionHash ?? "").toLowerCase(),
+    blockNumber: Number(hexToBigInt(log.blockNumber)),
+  };
+}
+
 async function main() {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     console.log(`Sepolia Deposit Poller
@@ -480,6 +498,7 @@ Example:
       const latest = hexToBigInt(await rpc(rpcUrl, "eth_blockNumber", []));
       if (latest >= nextFromBlock) {
         const pending = [];
+        const processedReleases = [];
         let windowStart = nextFromBlock;
         while (windowStart <= latest) {
           const initialEnd = windowStart + BigInt(maxBlockRange) - 1n;
@@ -494,7 +513,7 @@ Example:
                   address: mapping.ethereum.vaultAddress,
                   fromBlock: fromHex,
                   toBlock: toHex,
-                  topics: [DEPOSIT_INITIATED_TOPIC0],
+                  topics: [[DEPOSIT_INITIATED_TOPIC0, WITHDRAWAL_RELEASED_TOPIC0]],
                 },
               ]);
             } catch (error) {
@@ -514,10 +533,21 @@ Example:
           }
 
           for (const log of logs) {
-            const id = `${log.transactionHash}:${Number(hexToBigInt(log.logIndex))}`;
-            if (seen.has(id)) continue;
-            seen.add(id);
-            pending.push(await buildPendingAttestation(log, mapping, relaySigners));
+            const topic0 = String(log?.topics?.[0] ?? "").toLowerCase();
+            if (topic0 === DEPOSIT_INITIATED_TOPIC0) {
+              const id = `deposit:${log.transactionHash}:${Number(hexToBigInt(log.logIndex))}`;
+              if (seen.has(id)) continue;
+              seen.add(id);
+              pending.push(await buildPendingAttestation(log, mapping, relaySigners));
+              continue;
+            }
+            if (topic0 === WITHDRAWAL_RELEASED_TOPIC0) {
+              const release = buildProcessedRelease(log);
+              const id = `release:${release.withdrawalId}`;
+              if (seen.has(id)) continue;
+              seen.add(id);
+              processedReleases.push(release);
+            }
           }
 
           windowStart = clampedEnd + 1n;
@@ -552,6 +582,30 @@ Example:
             console.log(
               `[deposit] assetId=${entry.message.assetId} nonce=${entry.message.nonce} payloadHash=${entry.payloadHashHex}`,
             );
+          }
+        }
+
+        if (processedReleases.length > 0) {
+          const snapshot = {
+            generatedAt: new Date().toISOString(),
+            relayerId,
+            mappingSource: mappingFile,
+            count: processedReleases.length,
+            processed: processedReleases,
+          };
+          const disableFileOutput =
+            process.env.RELAYER_DISABLE_FILE_OUTPUT?.trim() === "1" ||
+            process.env.RELAYER_DISABLE_FILE_OUTPUT?.trim()?.toLowerCase() === "true";
+          try {
+            const published = await publishProcessedReleasesSnapshot(snapshot, disableFileOutput ? null : outputFile);
+            if (published?.skipped) {
+              console.log(`[poller] processed release publish skipped: ${published.reason}`);
+            } else {
+              console.log(`[poller] Published ${processedReleases.length} processed release(s) to relayer API.`);
+            }
+          } catch (error) {
+            console.error(`[poller] processed release API publish failed: ${error instanceof Error ? error.message : String(error)}`);
+            if (disableFileOutput) throw error;
           }
         }
 
