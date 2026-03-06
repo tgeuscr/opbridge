@@ -49,8 +49,6 @@ const ETH_ASSET_CONFIG = {
   PAXG: { assetId: 3, decimals: 18 },
 } as const;
 const UX_GUIDE_DISMISSED_KEY = 'heptad.site.uxGuideDismissed.v1';
-const PROCESSED_MINT_IDS_KEY = 'heptad.site.processedMintIds.v1';
-const PROCESSED_RELEASE_IDS_KEY = 'heptad.site.processedReleaseIds.v1';
 
 type AssetSymbol = keyof typeof ETH_ASSET_CONFIG;
 const ASSET_OPTIONS: Array<{ symbol: AssetSymbol; logo: string; alt: string }> = [
@@ -326,70 +324,6 @@ function parseHexQuantity(raw: unknown, fieldName: string): bigint {
     throw new Error(`${fieldName} must be a hex quantity.`);
   }
   return BigInt(value);
-}
-
-function normalizeStatusValue(raw: unknown): string {
-  return String(raw ?? '').trim().toLowerCase();
-}
-
-function isTruthyFlag(raw: unknown): boolean {
-  if (raw === true) return true;
-  if (typeof raw === 'number') return raw > 0;
-  const value = normalizeStatusValue(raw);
-  return value === '1' || value === 'true' || value === 'yes';
-}
-
-function hasTerminalStatus(raw: unknown): boolean {
-  const status = normalizeStatusValue(raw);
-  return (
-    status === 'processed' ||
-    status === 'completed' ||
-    status === 'claimed' ||
-    status === 'minted' ||
-    status === 'released' ||
-    status === 'consumed' ||
-    status === 'finalized' ||
-    status === 'executed' ||
-    status === 'settled' ||
-    status === 'done'
-  );
-}
-
-function toRecord(raw: unknown): Record<string, unknown> {
-  if (!raw || typeof raw !== 'object') return {};
-  return raw as Record<string, unknown>;
-}
-
-function hasProcessedSignals(candidateRaw: unknown, submissionField: 'mintSubmission' | 'releaseSubmission'): boolean {
-  const candidate = toRecord(candidateRaw);
-  const submission = toRecord(candidate[submissionField]);
-  const message = toRecord(candidate.message);
-  const records = [candidate, submission, message];
-  const statusKeys = ['status', 'state', 'stage'];
-  for (const record of records) {
-    for (const key of statusKeys) {
-      if (hasTerminalStatus(record[key])) return true;
-    }
-  }
-  const flagKeys = ['processed', 'isProcessed', 'claimed', 'minted', 'released', 'consumed', 'executed', 'completed'];
-  for (const record of records) {
-    for (const key of flagKeys) {
-      if (isTruthyFlag(record[key])) return true;
-    }
-  }
-  return false;
-}
-
-function readStoredIds(storageKey: string): Set<string> {
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    if (!raw) return new Set<string>();
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return new Set<string>();
-    return new Set(parsed.map((value) => String(value).trim()).filter(Boolean));
-  } catch {
-    return new Set<string>();
-  }
 }
 
 async function withEstimatedGasCap(
@@ -686,8 +620,6 @@ export function App() {
   const [burnStatus, setBurnStatus] = useState('No burn started yet.');
   const [bridgeDirection, setBridgeDirection] = useState<BridgeDirection | null>(null);
   const [bridgeConfirm, setBridgeConfirm] = useState<BridgeConfirmState | null>(null);
-  const [processedMintIds, setProcessedMintIds] = useState<Set<string>>(() => new Set<string>());
-  const [processedReleaseIds, setProcessedReleaseIds] = useState<Set<string>>(() => new Set<string>());
   const [readyReleaseCandidates, setReadyReleaseCandidates] = useState<ReleaseCandidate[]>([]);
   const [readyReleaseCandidatesBusy, setReadyReleaseCandidatesBusy] = useState(false);
   const [claimReleaseBusy, setClaimReleaseBusy] = useState(false);
@@ -703,8 +635,6 @@ export function App() {
     } catch {
       setShowUxGuide(true);
     }
-    setProcessedMintIds(readStoredIds(PROCESSED_MINT_IDS_KEY));
-    setProcessedReleaseIds(readStoredIds(PROCESSED_RELEASE_IDS_KEY));
   }, []);
 
   useEffect(() => {
@@ -843,40 +773,6 @@ export function App() {
       return;
     }
     void runLockedBurnFlow();
-  }
-
-  function rememberProcessedMintId(idRaw: string) {
-    const id = idRaw.trim();
-    if (!id) return;
-    setProcessedMintIds((prev) => {
-      if (prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.add(id);
-      try {
-        window.localStorage.setItem(PROCESSED_MINT_IDS_KEY, JSON.stringify([...next]));
-      } catch {}
-      return next;
-    });
-    setReadyMintCandidates((prev) =>
-      prev.filter((entry) => String(entry.depositId ?? entry.mintSubmission?.nonce ?? '').trim() !== id),
-    );
-  }
-
-  function rememberProcessedReleaseId(idRaw: string) {
-    const id = idRaw.trim();
-    if (!id) return;
-    setProcessedReleaseIds((prev) => {
-      if (prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.add(id);
-      try {
-        window.localStorage.setItem(PROCESSED_RELEASE_IDS_KEY, JSON.stringify([...next]));
-      } catch {}
-      return next;
-    });
-    setReadyReleaseCandidates((prev) =>
-      prev.filter((entry) => String(entry.withdrawalId ?? entry.releaseSubmission?.withdrawalId ?? '').trim() !== id),
-    );
   }
 
   async function runDepositLookup() {
@@ -1421,13 +1317,7 @@ export function App() {
     const response = await fetch(`${base}/mint-candidates?${query.toString()}`);
     const body = (await response.json()) as { items?: MintCandidate[] };
     if (!response.ok) throw new Error(`mint-candidates HTTP ${response.status}`);
-    const rawItems = Array.isArray(body.items) ? body.items : [];
-    const items = rawItems.filter((entry) => {
-      const id = String(entry.depositId ?? entry.mintSubmission?.nonce ?? '').trim();
-      if (id && processedMintIds.has(id)) return false;
-      if (hasProcessedSignals(entry, 'mintSubmission')) return false;
-      return true;
-    });
+    const items = Array.isArray(body.items) ? body.items : [];
     setReadyMintCandidates(items);
     return items;
   }
@@ -1593,7 +1483,6 @@ export function App() {
       setClaimMintStatus(
         `Mint sent. depositId=${depositId.toString()} amount=${amount.toString()} tx=${short((tx as { transactionId?: string })?.transactionId || null)}`,
       );
-      rememberProcessedMintId(depositId.toString());
       await fetchReadyMintCandidates();
     } catch (error) {
       const baseMessage = `Mint claim failed: ${formatEthereumError(error)}`;
@@ -1623,13 +1512,7 @@ export function App() {
     const response = await fetch(`${base}/release-candidates?${query.toString()}`);
     const body = (await response.json()) as { items?: ReleaseCandidate[] };
     if (!response.ok) throw new Error(`release-candidates HTTP ${response.status}`);
-    const rawItems = Array.isArray(body.items) ? body.items : [];
-    const items = rawItems.filter((entry) => {
-      const id = String(entry.withdrawalId ?? entry.releaseSubmission?.withdrawalId ?? '').trim();
-      if (id && processedReleaseIds.has(id)) return false;
-      if (hasProcessedSignals(entry, 'releaseSubmission')) return false;
-      return true;
-    });
+    const items = Array.isArray(body.items) ? body.items : [];
     setReadyReleaseCandidates(items);
     return items;
   }
@@ -1767,7 +1650,6 @@ export function App() {
       }
       setWithdrawalLookupId(withdrawalId.toString());
       setClaimReleaseStatus(`Withdrawal released. withdrawalId=${withdrawalId.toString()} tx=${short(txHash)}`);
-      rememberProcessedReleaseId(withdrawalId.toString());
       await fetchReadyReleaseCandidates(account);
     } catch (error) {
       setClaimReleaseStatus(`Withdrawal claim failed: ${formatEthereumError(error)}`);
