@@ -904,21 +904,6 @@ export function App() {
     setEthStatus('Disconnected (local app state cleared).');
   }
 
-  async function switchToSepolia() {
-    const provider = getEthereumProvider();
-    if (!provider) return;
-    try {
-      await provider.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }],
-      });
-      const chainId = (await provider.request({ method: 'eth_chainId' })) as string;
-      setEthChainId(chainId);
-    } catch (error) {
-      setEthStatus(`Switch failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
   const opConnected = Boolean(walletAddress);
   const ethConnected = Boolean(ethAddress);
   const onSepolia = ethChainId.toLowerCase() === SEPOLIA_CHAIN_ID_HEX;
@@ -1703,66 +1688,34 @@ export function App() {
               <button type="button" onClick={() => setShowWalletModal(false)}>Close</button>
             </div>
             <article className="wallet-linker wallet-connect-panel">
-              <div className="wallet-linker-rail">
-                <button
-                  className={`network-side-button ${opWalletReady ? 'ready' : ''}`}
-                  onClick={connectOpWallet}
-                  disabled={connecting}
-                  aria-label="Connect OP Wallet"
-                  title="Connect OP Wallet (OPNet testnet)"
-                >
-                  <span className="network-mark">
-                    <img className="network-base-logo" src="/branding/btc.svg" alt="Bitcoin" />
-                    <span className="network-overlay-badge">
-                      <img src="/branding/op.svg" alt="OP Wallet" />
-                    </span>
-                  </span>
-                </button>
-
-                <div className="wallet-center">
-                  <img className="heptad-symbol" src="/branding/heptad-logo.svg" alt="Heptad symbol" />
-                  <p className={`link-copy ${walletPairReady ? 'linked' : ''}`}>
-                    <span className="word-connect">connect</span>
-                    <span className="word-linked">connected</span>
-                  </p>
-                </div>
-
-                <button
-                  className={`network-side-button ${ethWalletReady ? 'ready' : ''}`}
-                  onClick={connectMetaMask}
-                  aria-label="Connect Ethereum Wallet"
-                  title="Connect MetaMask (Sepolia)"
-                >
-                  <span className="network-mark">
-                    <img className="network-base-logo" src="/branding/eth.svg" alt="Ethereum" />
-                    <span className="network-overlay-badge">
-                      <img src="/branding/metamask.svg" alt="MetaMask" />
-                    </span>
-                  </span>
-                </button>
-              </div>
-
               <div className="mini-grid">
                 <div>
+                  <button
+                    className="wallet-provider-logo-button"
+                    onClick={opConnected ? disconnect : connectOpWallet}
+                    disabled={connecting && !opConnected}
+                    aria-label={opConnected ? 'Disconnect OP Wallet' : 'Connect OP Wallet'}
+                    title={opConnected ? 'Disconnect OP Wallet' : 'Connect OP Wallet (OPNet testnet)'}
+                  >
+                    <img className="wallet-provider-logo" src="/branding/op.svg" alt="OP Wallet" />
+                  </button>
                   <h3>OP Wallet</h3>
-                  <p><strong>Status:</strong> {opWalletReady ? 'Connected (OPNet testnet)' : opConnected ? 'Wrong network (switch OP_WALLET to testnet)' : 'Not connected'}</p>
+                  <p><strong>Status:</strong> {opWalletReady ? '✅ (OPNet testnet)' : opConnected ? '❌ (Wrong network)' : '❌'}</p>
                   <p><strong>Address:</strong> <code>{short(walletAddress)}</code></p>
                 </div>
                 <div>
-                  <h3>Ethereum Wallet</h3>
-                  <p><strong>Status:</strong> {ethWalletReady ? `Connected (Sepolia ${SEPOLIA_CHAIN_ID_DEC})` : ethConnected ? 'Wrong network (switch to Sepolia)' : 'Not connected'}</p>
+                  <button
+                    className="wallet-provider-logo-button"
+                    onClick={ethConnected ? disconnectMetaMask : connectMetaMask}
+                    aria-label={ethConnected ? 'Disconnect MetaMask' : 'Connect MetaMask'}
+                    title={ethConnected ? 'Disconnect MetaMask' : 'Connect MetaMask (Sepolia)'}
+                  >
+                    <img className="wallet-provider-logo" src="/branding/metamask.svg" alt="MetaMask" />
+                  </button>
+                  <h3>MetaMask</h3>
+                  <p><strong>Status:</strong> {ethWalletReady ? '✅ (Sepolia)' : ethConnected ? '❌ (Wrong network)' : '❌'}</p>
                   <p><strong>Address:</strong> <code>{short(ethAddress)}</code></p>
                 </div>
-              </div>
-
-              <p className="muted">
-                Click OP and ETH icons to connect. Bridge actions unlock only when OP_WALLET is on OPNet testnet and MetaMask is on Sepolia.
-              </p>
-
-              <div className="actions">
-                <button onClick={disconnect} disabled={!opConnected}>Disconnect OP</button>
-                <button onClick={disconnectMetaMask} disabled={!ethConnected}>Disconnect ETH</button>
-                <button onClick={() => switchToSepolia()} disabled={!ethConnected || onSepolia}>Switch ETH To Sepolia</button>
               </div>
             </article>
           </section>
