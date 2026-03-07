@@ -627,6 +627,9 @@ export function App() {
   const [fallbackSigner, setFallbackSigner] = useState<UnisatSigner | null>(null);
   const [fallbackSignerError, setFallbackSignerError] = useState<string | null>(null);
   const [showUxGuide, setShowUxGuide] = useState(false);
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const [showFaucetModal, setShowFaucetModal] = useState(false);
+  const [showApiModal, setShowApiModal] = useState(false);
 
   useEffect(() => {
     try {
@@ -1686,182 +1689,323 @@ export function App() {
         </div>
       ) : null}
 
-      <main className="landing">
-      <section className="hero card">
-        <img className="brand-wordmark" src="/branding/heptad-wordmark.svg" alt="Heptad" />
-        <p className="eyebrow">HEPTAD BRIDGE TESTNET LIVE</p>
-        <div className="powered-by" aria-label="Powered by OPNet">
-          <span>Powered by</span>
-          <img src="/branding/opnet-logo.svg" alt="OPNet" />
-        </div>
-      </section>
-
-      <section className="wallet-linker-section">
-        <article className="card wallet-linker">
-          <div className="wallet-linker-rail">
-            <button
-              className={`network-side-button ${opWalletReady ? 'ready' : ''}`}
-              onClick={connectOpWallet}
-              disabled={connecting}
-              aria-label="Connect OP Wallet"
-              title="Connect OP Wallet (OPNet testnet)"
-            >
-              <span className="network-mark">
-                <img className="network-base-logo" src="/branding/btc.svg" alt="Bitcoin" />
-                <span className="network-overlay-badge">
-                  <img src="/branding/op.svg" alt="OP Wallet" />
-                </span>
-              </span>
-            </button>
-
-            <div className="wallet-center">
-              <img className="heptad-symbol" src="/branding/heptad-logo.svg" alt="Heptad symbol" />
-              <p className={`link-copy ${walletPairReady ? 'linked' : ''}`}>
-                <span className="word-connect">connect</span>
-                <span className="word-linked">connected</span>
-              </p>
+      {showWalletModal ? (
+        <div className="wallet-connect-overlay" role="presentation" onClick={() => setShowWalletModal(false)}>
+          <section
+            className="wallet-connect-dialog card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="wallet-connect-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="wallet-connect-head">
+              <p className="eyebrow" id="wallet-connect-title">Wallet Connect</p>
+              <button type="button" onClick={() => setShowWalletModal(false)}>Close</button>
             </div>
-
-            <button
-              className={`network-side-button ${ethWalletReady ? 'ready' : ''}`}
-              onClick={connectMetaMask}
-              aria-label="Connect Ethereum Wallet"
-              title="Connect MetaMask (Sepolia)"
-            >
-              <span className="network-mark">
-                <img className="network-base-logo" src="/branding/eth.svg" alt="Ethereum" />
-                <span className="network-overlay-badge">
-                  <img src="/branding/metamask.svg" alt="MetaMask" />
-                </span>
-              </span>
-            </button>
-          </div>
-
-          <div className="mini-grid">
-            <div>
-              <h3>OP Wallet</h3>
-              <p><strong>Status:</strong> {opWalletReady ? 'Connected (OPNet testnet)' : opConnected ? 'Wrong network (switch OP_WALLET to testnet)' : 'Not connected'}</p>
-              <p><strong>Address:</strong> <code>{short(walletAddress)}</code></p>
-            </div>
-            <div>
-              <h3>Ethereum Wallet</h3>
-              <p><strong>Status:</strong> {ethWalletReady ? `Connected (Sepolia ${SEPOLIA_CHAIN_ID_DEC})` : ethConnected ? 'Wrong network (switch to Sepolia)' : 'Not connected'}</p>
-              <p><strong>Address:</strong> <code>{short(ethAddress)}</code></p>
-            </div>
-          </div>
-
-          <p className="muted">
-            Click OP and ETH icons to connect. Bridge actions unlock only when OP_WALLET is on OPNet testnet and MetaMask is on Sepolia.
-          </p>
-
-          <div className="actions">
-            <button onClick={disconnect} disabled={!opConnected}>Disconnect OP</button>
-            <button onClick={disconnectMetaMask} disabled={!ethConnected}>Disconnect ETH</button>
-            <button onClick={() => switchToSepolia()} disabled={!ethConnected || onSepolia}>Switch ETH To Sepolia</button>
-          </div>
-        </article>
-      </section>
-
-      <section className="card flow-card">
-        <div className="card-head">
-          <h2>Get Test Tokens (Sepolia Faucet)</h2>
-          <span className={`pill ${faucetReady ? 'ok' : ''}`}>{faucetReady ? 'Ready' : 'Blocked'}</span>
-        </div>
-        <p className="muted">
-          Testnet users should claim bridge-enabled tokens here before attempting deposit/withdraw flows.
-        </p>
-        <div className="field">
-          <span>Select Token</span>
-          <div className="token-picker" role="radiogroup" aria-label="Select test asset to claim">
-            {ASSET_OPTIONS.map((option) => {
-              const selected = faucetAsset === option.symbol;
-              return (
+            <article className="wallet-linker wallet-connect-panel">
+              <div className="wallet-linker-rail">
                 <button
-                  key={option.symbol}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  className={`token-choice ${selected ? 'selected' : ''}`}
-                  onClick={() => setFaucetAsset(option.symbol)}
-                  title={`Select ${option.symbol}`}
+                  className={`network-side-button ${opWalletReady ? 'ready' : ''}`}
+                  onClick={connectOpWallet}
+                  disabled={connecting}
+                  aria-label="Connect OP Wallet"
+                  title="Connect OP Wallet (OPNet testnet)"
                 >
-                  <img src={option.logo} alt={option.alt} />
-                  <span>{option.symbol}</span>
+                  <span className="network-mark">
+                    <img className="network-base-logo" src="/branding/btc.svg" alt="Bitcoin" />
+                    <span className="network-overlay-badge">
+                      <img src="/branding/op.svg" alt="OP Wallet" />
+                    </span>
+                  </span>
                 </button>
-              );
-            })}
-          </div>
+
+                <div className="wallet-center">
+                  <img className="heptad-symbol" src="/branding/heptad-logo.svg" alt="Heptad symbol" />
+                  <p className={`link-copy ${walletPairReady ? 'linked' : ''}`}>
+                    <span className="word-connect">connect</span>
+                    <span className="word-linked">connected</span>
+                  </p>
+                </div>
+
+                <button
+                  className={`network-side-button ${ethWalletReady ? 'ready' : ''}`}
+                  onClick={connectMetaMask}
+                  aria-label="Connect Ethereum Wallet"
+                  title="Connect MetaMask (Sepolia)"
+                >
+                  <span className="network-mark">
+                    <img className="network-base-logo" src="/branding/eth.svg" alt="Ethereum" />
+                    <span className="network-overlay-badge">
+                      <img src="/branding/metamask.svg" alt="MetaMask" />
+                    </span>
+                  </span>
+                </button>
+              </div>
+
+              <div className="mini-grid">
+                <div>
+                  <h3>OP Wallet</h3>
+                  <p><strong>Status:</strong> {opWalletReady ? 'Connected (OPNet testnet)' : opConnected ? 'Wrong network (switch OP_WALLET to testnet)' : 'Not connected'}</p>
+                  <p><strong>Address:</strong> <code>{short(walletAddress)}</code></p>
+                </div>
+                <div>
+                  <h3>Ethereum Wallet</h3>
+                  <p><strong>Status:</strong> {ethWalletReady ? `Connected (Sepolia ${SEPOLIA_CHAIN_ID_DEC})` : ethConnected ? 'Wrong network (switch to Sepolia)' : 'Not connected'}</p>
+                  <p><strong>Address:</strong> <code>{short(ethAddress)}</code></p>
+                </div>
+              </div>
+
+              <p className="muted">
+                Click OP and ETH icons to connect. Bridge actions unlock only when OP_WALLET is on OPNet testnet and MetaMask is on Sepolia.
+              </p>
+
+              <div className="actions">
+                <button onClick={disconnect} disabled={!opConnected}>Disconnect OP</button>
+                <button onClick={disconnectMetaMask} disabled={!ethConnected}>Disconnect ETH</button>
+                <button onClick={() => switchToSepolia()} disabled={!ethConnected || onSepolia}>Switch ETH To Sepolia</button>
+              </div>
+            </article>
+          </section>
         </div>
-        <div className="route-box">
-          <div>
-            <h3>Token</h3>
-            <p>{ETH_TOKEN_ADDRESSES[faucetAsset as AssetSymbol] || '-'}</p>
-          </div>
-          <div>
-            <h3>Wallet Balance</h3>
-            <p>
-              {faucetState?.balanceRaw != null
-                ? formatTokenAmount(
-                    faucetState.balanceRaw,
-                    ETH_ASSET_CONFIG[faucetAsset as AssetSymbol].decimals,
-                  )
-                : '-'}
-            </p>
-          </div>
-          <div>
-            <h3>Claim Amount</h3>
-            <p>
-              {faucetState?.claimAmountRaw != null
-                ? formatTokenAmount(
-                    faucetState.claimAmountRaw,
-                    ETH_ASSET_CONFIG[faucetAsset as AssetSymbol].decimals,
-                  )
-                : '-'}
-            </p>
-          </div>
-          <div>
-            <h3>Cooldown</h3>
-            <p>{faucetState?.claimCooldownSec != null ? `${faucetState.claimCooldownSec.toString()}s` : '-'}</p>
-          </div>
-          <div>
-            <h3>Next Claim At</h3>
-            <p>
-              {faucetState?.claimableAtSec != null
-                ? new Date(Number(faucetState.claimableAtSec) * 1000).toISOString()
-                : '-'}
-            </p>
-          </div>
-          <div>
-            <h3>Faucet Enabled</h3>
-            <p>
-              {faucetState?.faucetEnabled == null ? '-' : faucetState.faucetEnabled ? 'true' : 'false'}
-            </p>
-          </div>
-        </div>
-        <div className="actions">
-          <button
-            onClick={runClaimTestTokenFlow}
-            disabled={!faucetReady || !faucetConfigReady || faucetBusy}
+      ) : null}
+
+      {showFaucetModal ? (
+        <div className="wallet-connect-overlay" role="presentation" onClick={() => setShowFaucetModal(false)}>
+          <section
+            className="wallet-connect-dialog card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="faucet-dialog-title"
+            onClick={(event) => event.stopPropagation()}
           >
-            {faucetBusy ? 'Claiming…' : `Claim ${faucetAsset} Test Tokens`}
-          </button>
-          <button
-            onClick={() => void refreshFaucetState([faucetAsset as AssetSymbol])}
-            disabled={!faucetReady || !faucetConfigReady || faucetRefreshBusy}
-          >
-            {faucetRefreshBusy ? 'Refreshing…' : 'Refresh Faucet State'}
-          </button>
+            <div className="wallet-connect-head">
+              <p className="eyebrow" id="faucet-dialog-title">Mint Test Tokens</p>
+              <button type="button" onClick={() => setShowFaucetModal(false)}>Close</button>
+            </div>
+            <section className="flow-card faucet-modal-panel">
+              <div className="card-head">
+                <h2>Get Test Tokens (Sepolia Faucet)</h2>
+                <span className={`pill ${faucetReady ? 'ok' : ''}`}>{faucetReady ? 'Ready' : 'Blocked'}</span>
+              </div>
+              <p className="muted">
+                Testnet users should claim bridge-enabled tokens here before attempting deposit/withdraw flows.
+              </p>
+              <div className="field">
+                <span>Select Token</span>
+                <div className="token-picker" role="radiogroup" aria-label="Select test asset to claim">
+                  {ASSET_OPTIONS.map((option) => {
+                    const selected = faucetAsset === option.symbol;
+                    return (
+                      <button
+                        key={option.symbol}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        className={`token-choice ${selected ? 'selected' : ''}`}
+                        onClick={() => setFaucetAsset(option.symbol)}
+                        title={`Select ${option.symbol}`}
+                      >
+                        <img src={option.logo} alt={option.alt} />
+                        <span>{option.symbol}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="route-box">
+                <div>
+                  <h3>Token</h3>
+                  <p>{ETH_TOKEN_ADDRESSES[faucetAsset as AssetSymbol] || '-'}</p>
+                </div>
+                <div>
+                  <h3>Wallet Balance</h3>
+                  <p>
+                    {faucetState?.balanceRaw != null
+                      ? formatTokenAmount(
+                          faucetState.balanceRaw,
+                          ETH_ASSET_CONFIG[faucetAsset as AssetSymbol].decimals,
+                        )
+                      : '-'}
+                  </p>
+                </div>
+                <div>
+                  <h3>Claim Amount</h3>
+                  <p>
+                    {faucetState?.claimAmountRaw != null
+                      ? formatTokenAmount(
+                          faucetState.claimAmountRaw,
+                          ETH_ASSET_CONFIG[faucetAsset as AssetSymbol].decimals,
+                        )
+                      : '-'}
+                  </p>
+                </div>
+                <div>
+                  <h3>Cooldown</h3>
+                  <p>{faucetState?.claimCooldownSec != null ? `${faucetState.claimCooldownSec.toString()}s` : '-'}</p>
+                </div>
+                <div>
+                  <h3>Next Claim At</h3>
+                  <p>
+                    {faucetState?.claimableAtSec != null
+                      ? new Date(Number(faucetState.claimableAtSec) * 1000).toISOString()
+                      : '-'}
+                  </p>
+                </div>
+                <div>
+                  <h3>Faucet Enabled</h3>
+                  <p>
+                    {faucetState?.faucetEnabled == null ? '-' : faucetState.faucetEnabled ? 'true' : 'false'}
+                  </p>
+                </div>
+              </div>
+              <div className="actions">
+                <button
+                  onClick={runClaimTestTokenFlow}
+                  disabled={!faucetReady || !faucetConfigReady || faucetBusy}
+                >
+                  {faucetBusy ? 'Claiming…' : `Claim ${faucetAsset} Test Tokens`}
+                </button>
+                <button
+                  onClick={() => void refreshFaucetState([faucetAsset as AssetSymbol])}
+                  disabled={!faucetReady || !faucetConfigReady || faucetRefreshBusy}
+                >
+                  {faucetRefreshBusy ? 'Refreshing…' : 'Refresh Faucet State'}
+                </button>
+              </div>
+              <p className={`notice ${faucetReady ? 'ok' : ''}`}>
+                {faucetReady
+                  ? faucetConfigReady
+                    ? 'Faucet claim flow is enabled for the selected asset.'
+                    : 'Selected asset token address is missing. Set VITE_ETHEREUM_*_ADDRESS.'
+                  : 'Connect MetaMask on Sepolia to use faucet claims.'}
+              </p>
+              {faucetState?.error ? <p className="notice">Faucet read error: {faucetState.error}</p> : null}
+              <pre className="log-box">{faucetStatus}</pre>
+            </section>
+          </section>
         </div>
-        <p className={`notice ${faucetReady ? 'ok' : ''}`}>
-          {faucetReady
-            ? faucetConfigReady
-              ? 'Faucet claim flow is enabled for the selected asset.'
-              : 'Selected asset token address is missing. Set VITE_ETHEREUM_*_ADDRESS.'
-            : 'Connect MetaMask on Sepolia to use faucet claims.'}
-        </p>
-        {faucetState?.error ? <p className="notice">Faucet read error: {faucetState.error}</p> : null}
-        <pre className="log-box">{faucetStatus}</pre>
-      </section>
+      ) : null}
+
+      {showApiModal ? (
+        <div className="wallet-connect-overlay" role="presentation" onClick={() => setShowApiModal(false)}>
+          <section
+            className="wallet-connect-dialog card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="api-dialog-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="wallet-connect-head">
+              <p className="eyebrow" id="api-dialog-title">API Status</p>
+              <button type="button" onClick={() => setShowApiModal(false)}>Close</button>
+            </div>
+            <section className="status-panel api-modal-panel">
+              <div className="card-head">
+                <h2>Relayer API Status</h2>
+                <span className={`pill ${statusApiState === 'ok' ? 'ok' : ''}`}>{statusApiState}</span>
+              </div>
+              <p className="muted">
+                Polls <code>/health</code> and <code>/status</code> every 15s. Use lookups below to inspect bridge progress by
+                deposit/withdrawal ID.
+              </p>
+              <label className="field">
+                <span>Status API Base URL</span>
+                <input
+                  value={statusApiUrl}
+                  onChange={(e) => setStatusApiUrl(e.target.value)}
+                  placeholder="https://your-status-api.example.com"
+                />
+              </label>
+              <div className="mini-grid">
+                <div>
+                  <h3>Health / Summary</h3>
+                  <p>{statusApiMessage}</p>
+                  <p className="muted">Last checked: {statusApiUpdatedAt || '-'}</p>
+                  <pre className="log-box compact">{statusApiSummary ? JSON.stringify(statusApiSummary, null, 2) : 'No summary yet.'}</pre>
+                </div>
+                <div>
+                  <h3>Relayer Heartbeats</h3>
+                  {statusApiRelayers.length === 0 ? (
+                    <p className="muted">No relayer heartbeat records yet.</p>
+                  ) : (
+                    <ul className="heartbeat-list">
+                      {statusApiRelayers.map((relayer) => (
+                        <li key={`${relayer.relayerName}:${relayer.role}`}>
+                          <code>{relayer.relayerName}</code> <span className={`pill ${relayer.status === 'ok' ? 'ok' : ''}`}>{relayer.status}</span>
+                          <div className="muted">{relayer.role} {relayer.detail ? `| ${relayer.detail}` : ''}</div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+              <div className="mini-grid">
+                <div>
+                  <h3>Deposit Lookup</h3>
+                  <label className="field">
+                    <span>Deposit ID / nonce</span>
+                    <input value={depositLookupId} onChange={(e) => setDepositLookupId(e.target.value)} placeholder="1" />
+                  </label>
+                  <div className="actions">
+                    <button onClick={runDepositLookup} disabled={depositLookupBusy}>
+                      {depositLookupBusy ? 'Loading…' : 'Lookup Deposit'}
+                    </button>
+                  </div>
+                  <pre className="log-box compact">{depositLookupResult}</pre>
+                </div>
+                <div>
+                  <h3>Withdrawal Lookup</h3>
+                  <label className="field">
+                    <span>Withdrawal ID</span>
+                    <input value={withdrawalLookupId} onChange={(e) => setWithdrawalLookupId(e.target.value)} placeholder="0" />
+                  </label>
+                  <div className="actions">
+                    <button onClick={runWithdrawalLookup} disabled={withdrawalLookupBusy}>
+                      {withdrawalLookupBusy ? 'Loading…' : 'Lookup Withdrawal'}
+                    </button>
+                  </div>
+                  <pre className="log-box compact">{withdrawalLookupResult}</pre>
+                </div>
+              </div>
+            </section>
+          </section>
+        </div>
+      ) : null}
+
+      <main className="landing">
+        <section className="hero card">
+          <div className="hero-top">
+            <img className="brand-wordmark" src="/branding/heptad-wordmark.svg" alt="Heptad" />
+            <div className="hero-actions">
+              <button
+                type="button"
+                className="hero-api-button"
+                onClick={() => setShowApiModal(true)}
+              >
+                API Status
+              </button>
+              <button
+                type="button"
+                className={`hero-connect-button ${walletPairReady ? 'connected' : ''}`}
+                onClick={() => setShowWalletModal(true)}
+              >
+                {walletPairReady ? 'Connected' : 'Connect'}
+              </button>
+              <button
+                type="button"
+                className="hero-faucet-button"
+                onClick={() => setShowFaucetModal(true)}
+              >
+                Get Test Tokens
+              </button>
+            </div>
+          </div>
+          <p className="eyebrow">HEPTAD BRIDGE TESTNET LIVE</p>
+          <div className="powered-by" aria-label="Powered by OPNet">
+            <span>Powered by</span>
+            <img src="/branding/opnet-logo.svg" alt="OPNet" />
+          </div>
+        </section>
 
       <section className="card flow-card bridge-card">
         <div className="card-head">
@@ -2109,75 +2253,6 @@ export function App() {
         </div>
       ) : null}
 
-      <section className="card status-panel">
-        <div className="card-head">
-          <h2>Relayer API Status</h2>
-          <span className={`pill ${statusApiState === 'ok' ? 'ok' : ''}`}>{statusApiState}</span>
-        </div>
-        <p className="muted">
-          Polls <code>/health</code> and <code>/status</code> every 15s. Use lookups below to inspect bridge progress by
-          deposit/withdrawal ID.
-        </p>
-        <label className="field">
-          <span>Status API Base URL</span>
-          <input
-            value={statusApiUrl}
-            onChange={(e) => setStatusApiUrl(e.target.value)}
-            placeholder="https://your-status-api.example.com"
-          />
-        </label>
-        <div className="mini-grid">
-          <div>
-            <h3>Health / Summary</h3>
-            <p>{statusApiMessage}</p>
-            <p className="muted">Last checked: {statusApiUpdatedAt || '-'}</p>
-            <pre className="log-box compact">{statusApiSummary ? JSON.stringify(statusApiSummary, null, 2) : 'No summary yet.'}</pre>
-          </div>
-          <div>
-            <h3>Relayer Heartbeats</h3>
-            {statusApiRelayers.length === 0 ? (
-              <p className="muted">No relayer heartbeat records yet.</p>
-            ) : (
-              <ul className="heartbeat-list">
-                {statusApiRelayers.map((relayer) => (
-                  <li key={`${relayer.relayerName}:${relayer.role}`}>
-                    <code>{relayer.relayerName}</code> <span className={`pill ${relayer.status === 'ok' ? 'ok' : ''}`}>{relayer.status}</span>
-                    <div className="muted">{relayer.role} {relayer.detail ? `| ${relayer.detail}` : ''}</div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-        <div className="mini-grid">
-          <div>
-            <h3>Deposit Lookup</h3>
-            <label className="field">
-              <span>Deposit ID / nonce</span>
-              <input value={depositLookupId} onChange={(e) => setDepositLookupId(e.target.value)} placeholder="1" />
-            </label>
-            <div className="actions">
-              <button onClick={runDepositLookup} disabled={depositLookupBusy}>
-                {depositLookupBusy ? 'Loading…' : 'Lookup Deposit'}
-              </button>
-            </div>
-            <pre className="log-box compact">{depositLookupResult}</pre>
-          </div>
-          <div>
-            <h3>Withdrawal Lookup</h3>
-            <label className="field">
-              <span>Withdrawal ID</span>
-              <input value={withdrawalLookupId} onChange={(e) => setWithdrawalLookupId(e.target.value)} placeholder="0" />
-            </label>
-            <div className="actions">
-              <button onClick={runWithdrawalLookup} disabled={withdrawalLookupBusy}>
-                {withdrawalLookupBusy ? 'Loading…' : 'Lookup Withdrawal'}
-              </button>
-            </div>
-            <pre className="log-box compact">{withdrawalLookupResult}</pre>
-          </div>
-        </div>
-      </section>
       </main>
     </>
   );
