@@ -1975,7 +1975,14 @@ export function App() {
       <main className="landing">
         <section className="hero card">
           <div className="hero-top">
-            <img className="brand-wordmark" src="/branding/heptad-wordmark.svg" alt="Heptad" />
+            <div className="hero-brand">
+              <img className="brand-wordmark" src="/branding/heptad-wordmark.svg" alt="Heptad" />
+              <p className="eyebrow">HEPTAD BRIDGE TESTNET LIVE</p>
+              <div className="powered-by" aria-label="Powered by OPNet">
+                <span>Powered by</span>
+                <img src="/branding/opnet-logo.svg" alt="OPNet" />
+              </div>
+            </div>
             <div className="hero-actions">
               <button
                 type="button"
@@ -2000,18 +2007,9 @@ export function App() {
               </button>
             </div>
           </div>
-          <p className="eyebrow">HEPTAD BRIDGE TESTNET LIVE</p>
-          <div className="powered-by" aria-label="Powered by OPNet">
-            <span>Powered by</span>
-            <img src="/branding/opnet-logo.svg" alt="OPNet" />
-          </div>
         </section>
 
       <section className="card flow-card bridge-card">
-        <div className="card-head">
-          <h2>Bridge</h2>
-          <span className={`pill ${bridgeDirection ? 'ok' : ''}`}>{bridgeDirection ? 'Direction Selected' : 'Choose Direction'}</span>
-        </div>
         <div className="bridge-direction-picker" role="radiogroup" aria-label="Select bridge direction">
           <button
             type="button"
@@ -2045,16 +2043,9 @@ export function App() {
           </button>
         </div>
 
-        {!bridgeDirection ? <p className="muted">Select a direction to open token, amount, and transaction actions.</p> : null}
-
         {bridgeDirection === 'ethToBtc' ? (
           <div className="bridge-panel">
             <div className="card-head flow-direction-head">
-              <h3 className="flow-icon-title" aria-label="Deposit direction: Ethereum to Bitcoin">
-                <img src="/branding/eth.svg" alt="Ethereum" />
-                <span aria-hidden="true">→</span>
-                <img src="/branding/btc.svg" alt="Bitcoin" />
-              </h3>
               <span className={`pill ${depositReady ? 'ok' : ''}`}>{depositReady ? 'Ready' : 'Blocked'}</span>
             </div>
             <div className="field">
@@ -2101,12 +2092,6 @@ export function App() {
               <button onClick={() => void refreshReadyMintCandidates()} disabled={readyMintCandidatesBusy}>
                 {readyMintCandidatesBusy ? 'Refreshing…' : 'Refresh Ready Mints'}
               </button>
-              <button
-                onClick={() => void runClaimMintFlow()}
-                disabled={claimMintBusy || !claimMintReady}
-              >
-                {claimMintBusy ? 'Submitting Mint…' : 'Claim Latest Ready Mint'}
-              </button>
             </div>
             {readyMintCandidates.length === 0 ? (
               <p className="muted">No ready mint candidates loaded yet.</p>
@@ -2139,11 +2124,6 @@ export function App() {
         {bridgeDirection === 'btcToEth' ? (
           <div className="bridge-panel">
             <div className="card-head flow-direction-head">
-              <h3 className="flow-icon-title" aria-label="Withdraw direction: Bitcoin to Ethereum">
-                <img src="/branding/btc.svg" alt="Bitcoin" />
-                <span aria-hidden="true">→</span>
-                <img src="/branding/eth.svg" alt="Ethereum" />
-              </h3>
               <span className={`pill ${burnReady ? 'ok' : ''}`}>{burnReady ? 'Ready' : 'Blocked'}</span>
             </div>
             <div className="field">
@@ -2189,12 +2169,6 @@ export function App() {
             <div className="actions">
               <button onClick={() => void refreshReadyReleaseCandidates()} disabled={readyReleaseCandidatesBusy}>
                 {readyReleaseCandidatesBusy ? 'Refreshing…' : 'Refresh Ready Withdrawals'}
-              </button>
-              <button
-                onClick={() => void runClaimReleaseFlow()}
-                disabled={!claimReleaseReady || claimReleaseBusy}
-              >
-                {claimReleaseBusy ? 'Submitting Release…' : 'Claim Latest Ready Withdraw'}
               </button>
             </div>
             {readyReleaseCandidates.length === 0 ? (

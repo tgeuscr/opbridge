@@ -133,6 +133,12 @@ body::before {
   gap: 0.8rem;
 }
 
+.hero-brand {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
 .hero-actions {
   display: grid;
   grid-template-columns: auto auto;
