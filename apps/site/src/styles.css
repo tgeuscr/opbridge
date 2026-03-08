@@ -144,13 +144,18 @@ body::before {
   grid-template-columns: auto auto;
   grid-template-areas:
     'api connect'
-    '. faucet';
+    'theme faucet';
   justify-content: end;
   gap: 0.5rem;
 }
 
 .hero-faucet-button {
   grid-area: faucet;
+  white-space: nowrap;
+}
+
+.hero-theme-button {
+  grid-area: theme;
   white-space: nowrap;
 }
 
@@ -671,6 +676,16 @@ button.primary:hover {
   gap: 0.85rem;
 }
 
+.wallet-options-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.wallet-provider-logo-row {
+  display: flex;
+  gap: 0.55rem;
+  margin-bottom: 0.45rem;
+}
+
 .wallet-provider-logo-button {
   width: 44px;
   height: 44px;
@@ -678,7 +693,7 @@ button.primary:hover {
   place-items: center;
   padding: 0.35rem;
   border-radius: 999px;
-  margin-bottom: 0.45rem;
+  margin-bottom: 0;
 }
 
 .wallet-provider-logo {
@@ -696,6 +711,16 @@ button.primary:hover {
 .api-modal-panel {
   display: grid;
   gap: 0.85rem;
+}
+
+.api-status-head {
+  justify-content: flex-end;
+}
+
+.api-status-pill.ok {
+  border-color: #2b8a3e;
+  background: #e9f9ef;
+  color: #1f6f35;
 }
 
 .log-box {
@@ -819,6 +844,99 @@ button.primary:hover {
   }
 }
 
+html[data-theme='dark'] {
+  --bg: #101114;
+  --surface: #171a20;
+  --surface-strong: #1d2128;
+  --ink: #f1f4f8;
+  --muted: #aeb6c2;
+  --line: #313947;
+  --accent: #f5f7fb;
+  --accent-strong: #ffffff;
+  --ok: #f3f5f8;
+  --shadow-soft: 0 14px 28px rgba(0, 0, 0, 0.45);
+  --shadow-card: 0 24px 44px rgba(0, 0, 0, 0.5);
+}
+
+html[data-theme='dark'] body {
+  background:
+    radial-gradient(circle at 11% 9%, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 36%),
+    linear-gradient(180deg, #161a22 0%, #10141c 52%, #0b0f16 100%);
+}
+
+html[data-theme='dark'] body::before {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+}
+
+html[data-theme='dark'] .card {
+  background: color-mix(in srgb, var(--surface) 96%, black);
+}
+
+html[data-theme='dark'] .card:hover {
+  border-color: #4f596b;
+}
+
+html[data-theme='dark'] .hero {
+  background:
+    radial-gradient(circle at 96% 6%, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 34%),
+    var(--surface);
+}
+
+html[data-theme='dark'] .eyebrow {
+  color: #cbd2dc;
+}
+
+html[data-theme='dark'] .hero-connect-button.connected,
+html[data-theme='dark'] .bridge-direction-choice.selected,
+html[data-theme='dark'] .pill.ok,
+html[data-theme='dark'] .notice.ok,
+html[data-theme='dark'] .token-choice.selected {
+  border-color: #d5dbe6;
+  background: #eff3f9;
+  color: #14171c;
+}
+
+html[data-theme='dark'] button.primary {
+  background: linear-gradient(180deg, #eceff5, #d9dee8);
+  border-color: #cfd6e4;
+  color: #13161d;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
+}
+
+html[data-theme='dark'] input:focus-visible,
+html[data-theme='dark'] select:focus-visible,
+html[data-theme='dark'] button:focus-visible {
+  border-color: #a6b2c8;
+  box-shadow: 0 0 0 3px rgba(135, 157, 197, 0.34);
+}
+
+html[data-theme='dark'] .bridge-direction-choice,
+html[data-theme='dark'] .token-choice,
+html[data-theme='dark'] .pill,
+html[data-theme='dark'] .notice,
+html[data-theme='dark'] .route-box,
+html[data-theme='dark'] .mini-grid > div,
+html[data-theme='dark'] .banner,
+html[data-theme='dark'] .log-box {
+  border-color: #394253;
+  background: #1a1f28;
+  color: var(--ink);
+}
+
+html[data-theme='dark'] .api-status-pill.ok {
+  border-color: #45b167;
+  background: #173124;
+  color: #8fe2ab;
+}
+
+html[data-theme='dark'] .bridge-panel,
+html[data-theme='dark'] .kv > div,
+html[data-theme='dark'] .route-box > div + div {
+  border-top-color: #394253;
+}
+
 @media (max-width: 960px) {
   .grid,
   .flow-grid,
@@ -924,12 +1042,14 @@ button.primary:hover {
     grid-template-areas:
       'connect'
       'faucet'
-      'api';
+      'api'
+      'theme';
   }
 
   .hero-faucet-button,
   .hero-api-button,
-  .hero-connect-button {
+  .hero-connect-button,
+  .hero-theme-button {
     width: 100%;
   }
 

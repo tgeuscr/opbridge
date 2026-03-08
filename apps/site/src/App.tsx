@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 
 type EthereumProvider = {
   isMetaMask?: boolean;
+  isRabby?: boolean;
   providers?: EthereumProvider[];
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
   on?: (event: string, handler: (...args: unknown[]) => void) => void;
@@ -14,6 +15,7 @@ type EthereumProvider = {
 
 type EthereumWindow = Window & {
   ethereum?: EthereumProvider;
+  rabby?: EthereumProvider;
 };
 
 const SEPOLIA_CHAIN_ID_HEX = '0xaa36a7';
@@ -49,6 +51,7 @@ const ETH_ASSET_CONFIG = {
   PAXG: { assetId: 3, decimals: 18 },
 } as const;
 const UX_GUIDE_DISMISSED_KEY = 'heptad.site.uxGuideDismissed.v1';
+const THEME_MODE_KEY = 'heptad.site.themeMode.v1';
 
 type AssetSymbol = keyof typeof ETH_ASSET_CONFIG;
 const ASSET_OPTIONS: Array<{ symbol: AssetSymbol; logo: string; alt: string }> = [
@@ -58,6 +61,7 @@ const ASSET_OPTIONS: Array<{ symbol: AssetSymbol; logo: string; alt: string }> =
   { symbol: 'PAXG', logo: '/branding/paxg.svg', alt: 'PAX Gold' },
 ];
 type BridgeDirection = 'ethToBtc' | 'btcToEth';
+type EvmWalletType = 'metamask' | 'rabby';
 type BridgeConfirmState = {
   direction: BridgeDirection;
   asset: AssetSymbol;
@@ -155,14 +159,45 @@ function short(value?: string | null) {
   return `${value.slice(0, 8)}...${value.slice(-6)}`;
 }
 
-function getEthereumProvider(): EthereumProvider | null {
-  const ethereum = (window as EthereumWindow).ethereum;
-  if (!ethereum) return null;
-  if (Array.isArray(ethereum.providers) && ethereum.providers.length > 0) {
-    const metaMask = ethereum.providers.find((p) => p?.isMetaMask);
-    return metaMask ?? ethereum.providers[0] ?? null;
+function isThemeMode(value: string): value is 'light' | 'dark' {
+  return value === 'light' || value === 'dark';
+}
+
+function resolveSystemTheme(): 'light' | 'dark' {
+  if (window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+  return 'light';
+}
+
+function getEthereumProvider(targetWallet?: EvmWalletType): EthereumProvider | null {
+  const { ethereum, rabby } = window as EthereumWindow;
+
+  const matchProvider = (provider: EthereumProvider): boolean => {
+    if (!targetWallet) return true;
+    if (targetWallet === 'rabby') return Boolean(provider.isRabby);
+    return Boolean(provider.isMetaMask && !provider.isRabby);
+  };
+
+  if (targetWallet === 'rabby' && rabby) {
+    return rabby;
   }
-  return ethereum;
+
+  if (ethereum && Array.isArray(ethereum.providers) && ethereum.providers.length > 0) {
+    return ethereum.providers.find((provider) => matchProvider(provider)) ?? null;
+  }
+
+  if (ethereum && matchProvider(ethereum)) {
+    return ethereum;
+  }
+
+  return null;
+}
+
+function isChainMissingError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const row = error as { code?: unknown; message?: unknown };
+  const code = Number(row.code);
+  const message = String(row.message ?? '').toLowerCase();
+  return code === 4902 || message.includes('unrecognized chain') || message.includes('chain not added');
 }
 
 function padHexToBytes(hexWithoutPrefix: string, bytes: number): string {
@@ -589,7 +624,7 @@ export function App() {
   const [statusApiRelayers, setStatusApiRelayers] = useState<
     Array<{ relayerName: string; role: string; status: string; detail?: string | null; updatedAt?: string }>
   >([]);
-  const [depositLookupId, setDepositLookupId] = useState('1');
+  const [depositLookupId, setDepositLookupId] = useState('0');
   const [depositLookupBusy, setDepositLookupBusy] = useState(false);
   const [depositLookupResult, setDepositLookupResult] = useState('No deposit lookup yet.');
   const [withdrawalLookupId, setWithdrawalLookupId] = useState('0');
@@ -630,6 +665,17 @@ export function App() {
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [showFaucetModal, setShowFaucetModal] = useState(false);
   const [showApiModal, setShowApiModal] = useState(false);
+  const [evmWalletType, setEvmWalletType] = useState<EvmWalletType | null>(null);
+  const [themeMode, setThemeMode] = useState<'light' | 'dark'>(() => {
+    try {
+      const stored = window.localStorage.getItem(THEME_MODE_KEY);
+      if (stored && isThemeMode(stored)) return stored;
+    } catch {
+      // Ignore localStorage read errors and fall back to system theme.
+    }
+    return resolveSystemTheme();
+  });
+  const getActiveEthereumProvider = () => getEthereumProvider(evmWalletType ?? undefined);
 
   useEffect(() => {
     try {
@@ -639,6 +685,15 @@ export function App() {
       setShowUxGuide(true);
     }
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeMode;
+    try {
+      window.localStorage.setItem(THEME_MODE_KEY, themeMode);
+    } catch {
+      // Ignore localStorage write errors and continue.
+    }
+  }, [themeMode]);
 
   useEffect(() => {
     if (!statusApiUrl) {
@@ -829,7 +884,7 @@ export function App() {
   }
 
   useEffect(() => {
-    const provider = getEthereumProvider();
+    const provider = getActiveEthereumProvider();
     if (!provider?.on) return;
 
     const onAccountsChanged = (accounts: unknown) => {
@@ -846,7 +901,7 @@ export function App() {
       provider.removeListener?.('accountsChanged', onAccountsChanged);
       provider.removeListener?.('chainChanged', onChainChanged);
     };
-  }, []);
+  }, [evmWalletType]);
 
   useEffect(() => {
     const isSepolia = ethChainId.toLowerCase() === SEPOLIA_CHAIN_ID_HEX;
@@ -862,10 +917,11 @@ export function App() {
     }
   }
 
-  async function connectMetaMask() {
-    const provider = getEthereumProvider();
+  async function connectEvmWallet(walletType: EvmWalletType) {
+    const provider = getEthereumProvider(walletType);
+    const walletName = walletType === 'rabby' ? 'Rabby' : 'MetaMask';
     if (!provider) {
-      setEthStatus('MetaMask not found. Install the extension and reload.');
+      setEthStatus(`${walletName} not found. Install the extension and reload.`);
       return;
     }
 
@@ -886,6 +942,7 @@ export function App() {
       }
       setEthAddress(address ?? '');
       setEthChainId(chainId ?? '');
+      setEvmWalletType(walletType);
       setEthStatus(
         chainId?.toLowerCase() === SEPOLIA_CHAIN_ID_HEX
           ? 'Connected (Sepolia)'
@@ -896,16 +953,113 @@ export function App() {
     }
   }
 
-  function disconnectMetaMask() {
-    // MetaMask does not expose a reliable programmatic site disconnect API.
+  async function connectMetaMask() {
+    await connectEvmWallet('metamask');
+  }
+
+  async function connectRabby() {
+    await connectEvmWallet('rabby');
+  }
+
+  async function resolveProviderForSwitch(): Promise<{ provider: EthereumProvider; walletType: EvmWalletType; walletName: string } | null> {
+    if (evmWalletType) {
+      const active = getEthereumProvider(evmWalletType);
+      if (active) {
+        return {
+          provider: active,
+          walletType: evmWalletType,
+          walletName: evmWalletType === 'rabby' ? 'Rabby' : 'MetaMask',
+        };
+      }
+    }
+
+    const candidates: Array<{ walletType: EvmWalletType; walletName: string }> = [
+      { walletType: 'rabby', walletName: 'Rabby' },
+      { walletType: 'metamask', walletName: 'MetaMask' },
+    ];
+
+    for (const candidate of candidates) {
+      const provider = getEthereumProvider(candidate.walletType);
+      if (!provider) continue;
+      try {
+        const accounts = (await provider.request({ method: 'eth_accounts' })) as string[];
+        const connected = Array.isArray(accounts) && accounts.length > 0;
+        if (connected) {
+          return { provider, walletType: candidate.walletType, walletName: candidate.walletName };
+        }
+      } catch {
+        // Try next candidate.
+      }
+    }
+
+    const fallback = getEthereumProvider('rabby') ?? getEthereumProvider('metamask');
+    if (!fallback) return null;
+    const fallbackType: EvmWalletType = getEthereumProvider('rabby') ? 'rabby' : 'metamask';
+    return {
+      provider: fallback,
+      walletType: fallbackType,
+      walletName: fallbackType === 'rabby' ? 'Rabby' : 'MetaMask',
+    };
+  }
+
+  async function switchToSepolia() {
+    const resolved = await resolveProviderForSwitch();
+    if (!resolved) {
+      setEthStatus('No EVM provider found.');
+      return;
+    }
+    const { provider, walletType, walletName } = resolved;
+    setEvmWalletType(walletType);
+
+    try {
+      setEthStatus(`Switching ${walletName} to Sepolia...`);
+      try {
+        await provider.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }],
+        });
+      } catch (error) {
+        if (!isChainMissingError(error)) throw error;
+        const sepoliaRpcUrl = walletType === 'rabby'
+          ? 'https://ethereum-sepolia-rpc.publicnode.com'
+          : 'https://rpc.sepolia.org';
+        await provider.request({
+          method: 'wallet_addEthereumChain',
+          params: [{
+            chainId: SEPOLIA_CHAIN_ID_HEX,
+            chainName: 'Ethereum Sepolia',
+            nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+            rpcUrls: [sepoliaRpcUrl],
+            blockExplorerUrls: ['https://sepolia.etherscan.io'],
+          }],
+        });
+      }
+      const chainId = (await provider.request({ method: 'eth_chainId' })) as string;
+      const [account] = (await provider.request({ method: 'eth_accounts' })) as string[];
+      setEthAddress(account ?? '');
+      setEthChainId(chainId ?? '');
+      setEthStatus(
+        (chainId || '').toLowerCase() === SEPOLIA_CHAIN_ID_HEX
+          ? 'Connected (Sepolia)'
+          : 'Connected but wrong network. Switch to Sepolia.',
+      );
+    } catch (error) {
+      setEthStatus(`Switch failed: ${formatEthereumError(error)}`);
+    }
+  }
+
+  function disconnectEvmWallet() {
+    // Browser wallets do not expose a reliable programmatic site disconnect API.
     // Clear local app state so the UI route-locking resets for test flows.
     setEthAddress('');
     setEthChainId('');
+    setEvmWalletType(null);
     setEthStatus('Disconnected (local app state cleared).');
   }
 
   const opConnected = Boolean(walletAddress);
   const ethConnected = Boolean(ethAddress);
+  const evmWalletLabel = evmWalletType === 'rabby' ? 'Rabby' : evmWalletType === 'metamask' ? 'MetaMask' : 'EVM wallet';
   const onSepolia = ethChainId.toLowerCase() === SEPOLIA_CHAIN_ID_HEX;
   const opOnTestnet = (network?.network ?? '').toLowerCase().includes('testnet');
   const opWalletReady = opConnected && opOnTestnet;
@@ -940,6 +1094,10 @@ export function App() {
     } catch {
       // Ignore localStorage write errors and continue.
     }
+  }
+
+  function toggleThemeMode() {
+    setThemeMode((prev) => (prev === 'light' ? 'dark' : 'light'));
   }
 
   const resolveConnectedSender = async (): Promise<Address | null> => {
@@ -1064,7 +1222,7 @@ export function App() {
   }
 
   async function refreshFaucetState(targetAssets?: AssetSymbol[]) {
-    const provider = getEthereumProvider();
+    const provider = getActiveEthereumProvider();
     if (!provider || !ethAddress || !onSepolia) {
       return;
     }
@@ -1099,21 +1257,21 @@ export function App() {
   }
 
   async function runClaimTestTokenFlow() {
-    const provider = getEthereumProvider();
+    const provider = getActiveEthereumProvider();
     if (!provider) {
-      setFaucetStatus('MetaMask provider not found.');
+      setFaucetStatus(`${evmWalletLabel} provider not found.`);
       return;
     }
 
     try {
       setFaucetBusy(true);
-      setFaucetStatus('Checking MetaMask session...');
+      setFaucetStatus(`Checking ${evmWalletLabel} session...`);
       const [account] = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
       const chainId = (await provider.request({ method: 'eth_chainId' })) as string;
       setEthAddress(account ?? '');
       setEthChainId(chainId ?? '');
 
-      if (!account) throw new Error('No MetaMask account connected.');
+      if (!account) throw new Error(`No ${evmWalletLabel} account connected.`);
       if ((chainId || '').toLowerCase() !== SEPOLIA_CHAIN_ID_HEX) {
         throw new Error(`Wrong network. Expected Sepolia (${SEPOLIA_CHAIN_ID_HEX}), got ${chainId || '-'}.`);
       }
@@ -1149,22 +1307,22 @@ export function App() {
   }
 
   async function runLockedDepositFlow() {
-    const provider = getEthereumProvider();
+    const provider = getActiveEthereumProvider();
     if (!provider) {
-      setDepositStatus('MetaMask provider not found.');
+      setDepositStatus(`${evmWalletLabel} provider not found.`);
       return;
     }
 
     try {
       setDepositBusy(true);
-      setDepositStatus('Checking MetaMask session...');
+      setDepositStatus(`Checking ${evmWalletLabel} session...`);
 
       const [account] = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
       const chainId = (await provider.request({ method: 'eth_chainId' })) as string;
       setEthAddress(account ?? '');
       setEthChainId(chainId ?? '');
 
-      if (!account) throw new Error('No MetaMask account connected.');
+      if (!account) throw new Error(`No ${evmWalletLabel} account connected.`);
       if ((chainId || '').toLowerCase() !== SEPOLIA_CHAIN_ID_HEX) {
         throw new Error(`Wrong network. Expected Sepolia (${SEPOLIA_CHAIN_ID_HEX}), got ${chainId || '-'}.`);
       }
@@ -1488,7 +1646,7 @@ export function App() {
   async function fetchReadyReleaseCandidates(connectedAccount?: string) {
     if (!statusApiUrl.trim()) throw new Error('Set Status API Base URL first.');
     const base = statusApiUrl.replace(/\/$/, '');
-    const recipient = normalizeEthereumAddress(connectedAccount || ethAddress, 'Connected MetaMask address');
+    const recipient = normalizeEthereumAddress(connectedAccount || ethAddress, 'Connected EVM address');
     const opnetUser = normalizeBytes32Hex(opRecipientHash, 'Connected OP_WALLET hashed MLDSA key');
     const query = new URLSearchParams({
       recipient: recipient.toLowerCase(),
@@ -1506,9 +1664,9 @@ export function App() {
   }
 
   async function refreshReadyReleaseCandidates() {
-    const provider = getEthereumProvider();
+    const provider = getActiveEthereumProvider();
     if (!provider) {
-      setClaimReleaseStatus('MetaMask provider not found.');
+      setClaimReleaseStatus(`${evmWalletLabel} provider not found.`);
       return;
     }
     try {
@@ -1529,9 +1687,9 @@ export function App() {
   }
 
   async function runClaimReleaseFlow(explicitWithdrawalId?: string) {
-    const provider = getEthereumProvider();
+    const provider = getActiveEthereumProvider();
     if (!provider) {
-      setClaimReleaseStatus('MetaMask provider not found.');
+      setClaimReleaseStatus(`${evmWalletLabel} provider not found.`);
       return;
     }
     if (!statusApiUrl.trim()) {
@@ -1539,23 +1697,23 @@ export function App() {
       return;
     }
     if (!ethAddress.trim()) {
-      setClaimReleaseStatus('Connect MetaMask first.');
+      setClaimReleaseStatus('Connect an EVM wallet first.');
       return;
     }
 
     try {
       setClaimReleaseBusy(true);
-      setClaimReleaseStatus('Checking MetaMask session...');
+      setClaimReleaseStatus(`Checking ${evmWalletLabel} session...`);
       const [account] = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
       const chainId = (await provider.request({ method: 'eth_chainId' })) as string;
       setEthAddress(account ?? '');
       setEthChainId(chainId ?? '');
-      if (!account) throw new Error('No MetaMask account connected.');
+      if (!account) throw new Error(`No ${evmWalletLabel} account connected.`);
       if ((chainId || '').toLowerCase() !== SEPOLIA_CHAIN_ID_HEX) {
         throw new Error(`Wrong network. Expected Sepolia (${SEPOLIA_CHAIN_ID_HEX}), got ${chainId || '-'}.`);
       }
 
-      const recipient = normalizeEthereumAddress(account, 'Connected MetaMask address');
+      const recipient = normalizeEthereumAddress(account, 'Connected EVM address');
       const opnetUser = normalizeBytes32Hex(opRecipientHash, 'Connected OP_WALLET hashed MLDSA key');
 
       setClaimReleaseStatus('Fetching ready release candidates from Relayer API...');
@@ -1654,11 +1812,11 @@ export function App() {
             <p className="eyebrow">Bridge Quick Guide</p>
             <h2 id="ux-guide-title">How this bridge works right now</h2>
             <ol className="ux-guide-list">
-              <li>Connect both wallets first: OP_WALLET and MetaMask.</li>
-              <li>Keep MetaMask on Sepolia for all Ethereum-side steps.</li>
+              <li>Connect both wallets first: OP_WALLET and an EVM wallet (MetaMask or Rabby).</li>
+              <li>Keep your EVM wallet on Sepolia for all Ethereum-side steps.</li>
               <li>Recipients are locked in this phase for safety.</li>
-              <li>Sepolia to OPNet: deposit from connected MetaMask, then claim mint to connected OP_WALLET.</li>
-              <li>OPNet to Sepolia: request burn from connected OP_WALLET, then claim release to connected MetaMask.</li>
+              <li>Sepolia to OPNet: deposit from connected EVM wallet, then claim mint to connected OP_WALLET.</li>
+              <li>OPNet to Sepolia: request burn from connected OP_WALLET, then claim release to connected EVM wallet.</li>
               <li>Use Status API lookups below to monitor deposit and withdrawal IDs.</li>
             </ol>
             <p className="muted">
@@ -1688,7 +1846,7 @@ export function App() {
               <button type="button" onClick={() => setShowWalletModal(false)}>Close</button>
             </div>
             <article className="wallet-linker wallet-connect-panel">
-              <div className="mini-grid">
+              <div className="mini-grid wallet-options-grid">
                 <div>
                   <button
                     className="wallet-provider-logo-button"
@@ -1704,17 +1862,35 @@ export function App() {
                   <p><strong>Address:</strong> <code>{short(walletAddress)}</code></p>
                 </div>
                 <div>
-                  <button
-                    className="wallet-provider-logo-button"
-                    onClick={ethConnected ? disconnectMetaMask : connectMetaMask}
-                    aria-label={ethConnected ? 'Disconnect MetaMask' : 'Connect MetaMask'}
-                    title={ethConnected ? 'Disconnect MetaMask' : 'Connect MetaMask (Sepolia)'}
-                  >
-                    <img className="wallet-provider-logo" src="/branding/metamask.svg" alt="MetaMask" />
-                  </button>
-                  <h3>MetaMask</h3>
-                  <p><strong>Status:</strong> {ethWalletReady ? '✅ (Sepolia)' : ethConnected ? '❌ (Wrong network)' : '❌'}</p>
-                  <p><strong>Address:</strong> <code>{short(ethAddress)}</code></p>
+                  <div className="wallet-provider-logo-row">
+                    <button
+                      className="wallet-provider-logo-button"
+                      onClick={ethConnected && evmWalletType === 'metamask' ? disconnectEvmWallet : connectMetaMask}
+                      aria-label={ethConnected && evmWalletType === 'metamask' ? 'Disconnect MetaMask' : 'Connect MetaMask'}
+                      title={ethConnected && evmWalletType === 'metamask' ? 'Disconnect MetaMask' : 'Connect MetaMask (Sepolia)'}
+                    >
+                      <img className="wallet-provider-logo" src="/branding/metamask.svg" alt="MetaMask" />
+                    </button>
+                    <button
+                      className="wallet-provider-logo-button"
+                      onClick={ethConnected && evmWalletType === 'rabby' ? disconnectEvmWallet : connectRabby}
+                      aria-label={ethConnected && evmWalletType === 'rabby' ? 'Disconnect Rabby' : 'Connect Rabby'}
+                      title={ethConnected && evmWalletType === 'rabby' ? 'Disconnect Rabby' : 'Connect Rabby (Sepolia)'}
+                    >
+                      <img className="wallet-provider-logo" src="/branding/rabby.svg" alt="Rabby" />
+                    </button>
+                  </div>
+                  <h3>EVM Wallet</h3>
+                  <p><strong>Status:</strong> {ethWalletReady ? `✅ (${evmWalletLabel}, Sepolia)` : ethConnected ? `❌ (${evmWalletLabel}, Wrong network)` : '❌'}</p>
+                  <p><strong>Address:</strong> <code>{ethConnected ? short(ethAddress) : '-'}</code></p>
+                  <p className="muted">{ethStatus}</p>
+                  {ethConnected && !onSepolia ? (
+                    <div className="actions">
+                      <button type="button" onClick={switchToSepolia}>
+                        Switch to Sepolia
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </article>
@@ -1830,7 +2006,7 @@ export function App() {
                   ? faucetConfigReady
                     ? 'Faucet claim flow is enabled for the selected asset.'
                     : 'Selected asset token address is missing. Set VITE_ETHEREUM_*_ADDRESS.'
-                  : 'Connect MetaMask on Sepolia to use faucet claims.'}
+                  : 'Connect an EVM wallet on Sepolia to use faucet claims.'}
               </p>
               {faucetState?.error ? <p className="notice">Faucet read error: {faucetState.error}</p> : null}
               <pre className="log-box">{faucetStatus}</pre>
@@ -1853,14 +2029,11 @@ export function App() {
               <button type="button" onClick={() => setShowApiModal(false)}>Close</button>
             </div>
             <section className="status-panel api-modal-panel">
-              <div className="card-head">
-                <h2>Relayer API Status</h2>
-                <span className={`pill ${statusApiState === 'ok' ? 'ok' : ''}`}>{statusApiState}</span>
+              <div className="card-head api-status-head">
+                <span className={`pill api-status-pill ${statusApiState === 'ok' ? 'ok' : ''}`}>
+                  {statusApiState === 'ok' ? '✓' : statusApiState}
+                </span>
               </div>
-              <p className="muted">
-                Polls <code>/health</code> and <code>/status</code> every 15s. Use lookups below to inspect bridge progress by
-                deposit/withdrawal ID.
-              </p>
               <label className="field">
                 <span>Status API Base URL</span>
                 <input
@@ -1884,7 +2057,10 @@ export function App() {
                     <ul className="heartbeat-list">
                       {statusApiRelayers.map((relayer) => (
                         <li key={`${relayer.relayerName}:${relayer.role}`}>
-                          <code>{relayer.relayerName}</code> <span className={`pill ${relayer.status === 'ok' ? 'ok' : ''}`}>{relayer.status}</span>
+                          <code>{relayer.relayerName}</code>{' '}
+                          <span className={`pill api-status-pill ${relayer.status === 'ok' ? 'ok' : ''}`}>
+                            {relayer.status === 'ok' ? '✓' : relayer.status}
+                          </span>
                           <div className="muted">{relayer.role} {relayer.detail ? `| ${relayer.detail}` : ''}</div>
                         </li>
                       ))}
@@ -1897,7 +2073,7 @@ export function App() {
                   <h3>Deposit Lookup</h3>
                   <label className="field">
                     <span>Deposit ID / nonce</span>
-                    <input value={depositLookupId} onChange={(e) => setDepositLookupId(e.target.value)} placeholder="1" />
+                    <input value={depositLookupId} onChange={(e) => setDepositLookupId(e.target.value)} placeholder="0" />
                   </label>
                   <div className="actions">
                     <button onClick={runDepositLookup} disabled={depositLookupBusy}>
@@ -1929,7 +2105,11 @@ export function App() {
         <section className="hero card">
           <div className="hero-top">
             <div className="hero-brand">
-              <img className="brand-wordmark" src="/branding/heptad-wordmark.svg" alt="Heptad" />
+              <img
+                className="brand-wordmark"
+                src={themeMode === 'dark' ? '/branding/heptad-wordmark-dark.svg' : '/branding/heptad-wordmark.svg'}
+                alt="Heptad"
+              />
               <p className="eyebrow">HEPTAD BRIDGE TESTNET LIVE</p>
               <div className="powered-by" aria-label="Powered by OPNet">
                 <span>Powered by</span>
@@ -1957,6 +2137,14 @@ export function App() {
                 onClick={() => setShowFaucetModal(true)}
               >
                 Get Test Tokens
+              </button>
+              <button
+                type="button"
+                className="hero-theme-button"
+                onClick={toggleThemeMode}
+                title="Toggle light and dark mode"
+              >
+                {themeMode === 'dark' ? 'Light mode' : 'Dark mode'}
               </button>
             </div>
           </div>
@@ -2167,7 +2355,7 @@ export function App() {
             </p>
             <p className="muted">
               {bridgeConfirm.direction === 'ethToBtc'
-                ? 'MetaMask will ask you to approve token spend first, then confirm the bridge deposit transaction.'
+                ? 'Your EVM wallet will ask you to approve token spend first, then confirm the bridge deposit transaction.'
                 : 'OP_WALLET will ask you to sign and confirm the burn transaction to release funds to Ethereum.'}
             </p>
             <div className="actions">
