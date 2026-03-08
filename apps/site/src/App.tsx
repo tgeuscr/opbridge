@@ -20,6 +20,7 @@ type EthereumWindow = Window & {
 
 const SEPOLIA_CHAIN_ID_HEX = '0xaa36a7';
 const SEPOLIA_CHAIN_ID_DEC = 11155111;
+const OPSCANN_TX_BASE_URL = 'https://opscan.org/transactions/';
 const DEFAULT_STATUS_API_URL = import.meta.env.VITE_STATUS_API_URL?.trim() || '';
 const OPNET_BRIDGE_ADDRESS = import.meta.env.VITE_OPNET_BRIDGE_ADDRESS?.trim() || '';
 const ETH_GAS_LIMIT_CAP = Number(import.meta.env.VITE_ETHEREUM_GAS_LIMIT_CAP?.trim() || '15000000');
@@ -361,6 +362,23 @@ function formatOpnetTicker(symbol: AssetSymbol): string {
   return `h${symbol}`;
 }
 
+function buildOpscanTxUrl(txid: string): string {
+  const normalized = txid.trim().replace(/^0x/i, '');
+  return `${OPSCANN_TX_BASE_URL}${encodeURIComponent(normalized)}?network=op_testnet`;
+}
+
+function formatDurationShort(totalSeconds: bigint): string {
+  if (totalSeconds <= 0n) return '0s';
+  const day = 86400n;
+  const hour = 3600n;
+  const minute = 60n;
+
+  if (totalSeconds % day === 0n) return `${(totalSeconds / day).toString()}d`;
+  if (totalSeconds % hour === 0n) return `${(totalSeconds / hour).toString()}h`;
+  if (totalSeconds % minute === 0n) return `${(totalSeconds / minute).toString()}m`;
+  return `${totalSeconds.toString()}s`;
+}
+
 function symbolForAssetId(assetId: number): AssetSymbol | null {
   const entries = Object.entries(ETH_ASSET_CONFIG) as Array<[AssetSymbol, { assetId: number; decimals: number }]>;
   const match = entries.find(([, cfg]) => cfg.assetId === assetId);
@@ -374,6 +392,15 @@ function formatCandidateAmount(assetIdRaw: unknown, amountRaw: unknown): string 
   const symbol = symbolForAssetId(assetId);
   if (!symbol) return amount.toString();
   return `${formatTokenAmount(amount, ETH_ASSET_CONFIG[symbol].decimals)} ${symbol}`;
+}
+
+function formatMintClaimAmount(assetIdRaw: unknown, amountRaw: unknown): string {
+  const base = formatCandidateAmount(assetIdRaw, amountRaw);
+  const parts = base.split(' ');
+  if (parts.length !== 2) return base;
+  const [amount, symbol] = parts;
+  if (!Object.hasOwn(ETH_ASSET_CONFIG, symbol)) return base;
+  return `${amount} h${symbol}`;
 }
 
 function parseEvmUint256Result(raw: unknown, fieldName: string): bigint {
@@ -737,6 +764,7 @@ export function App() {
   const [faucetBusy, setFaucetBusy] = useState(false);
   const [faucetRefreshBusy, setFaucetRefreshBusy] = useState(false);
   const [faucetStatus, setFaucetStatus] = useState('No faucet claim started yet.');
+  const [faucetTxHash, setFaucetTxHash] = useState('');
   const [faucetStateByAsset, setFaucetStateByAsset] = useState<Record<AssetSymbol, FaucetAssetState>>({
     USDT: { balanceRaw: null, claimAmountRaw: null, claimCooldownSec: null, claimableAtSec: null, faucetEnabled: null },
     WBTC: { balanceRaw: null, claimAmountRaw: null, claimCooldownSec: null, claimableAtSec: null, faucetEnabled: null },
@@ -753,19 +781,26 @@ export function App() {
   const [burnAmount, setBurnAmount] = useState('');
   const [depositBusy, setDepositBusy] = useState(false);
   const [depositStatus, setDepositStatus] = useState('No deposit started yet.');
+  const [depositApproveTxHash, setDepositApproveTxHash] = useState('');
+  const [depositTxHash, setDepositTxHash] = useState('');
   const [readyMintCandidates, setReadyMintCandidates] = useState<MintCandidate[]>([]);
   const [readyMintCandidatesBusy, setReadyMintCandidatesBusy] = useState(false);
+  const [readyMintCandidatesStatus, setReadyMintCandidatesStatus] = useState('No ready deposit candidate to claim yet.');
   const [claimMintBusy, setClaimMintBusy] = useState(false);
-  const [claimMintStatus, setClaimMintStatus] = useState('No mint claim started yet.');
+  const [claimMintStatus, setClaimMintStatus] = useState('No deposit claim started yet.');
   const [claimMintPreflight, setClaimMintPreflight] = useState('No mint preflight captured yet.');
+  const [claimMintOpnetTxId, setClaimMintOpnetTxId] = useState('');
   const [burnBusy, setBurnBusy] = useState(false);
-  const [burnStatus, setBurnStatus] = useState('No burn started yet.');
+  const [burnStatus, setBurnStatus] = useState('No withdrawal started yet.');
+  const [burnOpnetTxId, setBurnOpnetTxId] = useState('');
   const [bridgeDirection, setBridgeDirection] = useState<BridgeDirection | null>(null);
   const [bridgeConfirm, setBridgeConfirm] = useState<BridgeConfirmState | null>(null);
   const [readyReleaseCandidates, setReadyReleaseCandidates] = useState<ReleaseCandidate[]>([]);
   const [readyReleaseCandidatesBusy, setReadyReleaseCandidatesBusy] = useState(false);
+  const [readyReleaseCandidatesStatus, setReadyReleaseCandidatesStatus] = useState('No ready withdrawal candidate to claim yet.');
   const [claimReleaseBusy, setClaimReleaseBusy] = useState(false);
   const [claimReleaseStatus, setClaimReleaseStatus] = useState('No withdrawal claim started yet.');
+  const [claimReleaseTxHash, setClaimReleaseTxHash] = useState('');
   const [fallbackSigner, setFallbackSigner] = useState<UnisatSigner | null>(null);
   const [fallbackSignerError, setFallbackSignerError] = useState<string | null>(null);
   const [showUxGuide, setShowUxGuide] = useState(false);
@@ -824,13 +859,11 @@ export function App() {
         ]);
         if (!healthRes.ok) throw new Error(`/health HTTP ${healthRes.status}`);
         if (!statusRes.ok) throw new Error(`/status HTTP ${statusRes.status}`);
-        const health = (await healthRes.json()) as Record<string, unknown>;
+        await healthRes.json();
         const status = (await statusRes.json()) as Record<string, unknown>;
         if (cancelled) return;
         setStatusApiState('ok');
-        setStatusApiMessage(
-          `Relayer API healthy. ${typeof health.service === 'string' ? health.service : 'service'} /status loaded`,
-        );
+        setStatusApiMessage('Relayer API Healthy');
         setStatusApiSummary((status.summary as Record<string, unknown>) ?? null);
         setStatusApiRelayers(
           Array.isArray(status.relayers)
@@ -1176,6 +1209,11 @@ export function App() {
   const faucetReady = ethWalletReady;
   const faucetConfigReady = Boolean(ETH_TOKEN_ADDRESSES[faucetAsset]);
   const faucetState = faucetStateByAsset[faucetAsset as AssetSymbol];
+  const nowSec = BigInt(Math.floor(Date.now() / 1000));
+  const faucetCooldownRemainingSec = faucetState?.claimableAtSec != null && faucetState.claimableAtSec > nowSec
+    ? faucetState.claimableAtSec - nowSec
+    : 0n;
+  const faucetCooldownActive = faucetCooldownRemainingSec > 0n;
   const depositAssetState = faucetStateByAsset[depositAsset as AssetSymbol];
   const depositAssetBalanceLabel = depositAssetState?.balanceRaw != null
     ? `${formatTokenAmount(depositAssetState.balanceRaw, ETH_ASSET_CONFIG[depositAsset].decimals)} ${depositAsset}`
@@ -1426,6 +1464,7 @@ export function App() {
 
     try {
       setFaucetBusy(true);
+      setFaucetTxHash('');
       setFaucetStatus(`Checking ${evmWalletLabel} session...`);
       const [account] = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
       const chainId = (await provider.request({ method: 'eth_chainId' })) as string;
@@ -1458,9 +1497,11 @@ export function App() {
       if (receipt.status !== '0x1') {
         throw new Error(`${asset} faucet claim failed: ${txHash}`);
       }
-      setFaucetStatus(`${asset} faucet claim confirmed. tx=${short(txHash)}`);
+      setFaucetStatus(`${asset} faucet claim confirmed.`);
+      setFaucetTxHash(txHash);
       await refreshFaucetState([asset]);
     } catch (error) {
+      setFaucetTxHash('');
       setFaucetStatus(`Faucet claim failed: ${formatEthereumError(error)}`);
     } finally {
       setFaucetBusy(false);
@@ -1476,6 +1517,8 @@ export function App() {
 
     try {
       setDepositBusy(true);
+      setDepositApproveTxHash('');
+      setDepositTxHash('');
       setDepositStatus(`Checking ${evmWalletLabel} session...`);
 
       const [account] = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
@@ -1511,6 +1554,7 @@ export function App() {
         method: 'eth_sendTransaction',
         params: [approveTx],
       })) as string;
+      setDepositApproveTxHash(approveTxHash);
 
       const approveReceipt = await waitForEthereumReceipt(provider, approveTxHash, 'Approve', setDepositStatus);
       if (approveReceipt.status !== '0x1') {
@@ -1532,6 +1576,7 @@ export function App() {
         method: 'eth_sendTransaction',
         params: [depositTx],
       })) as string;
+      setDepositTxHash(depositTxHash);
 
       const depositReceipt = await waitForEthereumReceipt(provider, depositTxHash, 'Deposit', setDepositStatus);
       if (depositReceipt.status !== '0x1') {
@@ -1539,9 +1584,11 @@ export function App() {
       }
 
       setDepositStatus(
-        `Deposit confirmed. asset=${asset} amount=${depositAmount} recipient=${short(recipient)} approveTx=${short(approveTxHash)} depositTx=${short(depositTxHash)}`,
+        `Deposit confirmed. asset=${asset} amount=${depositAmount} recipient=${short(recipient)}`,
       );
     } catch (error) {
+      setDepositApproveTxHash('');
+      setDepositTxHash('');
       setDepositStatus(`Deposit failed: ${formatEthereumError(error)}`);
     } finally {
       setDepositBusy(false);
@@ -1556,6 +1603,7 @@ export function App() {
 
     try {
       setBurnBusy(true);
+      setBurnOpnetTxId('');
       setBurnStatus('Preparing burn request...');
 
       const asset = burnAsset as AssetSymbol;
@@ -1596,11 +1644,14 @@ export function App() {
         feeRate: OPNET_FEE_RATE,
         network: networks.opnetTestnet,
       });
+      const txId = String((tx as { transactionId?: string })?.transactionId || '').trim();
+      if (txId) setBurnOpnetTxId(txId);
 
       setBurnStatus(
-        `Burn request sent. asset=${asset} amount=${burnAmount} withdrawalId=auto(on-chain) tx=${short((tx as { transactionId?: string })?.transactionId || null)}`,
+        `Burn request sent. asset=${asset} amount=${burnAmount} recipient=${ethAddress || '-'}`,
       );
     } catch (error) {
+      setBurnOpnetTxId('');
       setBurnStatus(`Burn failed: ${formatEthereumError(error)}`);
     } finally {
       setBurnBusy(false);
@@ -1633,17 +1684,95 @@ export function App() {
     try {
       setReadyMintCandidatesBusy(true);
       const items = await fetchReadyMintCandidates();
-      setClaimMintStatus(
+      setReadyMintCandidatesStatus(
         items.length === 0
-          ? 'No ready mint candidate yet for this wallet pair.'
+          ? 'No ready deposit candidate to claim yet.'
           : `Loaded ${items.length} ready mint candidate(s).`,
       );
     } catch (error) {
-      setClaimMintStatus(`Failed to load ready mint candidates: ${formatEthereumError(error)}`);
+      setReadyMintCandidatesStatus(`Failed to load ready mint candidates: ${formatEthereumError(error)}`);
     } finally {
       setReadyMintCandidatesBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (!statusApiUrl.trim()) {
+      setReadyMintCandidates([]);
+      setReadyReleaseCandidates([]);
+      setReadyMintCandidatesStatus('No ready deposit candidate to claim yet.');
+      setReadyReleaseCandidatesStatus('No ready withdrawal candidate to claim yet.');
+      return;
+    }
+
+    let cancelled = false;
+
+    const pollReadyCandidates = async (): Promise<void> => {
+      if (claimMintReady) {
+        try {
+          const items = await fetchReadyMintCandidates();
+          if (!cancelled) {
+            setReadyMintCandidates(items);
+            setReadyMintCandidatesStatus(
+              items.length === 0
+                ? 'No ready deposit candidate to claim yet.'
+                : `Loaded ${items.length} ready mint candidate(s).`,
+            );
+          }
+        } catch {
+          if (!cancelled) {
+            setReadyMintCandidates([]);
+            setReadyMintCandidatesStatus('Failed to load ready mint candidates.');
+          }
+        }
+      } else if (!cancelled) {
+        setReadyMintCandidates([]);
+        setReadyMintCandidatesStatus('No ready deposit candidate to claim yet.');
+      }
+
+      const canPollReleaseCandidates = Boolean(opWalletReady && statusApiUrl.trim() && ETH_VAULT_ADDRESS && opRecipientHash);
+      if (canPollReleaseCandidates) {
+        try {
+          let connectedAccount = ethAddress.trim();
+          if (!connectedAccount) {
+            const provider = getActiveEthereumProvider();
+            if (provider) {
+              const accounts = (await provider.request({ method: 'eth_accounts' })) as string[];
+              connectedAccount = String(accounts?.[0] ?? '').trim();
+              if (connectedAccount && !cancelled) setEthAddress(connectedAccount);
+            }
+          }
+          const items = await fetchReadyReleaseCandidates(connectedAccount);
+          if (!cancelled) {
+            setReadyReleaseCandidates(items);
+            setReadyReleaseCandidatesStatus(
+              items.length === 0
+                ? 'No ready withdrawal candidate to claim yet.'
+                : `Loaded ${items.length} ready release candidate(s).`,
+            );
+          }
+        } catch {
+          if (!cancelled) {
+            setReadyReleaseCandidates([]);
+            setReadyReleaseCandidatesStatus('Failed to load ready release candidates.');
+          }
+        }
+      } else if (!cancelled) {
+        setReadyReleaseCandidates([]);
+        setReadyReleaseCandidatesStatus('No ready withdrawal candidate to claim yet.');
+      }
+    };
+
+    void pollReadyCandidates();
+    const timer = window.setInterval(() => {
+      void pollReadyCandidates();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [statusApiUrl, claimMintReady, opWalletReady, ETH_VAULT_ADDRESS, opRecipientHash, ethAddress, evmWalletType]);
 
   async function runClaimMintFlow(explicitDepositId?: string) {
     if (!statusApiUrl.trim()) {
@@ -1661,6 +1790,7 @@ export function App() {
     let preflightDetails = '';
     try {
       setClaimMintBusy(true);
+      setClaimMintOpnetTxId('');
       setClaimMintPreflight('No mint preflight captured yet.');
       setClaimMintStatus('Fetching ready mint candidates from Relayer API...');
       const base = statusApiUrl.replace(/\/$/, '');
@@ -1686,14 +1816,14 @@ export function App() {
       } else {
         const items = await fetchReadyMintCandidates();
         if (items.length === 0) {
-          setClaimMintStatus('No ready mint candidate yet for this wallet pair. Wait for relayer aggregation and retry.');
+          setReadyMintCandidatesStatus('No ready deposit candidate to claim yet.');
           return;
         }
         selected = items[0];
       }
 
       if (!selected) {
-        setClaimMintStatus(`No ready candidate found for depositId=${wantedDepositId}.`);
+        setReadyMintCandidatesStatus(`No ready deposit candidate found for depositId=${wantedDepositId}.`);
         return;
       }
       if (!selected.mintSubmission) {
@@ -1785,13 +1915,14 @@ export function App() {
         feeRate: OPNET_FEE_RATE,
         network: networks.opnetTestnet,
       });
+      const txId = String((tx as { transactionId?: string })?.transactionId || '').trim();
+      if (txId) setClaimMintOpnetTxId(txId);
 
       setDepositLookupId(depositId.toString());
-      setClaimMintStatus(
-        `Mint sent. depositId=${depositId.toString()} amount=${amount.toString()} tx=${short((tx as { transactionId?: string })?.transactionId || null)}`,
-      );
+      setClaimMintStatus('Deposit claim sent.');
       await fetchReadyMintCandidates();
     } catch (error) {
+      setClaimMintOpnetTxId('');
       const baseMessage = `Mint claim failed: ${formatEthereumError(error)}`;
       if (preflightDetails) {
         setClaimMintPreflight(preflightDetails);
@@ -1827,7 +1958,7 @@ export function App() {
   async function refreshReadyReleaseCandidates() {
     const provider = getActiveEthereumProvider();
     if (!provider) {
-      setClaimReleaseStatus(`${evmWalletLabel} provider not found.`);
+      setReadyReleaseCandidatesStatus(`${evmWalletLabel} provider not found.`);
       return;
     }
     try {
@@ -1835,13 +1966,13 @@ export function App() {
       const [account] = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
       setEthAddress(account ?? '');
       const items = await fetchReadyReleaseCandidates(account ?? '');
-      setClaimReleaseStatus(
+      setReadyReleaseCandidatesStatus(
         items.length === 0
-          ? 'No ready release candidate yet for this wallet pair.'
+          ? 'No ready withdrawal candidate to claim yet.'
           : `Loaded ${items.length} ready release candidate(s).`,
       );
     } catch (error) {
-      setClaimReleaseStatus(`Failed to load ready release candidates: ${formatEthereumError(error)}`);
+      setReadyReleaseCandidatesStatus(`Failed to load ready release candidates: ${formatEthereumError(error)}`);
     } finally {
       setReadyReleaseCandidatesBusy(false);
     }
@@ -1864,6 +1995,7 @@ export function App() {
 
     try {
       setClaimReleaseBusy(true);
+      setClaimReleaseTxHash('');
       setClaimReleaseStatus(`Checking ${evmWalletLabel} session...`);
       const [account] = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
       const chainId = (await provider.request({ method: 'eth_chainId' })) as string;
@@ -1880,7 +2012,7 @@ export function App() {
       setClaimReleaseStatus('Fetching ready release candidates from Relayer API...');
       const items = await fetchReadyReleaseCandidates(account);
       if (items.length === 0) {
-        setClaimReleaseStatus('No ready release candidate yet for this wallet pair. Wait for relayer aggregation and retry.');
+        setReadyReleaseCandidatesStatus('No ready withdrawal candidate to claim yet.');
         return;
       }
 
@@ -1889,7 +2021,7 @@ export function App() {
         ? items.find((entry) => String(entry.withdrawalId ?? entry.releaseSubmission?.withdrawalId ?? '') === wantedWithdrawalId)
         : items[0];
       if (!selected) {
-        setClaimReleaseStatus(`No ready release candidate found for withdrawalId=${wantedWithdrawalId}.`);
+        setReadyReleaseCandidatesStatus(`No ready withdrawal candidate found for withdrawalId=${wantedWithdrawalId}.`);
         return;
       }
       if (!selected.releaseSubmission) {
@@ -1950,15 +2082,17 @@ export function App() {
         method: 'eth_sendTransaction',
         params: [releaseTx],
       })) as string;
+      setClaimReleaseTxHash(txHash);
 
       const receipt = await waitForEthereumReceipt(provider, txHash, 'Release', setClaimReleaseStatus);
       if (receipt.status !== '0x1') {
         throw new Error(`Release transaction failed: ${txHash}`);
       }
       setWithdrawalLookupId(withdrawalId.toString());
-      setClaimReleaseStatus(`Withdrawal released. withdrawalId=${withdrawalId.toString()} tx=${short(txHash)}`);
+      setClaimReleaseStatus('withdrawal released');
       await fetchReadyReleaseCandidates(account);
     } catch (error) {
+      setClaimReleaseTxHash('');
       setClaimReleaseStatus(`Withdrawal claim failed: ${formatEthereumError(error)}`);
     } finally {
       setClaimReleaseBusy(false);
@@ -2010,7 +2144,7 @@ export function App() {
               <div className="mini-grid wallet-options-grid">
                 <div>
                   <button
-                    className="wallet-provider-logo-button"
+                    className={`wallet-provider-logo-button ${opConnected ? 'active' : ''}`}
                     onClick={opConnected ? disconnect : connectOpWallet}
                     disabled={connecting && !opConnected}
                     aria-label={opConnected ? 'Disconnect OP Wallet' : 'Connect OP Wallet'}
@@ -2025,7 +2159,7 @@ export function App() {
                 <div>
                   <div className="wallet-provider-logo-row">
                     <button
-                      className="wallet-provider-logo-button"
+                      className={`wallet-provider-logo-button ${ethConnected && evmWalletType === 'metamask' ? 'active' : ''}`}
                       onClick={ethConnected && evmWalletType === 'metamask' ? disconnectEvmWallet : connectMetaMask}
                       aria-label={ethConnected && evmWalletType === 'metamask' ? 'Disconnect MetaMask' : 'Connect MetaMask'}
                       title={ethConnected && evmWalletType === 'metamask' ? 'Disconnect MetaMask' : 'Connect MetaMask (Sepolia)'}
@@ -2033,7 +2167,7 @@ export function App() {
                       <img className="wallet-provider-logo" src="/branding/metamask.svg" alt="MetaMask" />
                     </button>
                     <button
-                      className="wallet-provider-logo-button"
+                      className={`wallet-provider-logo-button ${ethConnected && evmWalletType === 'rabby' ? 'active' : ''}`}
                       onClick={ethConnected && evmWalletType === 'rabby' ? disconnectEvmWallet : connectRabby}
                       aria-label={ethConnected && evmWalletType === 'rabby' ? 'Disconnect Rabby' : 'Connect Rabby'}
                       title={ethConnected && evmWalletType === 'rabby' ? 'Disconnect Rabby' : 'Connect Rabby (Sepolia)'}
@@ -2042,9 +2176,8 @@ export function App() {
                     </button>
                   </div>
                   <h3>EVM Wallet</h3>
-                  <p><strong>Status:</strong> {ethWalletReady ? `✅ (${evmWalletLabel}, Sepolia)` : ethConnected ? `❌ (${evmWalletLabel}, Wrong network)` : '❌'}</p>
+                  <p><strong>Status:</strong> {ethWalletReady ? '✅ (Sepolia)' : ethConnected ? '❌ (Wrong network)' : '❌'}</p>
                   <p><strong>Address:</strong> <code>{ethConnected ? short(ethAddress) : '-'}</code></p>
-                  <p className="muted">{ethStatus}</p>
                   {ethConnected && !onSepolia ? (
                     <div className="actions">
                       <button type="button" onClick={switchToSepolia}>
@@ -2069,17 +2202,15 @@ export function App() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="wallet-connect-head">
-              <p className="eyebrow" id="faucet-dialog-title">Mint Test Tokens</p>
+              <p className="eyebrow" id="faucet-dialog-title">Get Test Tokens</p>
               <button type="button" onClick={() => setShowFaucetModal(false)}>Close</button>
             </div>
             <section className="flow-card faucet-modal-panel">
-              <div className="card-head">
-                <h2>Get Test Tokens (Sepolia Faucet)</h2>
-                <span className={`pill ${faucetReady ? 'ok' : ''}`}>{faucetReady ? 'Ready' : 'Blocked'}</span>
+              <div className="card-head faucet-head">
+                <span className={`pill faucet-status-pill ${faucetReady ? 'api-status-pill ok' : ''}`}>
+                  {faucetReady ? '✓' : '❌ (Connect Ethereum wallet)'}
+                </span>
               </div>
-              <p className="muted">
-                Testnet users should claim bridge-enabled tokens here before attempting deposit/withdraw flows.
-              </p>
               <div className="field">
                 <span>Select Token</span>
                 <div className="token-picker" role="radiogroup" aria-label="Select test asset to claim">
@@ -2104,7 +2235,7 @@ export function App() {
               </div>
               <div className="route-box">
                 <div>
-                  <h3>Token</h3>
+                  <h3>Token Contract</h3>
                   <p>{ETH_TOKEN_ADDRESSES[faucetAsset as AssetSymbol] || '-'}</p>
                 </div>
                 <div>
@@ -2131,46 +2262,36 @@ export function App() {
                 </div>
                 <div>
                   <h3>Cooldown</h3>
-                  <p>{faucetState?.claimCooldownSec != null ? `${faucetState.claimCooldownSec.toString()}s` : '-'}</p>
-                </div>
-                <div>
-                  <h3>Next Claim At</h3>
-                  <p>
-                    {faucetState?.claimableAtSec != null
-                      ? new Date(Number(faucetState.claimableAtSec) * 1000).toISOString()
-                      : '-'}
-                  </p>
-                </div>
-                <div>
-                  <h3>Faucet Enabled</h3>
-                  <p>
-                    {faucetState?.faucetEnabled == null ? '-' : faucetState.faucetEnabled ? 'true' : 'false'}
-                  </p>
+                  <p>{faucetState?.claimCooldownSec != null ? formatDurationShort(faucetState.claimCooldownSec) : '-'}</p>
                 </div>
               </div>
               <div className="actions">
                 <button
                   onClick={runClaimTestTokenFlow}
-                  disabled={!faucetReady || !faucetConfigReady || faucetBusy}
+                  disabled={!faucetReady || !faucetConfigReady || faucetBusy || faucetCooldownActive}
                 >
                   {faucetBusy ? 'Claiming…' : `Claim ${faucetAsset} Test Tokens`}
                 </button>
-                <button
-                  onClick={() => void refreshFaucetState([faucetAsset as AssetSymbol])}
-                  disabled={!faucetReady || !faucetConfigReady || faucetRefreshBusy}
-                >
-                  {faucetRefreshBusy ? 'Refreshing…' : 'Refresh Faucet State'}
-                </button>
               </div>
               <p className={`notice ${faucetReady ? 'ok' : ''}`}>
-                {faucetReady
-                  ? faucetConfigReady
-                    ? 'Faucet claim flow is enabled for the selected asset.'
-                    : 'Selected asset token address is missing. Set VITE_ETHEREUM_*_ADDRESS.'
-                  : 'Connect an EVM wallet on Sepolia to use faucet claims.'}
+                {!faucetReady
+                  ? 'Connect an Ethereum wallet on Sepolia to use faucet'
+                  : faucetCooldownActive
+                    ? `Cooldown active. Wait ${formatDurationShort(faucetCooldownRemainingSec)}`
+                    : 'Faucet ready'}
               </p>
               {faucetState?.error ? <p className="notice">Faucet read error: {faucetState.error}</p> : null}
-              <pre className="log-box">{faucetStatus}</pre>
+              <pre className="log-box">
+                {faucetStatus}
+                {faucetTxHash ? (
+                  <>
+                    {'\n'}
+                    <a href={`https://sepolia.etherscan.io/tx/${faucetTxHash}`} target="_blank" rel="noreferrer">
+                      View on Etherscan ↗
+                    </a>
+                  </>
+                ) : null}
+              </pre>
             </section>
           </section>
         </div>
@@ -2206,7 +2327,10 @@ export function App() {
               <div className="mini-grid">
                 <div>
                   <h3>Health / Summary</h3>
-                  <p>{statusApiMessage}</p>
+                  <p>
+                    {statusApiMessage}
+                    {statusApiState === 'ok' ? <span className="api-health-check">✓</span> : null}
+                  </p>
                   <p className="muted">Last checked: {statusApiUpdatedAt || '-'}</p>
                   <pre className="log-box compact">{statusApiSummary ? JSON.stringify(statusApiSummary, null, 2) : 'No summary yet.'}</pre>
                 </div>
@@ -2366,7 +2490,7 @@ export function App() {
                       title={`Select ${option.symbol}`}
                     >
                       <img src={option.logo} alt={option.alt} />
-                      <span>{formatOpnetTicker(option.symbol)}</span>
+                      <span>{option.symbol}</span>
                     </button>
                   );
                 })}
@@ -2388,41 +2512,63 @@ export function App() {
               <button
                 className="primary"
                 onClick={() => openBridgeConfirm('ethToBtc')}
-                disabled={!depositReady || !depositConfigReady || depositBusy}
+                disabled={!depositReady || !depositConfigReady || depositBusy || !depositAmount.trim()}
               >
                 {depositBusy ? 'Submitting Deposit…' : 'Bridge to Bitcoin'}
               </button>
-            </div>
-            <div className="actions">
               <button onClick={() => void refreshReadyMintCandidates()} disabled={readyMintCandidatesBusy}>
-                {readyMintCandidatesBusy ? 'Refreshing…' : 'Refresh Ready Mints'}
+                {readyMintCandidatesBusy ? 'Refreshing…' : 'Refresh Ready Deposits'}
               </button>
             </div>
-            {readyMintCandidates.length === 0 ? (
-              <p className="muted">No ready mint candidates loaded yet.</p>
-            ) : (
+            <p className="muted">{readyMintCandidatesStatus}</p>
+            {readyMintCandidates.length > 0 ? (
               <ul className="heartbeat-list">
                 {readyMintCandidates.map((candidate, index) => {
                   const id = String(candidate.depositId ?? candidate.mintSubmission?.nonce ?? '');
-                  const amountLabel = formatCandidateAmount(candidate.mintSubmission?.assetId, candidate.mintSubmission?.amount);
+                  const amountLabel = formatMintClaimAmount(candidate.mintSubmission?.assetId, candidate.mintSubmission?.amount);
                   return (
                     <li key={`${id || 'mint'}:${index}`}>
-                      <code>depositId={id || '-'}</code> <span className="muted">{amountLabel}</span>
-                      <div className="actions">
-                        <button
-                          onClick={() => void runClaimMintFlow(id)}
-                          disabled={claimMintBusy || !claimMintReady || !id}
-                        >
-                          {claimMintBusy ? 'Submitting…' : 'Claim This Mint'}
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => void runClaimMintFlow(id)}
+                        disabled={claimMintBusy || !claimMintReady || !id}
+                      >
+                        {claimMintBusy ? 'Submitting…' : `Claim ${amountLabel}`}
+                      </button>
                     </li>
                   );
                 })}
               </ul>
-            )}
-            <pre className="log-box">{depositStatus}</pre>
-            <pre className="log-box">{claimMintStatus}</pre>
+            ) : null}
+            <pre className="log-box">
+              {depositStatus}
+              {depositApproveTxHash ? (
+                <>
+                  {'\n'}
+                  <a href={`https://sepolia.etherscan.io/tx/${depositApproveTxHash}`} target="_blank" rel="noreferrer">
+                    View approve tx on Etherscan ↗
+                  </a>
+                </>
+              ) : null}
+              {depositTxHash ? (
+                <>
+                  {'\n'}
+                  <a href={`https://sepolia.etherscan.io/tx/${depositTxHash}`} target="_blank" rel="noreferrer">
+                    View deposit tx on Etherscan ↗
+                  </a>
+                </>
+              ) : null}
+            </pre>
+            <pre className="log-box">
+              {claimMintStatus}
+              {claimMintOpnetTxId ? (
+                <>
+                  {'\n'}
+                  <a href={buildOpscanTxUrl(claimMintOpnetTxId)} target="_blank" rel="noreferrer">
+                    View mint tx on OPScan ↗
+                  </a>
+                </>
+              ) : null}
+            </pre>
           </div>
         ) : null}
 
@@ -2447,7 +2593,7 @@ export function App() {
                       title={`Select ${option.symbol}`}
                     >
                       <img src={option.logo} alt={option.alt} />
-                      <span>{option.symbol}</span>
+                      <span>{formatOpnetTicker(option.symbol)}</span>
                     </button>
                   );
                 })}
@@ -2468,41 +2614,55 @@ export function App() {
               <button
                 className="primary"
                 onClick={() => openBridgeConfirm('btcToEth')}
-                disabled={!burnReady || !burnConfigReady || burnBusy}
+                disabled={!burnReady || !burnConfigReady || burnBusy || !burnAmount.trim()}
               >
                 {burnBusy ? 'Submitting Burn…' : 'Withdraw to Ethereum'}
               </button>
-            </div>
-            <div className="actions">
               <button onClick={() => void refreshReadyReleaseCandidates()} disabled={readyReleaseCandidatesBusy}>
                 {readyReleaseCandidatesBusy ? 'Refreshing…' : 'Refresh Ready Withdrawals'}
               </button>
             </div>
-            {readyReleaseCandidates.length === 0 ? (
-              <p className="muted">No ready release candidates loaded yet.</p>
-            ) : (
+            <p className="muted">{readyReleaseCandidatesStatus}</p>
+            {readyReleaseCandidates.length > 0 ? (
               <ul className="heartbeat-list">
                 {readyReleaseCandidates.map((candidate, index) => {
                   const id = String(candidate.withdrawalId ?? candidate.releaseSubmission?.withdrawalId ?? '');
                   const amountLabel = formatCandidateAmount(candidate.releaseSubmission?.assetId, candidate.releaseSubmission?.amount);
                   return (
                     <li key={`${id || 'release'}:${index}`}>
-                      <code>withdrawalId={id || '-'}</code> <span className="muted">{amountLabel}</span>
-                      <div className="actions">
-                        <button
-                          onClick={() => void runClaimReleaseFlow(id)}
-                          disabled={claimReleaseBusy || !claimReleaseReady || !id}
-                        >
-                          {claimReleaseBusy ? 'Submitting…' : 'Claim This Withdraw'}
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => void runClaimReleaseFlow(id)}
+                        disabled={claimReleaseBusy || !claimReleaseReady || !id}
+                      >
+                        {claimReleaseBusy ? 'Submitting…' : `Claim ${amountLabel}`}
+                      </button>
                     </li>
                   );
                 })}
               </ul>
-            )}
-            <pre className="log-box">{burnStatus}</pre>
-            <pre className="log-box">{claimReleaseStatus}</pre>
+            ) : null}
+            <pre className="log-box">
+              {burnStatus}
+              {burnOpnetTxId ? (
+                <>
+                  {'\n'}
+                  <a href={buildOpscanTxUrl(burnOpnetTxId)} target="_blank" rel="noreferrer">
+                    View burn tx on OPScan ↗
+                  </a>
+                </>
+              ) : null}
+            </pre>
+            <pre className="log-box">
+              {claimReleaseStatus}
+              {claimReleaseTxHash ? (
+                <>
+                  {'\n'}
+                  <a href={`https://sepolia.etherscan.io/tx/${claimReleaseTxHash}`} target="_blank" rel="noreferrer">
+                    View withdrawal tx on Etherscan ↗
+                  </a>
+                </>
+              ) : null}
+            </pre>
           </div>
         ) : null}
       </section>
