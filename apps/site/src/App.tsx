@@ -1,7 +1,7 @@
 import { SupportedWallets, useWalletConnect } from '@btc-vision/walletconnect';
 import { networks } from '@btc-vision/bitcoin';
 import { Address, UnisatSigner } from '@btc-vision/transaction';
-import { ABIDataTypes, BitcoinAbiTypes, getContract } from 'opnet';
+import { ABIDataTypes, BitcoinAbiTypes, OP_NET_ABI, getContract } from 'opnet';
 import { useEffect, useState } from 'react';
 
 type EthereumProvider = {
@@ -43,6 +43,12 @@ const ETH_TOKEN_ADDRESSES = {
   WETH: import.meta.env.VITE_ETHEREUM_WETH_ADDRESS?.trim() || '',
   PAXG: import.meta.env.VITE_ETHEREUM_PAXG_ADDRESS?.trim() || '',
 } as const;
+const OPNET_TOKEN_ADDRESSES = {
+  USDT: import.meta.env.VITE_OPNET_USDT_ADDRESS?.trim() || '',
+  WBTC: import.meta.env.VITE_OPNET_WBTC_ADDRESS?.trim() || '',
+  WETH: import.meta.env.VITE_OPNET_WETH_ADDRESS?.trim() || '',
+  PAXG: import.meta.env.VITE_OPNET_PAXG_ADDRESS?.trim() || '',
+} as const;
 
 const ETH_ASSET_CONFIG = {
   USDT: { assetId: 0, decimals: 6 },
@@ -77,6 +83,11 @@ type FaucetAssetState = {
   claimCooldownSec: bigint | null;
   claimableAtSec: bigint | null;
   faucetEnabled: boolean | null;
+  error?: string;
+};
+
+type OpnetAssetBalanceState = {
+  balanceRaw: bigint | null;
   error?: string;
 };
 
@@ -153,6 +164,16 @@ const BRIDGE_MINT_ABI = [
   },
 ];
 
+const OPNET_TOKEN_BALANCE_ABI = [
+  {
+    name: 'balanceOf',
+    inputs: [{ name: 'account', type: ABIDataTypes.ADDRESS }],
+    outputs: [{ name: 'balance', type: ABIDataTypes.UINT256 }],
+    type: BitcoinAbiTypes.Function,
+  },
+  ...OP_NET_ABI,
+];
+
 function short(value?: string | null) {
   if (!value) return '-';
   if (value.length < 14) return value;
@@ -170,26 +191,37 @@ function resolveSystemTheme(): 'light' | 'dark' {
 
 function getEthereumProvider(targetWallet?: EvmWalletType): EthereumProvider | null {
   const { ethereum, rabby } = window as EthereumWindow;
-
-  const matchProvider = (provider: EthereumProvider): boolean => {
-    if (!targetWallet) return true;
-    if (targetWallet === 'rabby') return Boolean(provider.isRabby);
-    return Boolean(provider.isMetaMask && !provider.isRabby);
-  };
+  const providers = ethereum && Array.isArray(ethereum.providers) ? ethereum.providers : [];
 
   if (targetWallet === 'rabby' && rabby) {
     return rabby;
   }
 
-  if (ethereum && Array.isArray(ethereum.providers) && ethereum.providers.length > 0) {
-    return ethereum.providers.find((provider) => matchProvider(provider)) ?? null;
+  if (targetWallet === 'rabby') {
+    const rabbyFromList = providers.find((provider) => provider.isRabby);
+    if (rabbyFromList) return rabbyFromList;
+    if (ethereum?.isRabby) return ethereum;
+    return null;
   }
 
-  if (ethereum && matchProvider(ethereum)) {
-    return ethereum;
+  if (targetWallet === 'metamask') {
+    const strictMetaMask = providers.find((provider) => provider.isMetaMask && !provider.isRabby && provider !== rabby);
+    if (strictMetaMask) return strictMetaMask;
+
+    const relaxedMetaMask = providers.find((provider) => provider.isMetaMask && provider !== rabby);
+    if (relaxedMetaMask) return relaxedMetaMask;
+
+    const firstNonRabby = providers.find((provider) => !provider.isRabby && provider !== rabby);
+    if (firstNonRabby) return firstNonRabby;
+
+    if (ethereum && ethereum !== rabby && !ethereum.isRabby) return ethereum;
+    if (ethereum?.isMetaMask && ethereum !== rabby) return ethereum;
+    return null;
   }
 
-  return null;
+  if (providers.length > 0) return providers[0] ?? null;
+  if (ethereum) return ethereum;
+  return rabby ?? null;
 }
 
 function isChainMissingError(error: unknown): boolean {
@@ -325,6 +357,10 @@ function formatTokenAmount(raw: bigint, decimals: number): string {
   return `${whole.toString()}.${fractionText}`;
 }
 
+function formatOpnetTicker(symbol: AssetSymbol): string {
+  return `h${symbol}`;
+}
+
 function symbolForAssetId(assetId: number): AssetSymbol | null {
   const entries = Object.entries(ETH_ASSET_CONFIG) as Array<[AssetSymbol, { assetId: number; decimals: number }]>;
   const match = entries.find(([, cfg]) => cfg.assetId === assetId);
@@ -346,6 +382,42 @@ function parseEvmUint256Result(raw: unknown, fieldName: string): bigint {
     throw new Error(`${fieldName} returned invalid hex.`);
   }
   return BigInt(value);
+}
+
+function parseUintResult(raw: unknown, fieldName: string): bigint {
+  if (typeof raw === 'bigint') return raw;
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 0) return BigInt(Math.trunc(raw));
+  if (typeof raw === 'string') {
+    const value = raw.trim();
+    if (/^0x[0-9a-fA-F]+$/.test(value) || /^\d+$/.test(value)) return BigInt(value);
+  }
+  if (Array.isArray(raw) && raw.length > 0) {
+    return parseUintResult(raw[0], fieldName);
+  }
+
+  if (raw && typeof raw === 'object') {
+    const row = raw as Record<string, unknown>;
+    for (const key of ['balance', 'value', 'result', 'amount', '0', '_hex', 'hex']) {
+      if (Object.hasOwn(row, key)) {
+        try {
+          return parseUintResult(row[key], fieldName);
+        } catch {
+          // Continue to other keys before failing.
+        }
+      }
+    }
+
+    if (typeof (row as { toString?: unknown }).toString === 'function') {
+      try {
+        const text = (row as { toString: () => string }).toString().trim();
+        if (/^0x[0-9a-fA-F]+$/.test(text) || /^\d+$/.test(text)) return BigInt(text);
+      } catch {
+        // Fall through to error below.
+      }
+    }
+  }
+
+  throw new Error(`${fieldName} returned invalid uint result.`);
 }
 
 function toHexQuantity(value: bigint): string {
@@ -598,6 +670,35 @@ function getAddressDebugInfo(address: Address | null): { hex: string; tweakedHex
   return { hex, tweakedHex };
 }
 
+function resolveAddressForOpnetRead(opnetAddressObject: unknown, walletAddress: string): Address | null {
+  if (!opnetAddressObject) return null;
+
+  if (
+    typeof (opnetAddressObject as { equals?: unknown }).equals === 'function' &&
+    typeof (opnetAddressObject as { toHex?: unknown }).toHex === 'function'
+  ) {
+    return opnetAddressObject as Address;
+  }
+
+  const raw = typeof (opnetAddressObject as { toHex?: () => string }).toHex === 'function'
+    ? (opnetAddressObject as { toHex: () => string }).toHex()
+    : String(opnetAddressObject);
+
+  if (/^0x[0-9a-fA-F]{64}$/.test(raw)) {
+    return Address.fromBigInt(BigInt(raw));
+  }
+
+  try {
+    if (walletAddress.trim()) {
+      return Address.fromString(walletAddress.trim());
+    }
+  } catch {
+    // Fallback null below.
+  }
+
+  return null;
+}
+
 export function App() {
   const {
     connectToWallet,
@@ -641,6 +742,12 @@ export function App() {
     WBTC: { balanceRaw: null, claimAmountRaw: null, claimCooldownSec: null, claimableAtSec: null, faucetEnabled: null },
     WETH: { balanceRaw: null, claimAmountRaw: null, claimCooldownSec: null, claimableAtSec: null, faucetEnabled: null },
     PAXG: { balanceRaw: null, claimAmountRaw: null, claimCooldownSec: null, claimableAtSec: null, faucetEnabled: null },
+  });
+  const [opnetBalanceByAsset, setOpnetBalanceByAsset] = useState<Record<AssetSymbol, OpnetAssetBalanceState>>({
+    USDT: { balanceRaw: null },
+    WBTC: { balanceRaw: null },
+    WETH: { balanceRaw: null },
+    PAXG: { balanceRaw: null },
   });
   const [burnAsset, setBurnAsset] = useState<AssetSymbol>('USDT');
   const [burnAmount, setBurnAmount] = useState('');
@@ -1069,6 +1176,14 @@ export function App() {
   const faucetReady = ethWalletReady;
   const faucetConfigReady = Boolean(ETH_TOKEN_ADDRESSES[faucetAsset]);
   const faucetState = faucetStateByAsset[faucetAsset as AssetSymbol];
+  const depositAssetState = faucetStateByAsset[depositAsset as AssetSymbol];
+  const depositAssetBalanceLabel = depositAssetState?.balanceRaw != null
+    ? `${formatTokenAmount(depositAssetState.balanceRaw, ETH_ASSET_CONFIG[depositAsset].decimals)} ${depositAsset}`
+    : '-';
+  const burnAssetState = opnetBalanceByAsset[burnAsset as AssetSymbol];
+  const burnAssetBalanceLabel = burnAssetState?.balanceRaw != null
+    ? `${formatTokenAmount(burnAssetState.balanceRaw, ETH_ASSET_CONFIG[burnAsset].decimals)} ${formatOpnetTicker(burnAsset)}`
+    : '-';
   const depositReady = walletPairReady && Boolean(opRecipientHash);
   const burnReady = walletPairReady;
   const depositConfigReady = Boolean(ETH_VAULT_ADDRESS && ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol]);
@@ -1085,6 +1200,11 @@ export function App() {
     !opRecipientHash ? 'Hashed MLDSA key unavailable' : '',
   ].filter(Boolean);
   const claimReleaseReady = Boolean(walletPairReady && statusApiUrl.trim() && ETH_VAULT_ADDRESS && opRecipientHash);
+
+  useEffect(() => {
+    if (!opWalletReady || !opnetProvider || !walletAddress) return;
+    void refreshOpnetBalance([burnAsset]);
+  }, [burnAsset, opWalletReady, opnetProvider, walletAddress, opnetAddressObject]);
 
   function closeUxGuide(remember: boolean) {
     setShowUxGuide(false);
@@ -1254,6 +1374,47 @@ export function App() {
     } finally {
       setFaucetRefreshBusy(false);
     }
+  }
+
+  async function refreshOpnetBalance(targetAssets?: AssetSymbol[]) {
+    if (!opWalletReady || !opnetProvider || !walletAddress) return;
+    const assets = targetAssets && targetAssets.length > 0
+      ? targetAssets
+      : (Object.keys(ETH_ASSET_CONFIG) as AssetSymbol[]);
+
+    try {
+      const sender = resolveAddressForOpnetRead(opnetAddressObject, walletAddress);
+      if (!sender) throw new Error('Connected OP_WALLET address is unavailable for OP20 balance reads.');
+      const next = { ...opnetBalanceByAsset };
+
+      await Promise.all(
+        assets.map(async (asset) => {
+          const tokenAddress = OPNET_TOKEN_ADDRESSES[asset];
+          if (!tokenAddress) {
+            next[asset] = {
+              balanceRaw: null,
+              error: `Missing OPNet token address. Set VITE_OPNET_${asset}_ADDRESS.`,
+            };
+            return;
+          }
+
+          try {
+            const token = getContract(tokenAddress, OPNET_TOKEN_BALANCE_ABI as never, opnetProvider as never, networks.opnetTestnet);
+            const result = await (token as any).balanceOf(sender);
+            const properties = (result as { properties?: Record<string, unknown> })?.properties ?? {};
+            const rawCandidate = properties.balance ?? Object.values(properties)[0];
+            next[asset] = { balanceRaw: BigInt(rawCandidate as bigint | string | number) };
+          } catch (error) {
+            next[asset] = {
+              balanceRaw: null,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        }),
+      );
+
+      setOpnetBalanceByAsset(next);
+    } finally {}
   }
 
   async function runClaimTestTokenFlow() {
@@ -2205,7 +2366,7 @@ export function App() {
                       title={`Select ${option.symbol}`}
                     >
                       <img src={option.logo} alt={option.alt} />
-                      <span>{option.symbol}</span>
+                      <span>{formatOpnetTicker(option.symbol)}</span>
                     </button>
                   );
                 })}
@@ -2220,6 +2381,9 @@ export function App() {
                 inputMode="decimal"
               />
             </label>
+            <p className="muted">
+              Balance: {depositAssetBalanceLabel}
+            </p>
             <div className="actions">
               <button
                 className="primary"
@@ -2298,6 +2462,8 @@ export function App() {
                 inputMode="decimal"
               />
             </label>
+            <p className="muted">Balance: {burnAssetBalanceLabel}</p>
+            {burnAssetState?.error ? <p className="muted">OPNet balance error: {burnAssetState.error}</p> : null}
             <div className="actions">
               <button
                 className="primary"
