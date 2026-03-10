@@ -1,4 +1,7 @@
 import { execFile } from 'node:child_process';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { computeAddress, recoverAddress, Signature } from 'ethers';
@@ -94,43 +97,59 @@ export async function kmsGetPublicKey(keyId) {
 }
 
 export async function kmsSign({ keyId, signingAlgorithm, messageBytes, messageType }) {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'heptad-kms-sign-'));
+  const messagePath = path.join(tempDir, 'message.bin');
   return runAwsCliJson([
-    'kms',
-    'sign',
-    '--key-id',
-    keyId,
-    '--signing-algorithm',
-    signingAlgorithm,
-    '--message-type',
-    messageType,
-    '--message',
-    Buffer.from(messageBytes).toString('base64'),
-    '--output',
-    'json',
-    '--cli-binary-format',
-    'raw-in-base64-out',
-  ]);
+    ...(await (async () => {
+      await fs.writeFile(messagePath, Buffer.from(messageBytes));
+      return [
+        'kms',
+        'sign',
+        '--key-id',
+        keyId,
+        '--signing-algorithm',
+        signingAlgorithm,
+        '--message-type',
+        messageType,
+        '--message',
+        `fileb://${messagePath}`,
+        '--output',
+        'json',
+      ];
+    })()),
+  ]).finally(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
 }
 
 export async function kmsVerify({ keyId, signingAlgorithm, messageBytes, messageType, signatureBytes }) {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'heptad-kms-verify-'));
+  const messagePath = path.join(tempDir, 'message.bin');
+  const signaturePath = path.join(tempDir, 'signature.bin');
   return runAwsCliJson([
-    'kms',
-    'verify',
-    '--key-id',
-    keyId,
-    '--signing-algorithm',
-    signingAlgorithm,
-    '--message-type',
-    messageType,
-    '--message',
-    Buffer.from(messageBytes).toString('base64'),
-    '--signature',
-    Buffer.from(signatureBytes).toString('base64'),
-    '--output',
-    'json',
-    '--cli-binary-format',
-    'raw-in-base64-out',
-  ]);
+    ...(await (async () => {
+      await fs.writeFile(messagePath, Buffer.from(messageBytes));
+      await fs.writeFile(signaturePath, Buffer.from(signatureBytes));
+      return [
+        'kms',
+        'verify',
+        '--key-id',
+        keyId,
+        '--signing-algorithm',
+        signingAlgorithm,
+        '--message-type',
+        messageType,
+        '--message',
+        `fileb://${messagePath}`,
+        '--signature',
+        `fileb://${signaturePath}`,
+        '--output',
+        'json',
+      ];
+    })()),
+  ]).finally(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
 }
 
 export function decodeSpkiBitString(spkiDerBytes) {
