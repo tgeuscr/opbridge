@@ -3,13 +3,13 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { networks } from "@btc-vision/bitcoin";
-import { Address, MLDSASecurityLevel, QuantumBIP32Factory } from "@btc-vision/transaction";
+import { Address } from "@btc-vision/transaction";
 import {
   publishMintAttestationsSnapshot,
   publishProcessedReleasesSnapshot,
   publishRelayerHeartbeat,
 } from "./relayer-api-publish.mjs";
-import { loadJsonSecretPayload, loadSecretString } from "./secret-provider.mjs";
+import { loadOpnetRelaySigners } from "./signers/index.mjs";
 
 const DEPOSIT_INITIATED_TOPIC0 =
   "0x3fb1c794079291b42d6d8707ba973ad40ab31522db5ff4280e7606823b71be73";
@@ -21,7 +21,6 @@ const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
 const DEFAULT_MAPPING_FILE = path.resolve(REPO_ROOT, "contracts/ethereum/deployments/sepolia-latest.json");
 const DEFAULT_OUTPUT_FILE = path.resolve(REPO_ROOT, "services/relayer/.data/pending-attestations.json");
 const DEFAULT_KEYS_FILE = path.resolve(REPO_ROOT, "services/relayer/.data/relay-keys.json");
-const ZERO_CHAIN_CODE = new Uint8Array(32);
 const DIRECTION_ETH_TO_OP_MINT = 1;
 const DEFAULT_ATTESTATION_VERSION = 1;
 
@@ -152,100 +151,12 @@ function parseDataWords(dataHex) {
   return words;
 }
 
-function parseMldsaPrivateKey(raw) {
-  const value = raw.trim();
-  if (!value) {
-    throw new Error("Relay private key is required.");
-  }
-
-  const keyBytes = hexToBytes(value);
-  const mldsa44PrivateSize = 2560;
-  const mldsa44PrivatePlusPublicSize = 3872;
-  if (keyBytes.length === mldsa44PrivateSize) {
-    return keyBytes;
-  }
-  if (keyBytes.length === mldsa44PrivatePlusPublicSize) {
-    return keyBytes.slice(0, mldsa44PrivateSize);
-  }
-  throw new Error(
-    `Relay private key has invalid size (${keyBytes.length} bytes). Expected ${mldsa44PrivateSize} (private) or ${mldsa44PrivatePlusPublicSize} (private+public).`,
-  );
-}
-
 function resolveOPNetNetwork(name) {
   const normalized = String(name ?? "regtest").trim().toLowerCase();
   if (normalized === "testnet") return networks.opnetTestnet;
   if (normalized === "regtest") return networks.regtest;
   if (normalized === "mainnet") return networks.bitcoin;
   throw new Error(`Unsupported opnet.network=${name}. Expected testnet, regtest, or mainnet.`);
-}
-
-function buildRelaySigner(rawKey, relayIndex, relayerId, opnetNetwork) {
-  const privateKey = parseMldsaPrivateKey(rawKey);
-  const signer = QuantumBIP32Factory.fromPrivateKey(
-    privateKey,
-    ZERO_CHAIN_CODE,
-    opnetNetwork,
-    MLDSASecurityLevel.LEVEL2,
-  );
-  const publicKey = new Uint8Array(signer.publicKey);
-  const signerId = new Address(publicKey).toHex();
-  return {
-    relayIndex,
-    relayerId,
-    signerId,
-    publicKey,
-    sign: (messageHashBytes) => signer.sign(messageHashBytes),
-  };
-}
-
-async function loadRelayKeyPayload() {
-  const keysFile = process.env.RELAYER_KEYS_FILE?.trim() || DEFAULT_KEYS_FILE;
-  const filePath = fs.existsSync(keysFile) ? keysFile : "";
-  return loadJsonSecretPayload({
-    directJson: process.env.RELAYER_KEYS_JSON,
-    secretRef: process.env.RELAYER_KEYS_SECRET_REF,
-    filePath,
-    csv: process.env.RELAYER_PRIVATE_KEYS,
-    csvField: "relayPrivateKeys",
-  });
-}
-
-async function loadRelaySigners(relayerId, opnetNetwork) {
-  const relayIndexFromEnvRaw = process.env.RELAYER_INDEX?.trim();
-  const relayIndexFromEnv =
-    relayIndexFromEnvRaw && /^\d+$/.test(relayIndexFromEnvRaw) ? Number(relayIndexFromEnvRaw) : null;
-  const singlePrivateKey =
-    process.env.RELAYER_PRIVATE_KEY?.trim() ||
-    (process.env.RELAYER_PRIVATE_KEY_SECRET_REF?.trim()
-      ? (await loadSecretString(process.env.RELAYER_PRIVATE_KEY_SECRET_REF)).trim()
-      : "");
-  if (singlePrivateKey) {
-    if (relayIndexFromEnv == null) {
-      throw new Error("RELAYER_INDEX is required in single-relayer mode (RELAYER_PRIVATE_KEY).");
-    }
-    const relayIndex = relayIndexFromEnv;
-    if (!Number.isInteger(relayIndex) || relayIndex < 0 || relayIndex > 255) {
-      throw new Error("RELAYER_INDEX must be an integer in [0,255].");
-    }
-    return [buildRelaySigner(singlePrivateKey, relayIndex, relayerId, opnetNetwork)];
-  }
-
-  const payload = await loadRelayKeyPayload();
-  if (!payload) {
-    return [];
-  }
-
-  const keys = Array.isArray(payload.relayPrivateKeys) ? payload.relayPrivateKeys : [];
-  const payloadStartIndex =
-    payload?.startIndex != null && Number.isInteger(Number(payload.startIndex))
-      ? Number(payload.startIndex)
-      : null;
-  const indexOffset =
-    payloadStartIndex != null ? payloadStartIndex : keys.length === 1 && relayIndexFromEnv != null ? relayIndexFromEnv : 0;
-  return keys
-    .map((raw, position) => buildRelaySigner(raw, indexOffset + position, relayerId, opnetNetwork))
-    .filter(Boolean);
 }
 
 async function rpc(rpcUrl, method, params) {
@@ -371,16 +282,18 @@ async function buildPendingAttestation(log, mapping, relaySigners) {
   };
   const payloadHashBytes = await buildMintAttestationHash(message);
   const payloadHashHex = bytesToHex(payloadHashBytes);
-  const signatures = relaySigners.map((signer) => {
-    const signature = signer.sign(payloadHashBytes);
-    return {
-      relayIndex: signer.relayIndex,
-      relayerId: signer.relayerId,
-      signerId: signer.signerId,
-      signerPubKeyHex: bytesToHex(signer.publicKey),
-      signatureHex: bytesToHex(signature),
-    };
-  });
+  const signatures = await Promise.all(
+    relaySigners.map(async (signer) => {
+      const signature = await Promise.resolve(signer.sign(payloadHashBytes));
+      return {
+        relayIndex: signer.relayIndex,
+        relayerId: signer.relayerId,
+        signerId: signer.signerId,
+        signerPubKeyHex: bytesToHex(signer.publicKey),
+        signatureHex: bytesToHex(signature),
+      };
+    }),
+  );
 
   return {
     observationId: `${log.transactionHash}:${Number(hexToBigInt(log.logIndex))}`,
@@ -469,7 +382,11 @@ Example:
 
   const mappingRaw = fs.readFileSync(mappingFile, "utf8");
   const mapping = parseMapping(mappingRaw, { opnetBridgeAddress, opnetBridgeHex });
-  const relaySigners = await loadRelaySigners(relayerId, resolveOPNetNetwork(mapping.opnet.network));
+  const relaySigners = await loadOpnetRelaySigners({
+    relayerId,
+    opnetNetwork: resolveOPNetNetwork(mapping.opnet.network),
+    defaultKeysFile: DEFAULT_KEYS_FILE,
+  });
   if (Number(mapping.ethereum.chainId) !== 11155111) {
     throw new Error(`Expected ethereum.chainId=11155111 for Sepolia, got ${mapping.ethereum.chainId}`);
   }
