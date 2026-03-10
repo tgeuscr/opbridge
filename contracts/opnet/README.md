@@ -88,3 +88,8 @@ npm run build:hwbtc
 npm run build:heth
 npm run build:hpaxg
 ```
+
+Notes:
+
+- Builds should run through `asconfig.json` so the OPNet transform and per-target outputs are explicit.
+- OPNet upstream expects contracts to be compiled with the current `@btc-vision/assemblyscript` fork, not the upstream `assemblyscript` package.

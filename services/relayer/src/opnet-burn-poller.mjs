@@ -13,6 +13,7 @@ import {
   publishReleaseAttestationsSnapshot,
   publishRelayerHeartbeat,
 } from "./relayer-api-publish.mjs";
+import { loadJsonSecretPayload, loadSecretString } from "./secret-provider.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
@@ -308,26 +309,27 @@ function encodeReleaseAttestationHash(message) {
   return new Uint8Array(digest);
 }
 
-function loadRelayKeyPayload() {
-  if (process.env.RELAYER_EVM_KEYS_JSON?.trim()) {
-    return JSON.parse(process.env.RELAYER_EVM_KEYS_JSON);
-  }
+async function loadRelayKeyPayload() {
   const keysFile = process.env.RELAYER_EVM_KEYS_FILE?.trim() || DEFAULT_KEYS_FILE;
-  if (fs.existsSync(keysFile)) {
-    return JSON.parse(fs.readFileSync(keysFile, "utf8"));
-  }
-  const csv = process.env.RELAYER_EVM_PRIVATE_KEYS?.trim();
-  if (csv) {
-    return { relayEvmPrivateKeys: csv.split(",").map((v) => v.trim()).filter(Boolean) };
-  }
-  return null;
+  const filePath = fs.existsSync(keysFile) ? keysFile : "";
+  return loadJsonSecretPayload({
+    directJson: process.env.RELAYER_EVM_KEYS_JSON,
+    secretRef: process.env.RELAYER_EVM_KEYS_SECRET_REF,
+    filePath,
+    csv: process.env.RELAYER_EVM_PRIVATE_KEYS,
+    csvField: "relayEvmPrivateKeys",
+  });
 }
 
-function loadRelaySigners(relayerId) {
+async function loadRelaySigners(relayerId) {
   const relayIndexFromEnvRaw = process.env.RELAYER_INDEX?.trim();
   const relayIndexFromEnv =
     relayIndexFromEnvRaw && /^\d+$/.test(relayIndexFromEnvRaw) ? Number(relayIndexFromEnvRaw) : null;
-  const singlePrivateKey = process.env.RELAYER_EVM_PRIVATE_KEY?.trim();
+  const singlePrivateKey =
+    process.env.RELAYER_EVM_PRIVATE_KEY?.trim() ||
+    (process.env.RELAYER_EVM_PRIVATE_KEY_SECRET_REF?.trim()
+      ? (await loadSecretString(process.env.RELAYER_EVM_PRIVATE_KEY_SECRET_REF)).trim()
+      : "");
   if (singlePrivateKey) {
     if (relayIndexFromEnv == null) {
       throw new Error("RELAYER_INDEX is required in single-relayer mode.");
@@ -345,7 +347,7 @@ function loadRelaySigners(relayerId) {
     ];
   }
 
-  const payload = loadRelayKeyPayload();
+  const payload = await loadRelayKeyPayload();
   if (!payload) return [];
   const keys =
     (Array.isArray(payload.relayEvmPrivateKeys) ? payload.relayEvmPrivateKeys : null) ??
@@ -597,7 +599,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
     mapping.opnet.bridgeHex = await resolveOpnetAddressViaRpcToHex32(String(mapping.opnet.bridgeAddress), provider);
   }
   const bridge = getContract(mapping.opnet.bridgeAddress, BRIDGE_EVENTS_ABI, provider, opnetNetwork);
-  const relaySigners = loadRelaySigners(relayerId);
+  const relaySigners = await loadRelaySigners(relayerId);
 
   fs.mkdirSync(path.dirname(outputFile), { recursive: true });
   const latestBlock = await provider.getBlockNumber();

@@ -26,6 +26,11 @@ const CORS_ALLOW_HEADERS = 'content-type, x-relayer-token';
 const CORS_ALLOW_METHODS = 'GET, POST, OPTIONS';
 const CORS_MAX_AGE_SECONDS = '600';
 const ORIGIN_RULES = buildOriginRules(CORS_ALLOWED_ORIGINS);
+const HEARTBEAT_STALE_MS = Number(process.env.RELAYER_API_HEARTBEAT_STALE_MS?.trim() || '90000');
+const EXPECTED_RELAYER_NAMES = String(process.env.RELAYER_API_EXPECTED_RELAYER_NAMES || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
 
 function json(req, res, statusCode, body) {
   res.writeHead(statusCode, {
@@ -164,6 +169,43 @@ function safeJson(value) {
   } catch {
     return null;
   }
+}
+
+function summarizeRelayers(rows) {
+  const now = Date.now();
+  const relayers = rows.map((row) => {
+    const updatedAt = row.updated_at ? Date.parse(String(row.updated_at)) : Number.NaN;
+    const ageMs = Number.isFinite(updatedAt) ? Math.max(0, now - updatedAt) : null;
+    const isStale = ageMs != null ? ageMs > HEARTBEAT_STALE_MS : true;
+    const status = String(row.status || 'unknown');
+    return {
+      relayerName: row.relayer_name,
+      role: row.role,
+      status,
+      detail: row.detail,
+      updatedAt: row.updated_at,
+      ageMs,
+      isStale,
+      derivedStatus: status === 'ok' && !isStale ? 'ok' : isStale ? 'stale' : status,
+    };
+  });
+
+  const presentNames = new Set(relayers.map((row) => row.relayerName));
+  const missingExpected = EXPECTED_RELAYER_NAMES.filter((name) => !presentNames.has(name));
+  const counts = {
+    ok: relayers.filter((row) => row.derivedStatus === 'ok').length,
+    stale: relayers.filter((row) => row.derivedStatus === 'stale').length,
+    error: relayers.filter((row) => row.derivedStatus !== 'ok' && row.derivedStatus !== 'stale').length,
+    expected: EXPECTED_RELAYER_NAMES.length,
+    missing: missingExpected.length,
+  };
+
+  return {
+    relayers,
+    counts,
+    missingExpected,
+    heartbeatStaleMs: HEARTBEAT_STALE_MS,
+  };
 }
 
 export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
@@ -323,18 +365,16 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
         FROM relayer_heartbeats
         ORDER BY relayer_name ASC
       `).all();
+      const relayerSummary = summarizeRelayers(heartbeats);
       return json(req, res, 200, {
         ok: true,
         service: 'heptad-relayer-api',
         time: new Date().toISOString(),
         summary,
-        relayers: heartbeats.map((row) => ({
-          relayerName: row.relayer_name,
-          role: row.role,
-          status: row.status,
-          detail: row.detail,
-          updatedAt: row.updated_at,
-        })),
+        relayers: relayerSummary.relayers,
+        relayerHealth: relayerSummary.counts,
+        missingExpectedRelayers: relayerSummary.missingExpected,
+        heartbeatStaleMs: relayerSummary.heartbeatStaleMs,
       });
     }
 

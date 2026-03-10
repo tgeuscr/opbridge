@@ -27,7 +27,7 @@ class OPWalletSigner extends UnisatSigner {
 }
 
 type NetworkMode = 'testnet' | 'regtest' | 'mainnet';
-type DevToolTab = 'opnet' | 'ethereum';
+type DevToolTab = 'opnet' | 'ethereum' | 'ops';
 type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
   isMetaMask?: boolean;
@@ -156,11 +156,36 @@ type OP20ReadContract = {
   balanceOf: (owner: unknown) => Promise<CallResult<{ balance: bigint }>>;
 };
 
+type OpsRelayerStatus = {
+  relayerName: string;
+  role: string;
+  status: string;
+  detail?: string | null;
+  updatedAt?: string;
+  ageMs?: number | null;
+  isStale?: boolean;
+  derivedStatus?: string;
+};
+
+type OpsCandidate = {
+  depositId?: string;
+  withdrawalId?: string;
+  ready?: boolean;
+  processed?: boolean | number;
+  updatedAt?: string;
+  amount?: string;
+  ethereumUser?: string;
+  ethereumRecipient?: string;
+  recipientHash?: string;
+  opnetUser?: string;
+};
+
 const RPC_URLS: Record<NetworkMode, string> = {
   testnet: 'https://testnet.opnet.org',
   regtest: 'https://regtest.opnet.org',
   mainnet: 'https://mainnet.opnet.org',
 };
+const DEFAULT_STATUS_API_URL = import.meta.env.VITE_STATUS_API_URL?.trim() || '';
 
 const DEFAULT_ASSET = '';
 const EMPTY_ASSET_TOKEN_ADDRESSES: Record<string, string> = Object.fromEntries(
@@ -185,6 +210,17 @@ function short(value: string | null | undefined): string {
   if (!value) return '-';
   if (value.length < 14) return value;
   return `${value.slice(0, 8)}...${value.slice(-6)}`;
+}
+
+function formatAgeMs(ageMs: number | null | undefined): string {
+  if (ageMs == null || !Number.isFinite(ageMs)) return '-';
+  if (ageMs < 1000) return `${Math.round(ageMs)}ms`;
+  const seconds = Math.round(ageMs / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  return `${hours}h`;
 }
 
 function parseHexAddress(raw: string, fieldName: string): Address {
@@ -459,6 +495,17 @@ export function App() {
 
   const [networkMode, setNetworkMode] = useState<NetworkMode>('regtest');
   const [devToolTab, setDevToolTab] = useState<DevToolTab>('opnet');
+  const [statusApiUrl, setStatusApiUrl] = useState(DEFAULT_STATUS_API_URL);
+  const [opsStatusState, setOpsStatusState] = useState<'idle' | 'loading' | 'ok' | 'error'>(
+    DEFAULT_STATUS_API_URL ? 'loading' : 'idle',
+  );
+  const [opsStatusMessage, setOpsStatusMessage] = useState('No relayer API check yet.');
+  const [opsStatusUpdatedAt, setOpsStatusUpdatedAt] = useState('');
+  const [opsStatusSummary, setOpsStatusSummary] = useState<Record<string, unknown> | null>(null);
+  const [opsRelayerHealth, setOpsRelayerHealth] = useState<Record<string, unknown> | null>(null);
+  const [opsRelayers, setOpsRelayers] = useState<OpsRelayerStatus[]>([]);
+  const [opsMintCandidates, setOpsMintCandidates] = useState<OpsCandidate[]>([]);
+  const [opsReleaseCandidates, setOpsReleaseCandidates] = useState<OpsCandidate[]>([]);
   const [bridgeAddress, setBridgeAddress] = useState('');
   const [asset, setAsset] = useState<string>(DEFAULT_ASSET);
   const [dummyAsset, setDummyAsset] = useState<string>(DEFAULT_ASSET);
@@ -2417,6 +2464,78 @@ export function App() {
   }, [ethereumDepositAmount, ethereumDepositAsset]);
 
   useEffect(() => {
+    if (!statusApiUrl.trim()) {
+      setOpsStatusState('idle');
+      setOpsStatusMessage('Set VITE_STATUS_API_URL to enable relayer status polling.');
+      setOpsStatusUpdatedAt('');
+      setOpsStatusSummary(null);
+      setOpsRelayerHealth(null);
+      setOpsRelayers([]);
+      setOpsMintCandidates([]);
+      setOpsReleaseCandidates([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        setOpsStatusState((previous) => (previous === 'ok' ? previous : 'loading'));
+        const base = statusApiUrl.replace(/\/+$/, '');
+        const [healthResponse, statusResponse, mintResponse, releaseResponse] = await Promise.all([
+          fetch(`${base}/health`),
+          fetch(`${base}/status`),
+          fetch(`${base}/mint-candidates?limit=5`),
+          fetch(`${base}/release-candidates?limit=5`),
+        ]);
+
+        if (!healthResponse.ok) throw new Error(`/health HTTP ${healthResponse.status}`);
+        if (!statusResponse.ok) throw new Error(`/status HTTP ${statusResponse.status}`);
+        if (!mintResponse.ok) throw new Error(`/mint-candidates HTTP ${mintResponse.status}`);
+        if (!releaseResponse.ok) throw new Error(`/release-candidates HTTP ${releaseResponse.status}`);
+
+        await healthResponse.json();
+        const statusPayload = (await statusResponse.json()) as Record<string, unknown>;
+        const mintPayload = (await mintResponse.json()) as { items?: OpsCandidate[] };
+        const releasePayload = (await releaseResponse.json()) as { items?: OpsCandidate[] };
+
+        if (cancelled) return;
+
+        setOpsStatusState('ok');
+        setOpsStatusMessage('Relayer API healthy');
+        setOpsStatusUpdatedAt(new Date().toISOString());
+        setOpsStatusSummary((statusPayload.summary as Record<string, unknown>) ?? null);
+        setOpsRelayerHealth((statusPayload.relayerHealth as Record<string, unknown>) ?? null);
+        setOpsRelayers(Array.isArray(statusPayload.relayers) ? (statusPayload.relayers as OpsRelayerStatus[]) : []);
+        setOpsMintCandidates(Array.isArray(mintPayload.items) ? mintPayload.items : []);
+        setOpsReleaseCandidates(Array.isArray(releasePayload.items) ? releasePayload.items : []);
+      } catch (error) {
+        if (cancelled) return;
+        setOpsStatusState('error');
+        setOpsStatusMessage(
+          `Relayer API polling failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        setOpsStatusUpdatedAt(new Date().toISOString());
+        setOpsStatusSummary(null);
+        setOpsRelayerHealth(null);
+        setOpsRelayers([]);
+        setOpsMintCandidates([]);
+        setOpsReleaseCandidates([]);
+      }
+    };
+
+    void poll();
+    const timer = window.setInterval(() => {
+      void poll();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [statusApiUrl]);
+
+  useEffect(() => {
     const provider = getEthereumProvider();
     if (!provider?.on || !provider.removeListener) {
       return;
@@ -2467,10 +2586,110 @@ export function App() {
           >
             Ethereum Tooling
           </button>
+          <button
+            className={devToolTab === 'ops' ? 'tab-active' : ''}
+            onClick={() => setDevToolTab('ops')}
+          >
+            Operations
+          </button>
         </div>
       </section>
 
-      {devToolTab === 'opnet' ? (
+      {devToolTab === 'ops' ? (
+        <>
+          <section className="panel two-col">
+            <div>
+              <h2>Relayer API</h2>
+              <label>
+                Status API Base URL
+                <input
+                  value={statusApiUrl}
+                  onChange={(e) => setStatusApiUrl(e.target.value)}
+                  placeholder="https://api.heptad.app"
+                />
+              </label>
+              <pre className="status">
+{`state: ${opsStatusState}
+message: ${opsStatusMessage}
+updatedAt: ${opsStatusUpdatedAt || '-'}`}
+              </pre>
+            </div>
+            <div>
+              <h2>Overview</h2>
+              <pre className="status">
+{JSON.stringify(
+  {
+    summary: opsStatusSummary,
+    relayerHealth: opsRelayerHealth,
+  },
+  null,
+  2,
+)}
+              </pre>
+            </div>
+          </section>
+
+          <section className="panel two-col">
+            <div>
+              <h2>Relayer Health</h2>
+              <div className="stack">
+                {opsRelayers.length > 0 ? (
+                  opsRelayers.map((relayer) => (
+                    <pre key={`${relayer.relayerName}:${relayer.role}`} className="status">
+{`name: ${relayer.relayerName}
+role: ${relayer.role}
+status: ${relayer.status}
+derivedStatus: ${relayer.derivedStatus ?? '-'}
+stale: ${typeof relayer.isStale === 'boolean' ? String(relayer.isStale) : '-'}
+age: ${formatAgeMs(relayer.ageMs)}
+updatedAt: ${relayer.updatedAt ?? '-'}
+detail: ${relayer.detail ?? '-'}`}
+                    </pre>
+                  ))
+                ) : (
+                  <pre className="status">No relayer heartbeats loaded.</pre>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <h2>Recent Mint Candidates</h2>
+              <div className="stack">
+                {opsMintCandidates.length > 0 ? (
+                  opsMintCandidates.map((candidate, index) => (
+                    <pre key={`mint-${candidate.depositId ?? candidate.updatedAt ?? index}`} className="status">
+{`depositId: ${candidate.depositId ?? '-'}
+ready: ${typeof candidate.ready === 'boolean' ? String(candidate.ready) : '-'}
+processed: ${candidate.processed != null ? String(candidate.processed) : '-'}
+updatedAt: ${candidate.updatedAt ?? '-'}`}
+                    </pre>
+                  ))
+                ) : (
+                  <pre className="status">No mint candidates loaded.</pre>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className="panel">
+            <h2>Recent Release Candidates</h2>
+            <div className="stack">
+              {opsReleaseCandidates.length > 0 ? (
+                opsReleaseCandidates.map((candidate, index) => (
+                  <pre key={`release-${candidate.withdrawalId ?? candidate.updatedAt ?? index}`} className="status">
+{`withdrawalId: ${candidate.withdrawalId ?? '-'}
+ready: ${typeof candidate.ready === 'boolean' ? String(candidate.ready) : '-'}
+processed: ${candidate.processed != null ? String(candidate.processed) : '-'}
+updatedAt: ${candidate.updatedAt ?? '-'}`}
+                  </pre>
+                ))
+              ) : (
+                <pre className="status">No release candidates loaded.</pre>
+              )}
+            </div>
+          </section>
+        </>
+      ) : devToolTab === 'opnet' ? (
         <>
       <section className="panel two-col">
         <div>

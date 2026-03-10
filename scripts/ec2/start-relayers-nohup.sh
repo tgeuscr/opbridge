@@ -23,18 +23,20 @@ idx_for() {
 
 start_one() {
   local kind="$1" suffix="$2" index="$3"
-  local pid_file log_file output_file run_script
+  local pid_file log_file output_file run_script env_file
 
   if [[ "$kind" == "sepolia" ]]; then
     pid_file="$PID_DIR/heptad-sepolia-$suffix.pid"
     log_file="$LOG_DIR/heptad-sepolia-$suffix.log"
     output_file="$HEPTAD_HOME/services/relayer/.data/mint-attestations/relayer-$suffix.json"
     run_script="run:sepolia"
+    env_file="$HEPTAD_ENV_DIR/sepolia-$suffix.env"
   else
     pid_file="$PID_DIR/heptad-opnet-burn-$suffix.pid"
     log_file="$LOG_DIR/heptad-opnet-burn-$suffix.log"
     output_file="$HEPTAD_HOME/services/relayer/.data/release-attestations/relayer-$suffix.json"
     run_script="run:opnet-burn"
+    env_file="$HEPTAD_ENV_DIR/opnet-burn-$suffix.env"
   fi
 
   if [[ -f "$pid_file" ]]; then
@@ -60,8 +62,8 @@ start_one() {
 
     set -a
     . "$HEPTAD_ENV_DIR/relayer-common.env"
-    . "$HEPTAD_ENV_DIR/relayer-$suffix.env"
-    RELAYER_ID="relayer-$suffix"
+    . "$env_file"
+    RELAYER_ID="${RELAYER_ID:-relayer-$suffix}"
     RELAYER_INDEX="$index"
     RELAYER_OUTPUT_FILE="$output_file"
     set +a

@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "npm run build:bridge && npm run build:husdt && npm run build:hwbtc && npm run build:heth && npm run build:hpaxg",
-    "build:bridge": "asc src/bridge/index.ts --target bridge --measure --uncheckedBehavior never",
-    "build:husdt": "asc src/wrapped/husdt/index.ts --target husdt --measure --uncheckedBehavior never",
-    "build:hwbtc": "asc src/wrapped/hwbtc/index.ts --target hwbtc --measure --uncheckedBehavior never",
-    "build:heth": "asc src/wrapped/heth/index.ts --target heth --measure --uncheckedBehavior never",
-    "build:hpaxg": "asc src/wrapped/hpaxg/index.ts --target hpaxg --measure --uncheckedBehavior never",
+    "build:bridge": "asc src/bridge/index.ts --config asconfig.json --target bridge --measure --uncheckedBehavior never",
+    "build:husdt": "asc src/wrapped/husdt/index.ts --config asconfig.json --target husdt --measure --uncheckedBehavior never",
+    "build:hwbtc": "asc src/wrapped/hwbtc/index.ts --config asconfig.json --target hwbtc --measure --uncheckedBehavior never",
+    "build:heth": "asc src/wrapped/heth/index.ts --config asconfig.json --target heth --measure --uncheckedBehavior never",
+    "build:hpaxg": "asc src/wrapped/hpaxg/index.ts --config asconfig.json --target hpaxg --measure --uncheckedBehavior never",
     "test": "node tests/bridge-invariants.test.mjs",
     "typecheck": "echo 'TODO: add OP_NET-compatible type/lint checks'"
   },

@@ -9,6 +9,7 @@ import {
   publishProcessedReleasesSnapshot,
   publishRelayerHeartbeat,
 } from "./relayer-api-publish.mjs";
+import { loadJsonSecretPayload, loadSecretString } from "./secret-provider.mjs";
 
 const DEPOSIT_INITIATED_TOPIC0 =
   "0x3fb1c794079291b42d6d8707ba973ad40ab31522db5ff4280e7606823b71be73";
@@ -198,29 +199,27 @@ function buildRelaySigner(rawKey, relayIndex, relayerId, opnetNetwork) {
   };
 }
 
-function loadRelayKeyPayload() {
-  if (process.env.RELAYER_KEYS_JSON?.trim()) {
-    return JSON.parse(process.env.RELAYER_KEYS_JSON);
-  }
-
+async function loadRelayKeyPayload() {
   const keysFile = process.env.RELAYER_KEYS_FILE?.trim() || DEFAULT_KEYS_FILE;
-  if (fs.existsSync(keysFile)) {
-    return JSON.parse(fs.readFileSync(keysFile, "utf8"));
-  }
-
-  const keysCsv = process.env.RELAYER_PRIVATE_KEYS?.trim();
-  if (keysCsv) {
-    return { relayPrivateKeys: keysCsv.split(",").map((entry) => entry.trim()).filter(Boolean) };
-  }
-
-  return null;
+  const filePath = fs.existsSync(keysFile) ? keysFile : "";
+  return loadJsonSecretPayload({
+    directJson: process.env.RELAYER_KEYS_JSON,
+    secretRef: process.env.RELAYER_KEYS_SECRET_REF,
+    filePath,
+    csv: process.env.RELAYER_PRIVATE_KEYS,
+    csvField: "relayPrivateKeys",
+  });
 }
 
-function loadRelaySigners(relayerId, opnetNetwork) {
+async function loadRelaySigners(relayerId, opnetNetwork) {
   const relayIndexFromEnvRaw = process.env.RELAYER_INDEX?.trim();
   const relayIndexFromEnv =
     relayIndexFromEnvRaw && /^\d+$/.test(relayIndexFromEnvRaw) ? Number(relayIndexFromEnvRaw) : null;
-  const singlePrivateKey = process.env.RELAYER_PRIVATE_KEY?.trim();
+  const singlePrivateKey =
+    process.env.RELAYER_PRIVATE_KEY?.trim() ||
+    (process.env.RELAYER_PRIVATE_KEY_SECRET_REF?.trim()
+      ? (await loadSecretString(process.env.RELAYER_PRIVATE_KEY_SECRET_REF)).trim()
+      : "");
   if (singlePrivateKey) {
     if (relayIndexFromEnv == null) {
       throw new Error("RELAYER_INDEX is required in single-relayer mode (RELAYER_PRIVATE_KEY).");
@@ -232,7 +231,7 @@ function loadRelaySigners(relayerId, opnetNetwork) {
     return [buildRelaySigner(singlePrivateKey, relayIndex, relayerId, opnetNetwork)];
   }
 
-  const payload = loadRelayKeyPayload();
+  const payload = await loadRelayKeyPayload();
   if (!payload) {
     return [];
   }
@@ -470,7 +469,7 @@ Example:
 
   const mappingRaw = fs.readFileSync(mappingFile, "utf8");
   const mapping = parseMapping(mappingRaw, { opnetBridgeAddress, opnetBridgeHex });
-  const relaySigners = loadRelaySigners(relayerId, resolveOPNetNetwork(mapping.opnet.network));
+  const relaySigners = await loadRelaySigners(relayerId, resolveOPNetNetwork(mapping.opnet.network));
   if (Number(mapping.ethereum.chainId) !== 11155111) {
     throw new Error(`Expected ethereum.chainId=11155111 for Sepolia, got ${mapping.ethereum.chainId}`);
   }

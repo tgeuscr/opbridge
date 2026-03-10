@@ -18,6 +18,8 @@
     "sdk:opnet-testnet-smoke": "node src/opnet-sdk-testnet-smoke.mjs",
     "keys:generate": "node src/generate-relay-keys.mjs",
     "keys:verify": "node src/verify-relay-keys.mjs",
+    "kms:spike:opnet": "node src/kms-sign-opnet.mjs",
+    "kms:spike:evm": "node src/kms-sign-evm.mjs",
     "aggregate:sepolia": "node src/aggregate-attestations.mjs",
     "aggregate:release": "node src/aggregate-release-attestations.mjs",
     "submit:opnet": "node src/submit-mint-candidate.mjs",
