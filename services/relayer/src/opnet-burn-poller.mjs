@@ -13,6 +13,7 @@ import {
   publishReleaseAttestationsSnapshot,
   publishRelayerHeartbeat,
 } from "./relayer-api-publish.mjs";
+import { loadEvmRelaySigners } from "./signers/index.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
@@ -308,68 +309,6 @@ function encodeReleaseAttestationHash(message) {
   return new Uint8Array(digest);
 }
 
-function loadRelayKeyPayload() {
-  if (process.env.RELAYER_EVM_KEYS_JSON?.trim()) {
-    return JSON.parse(process.env.RELAYER_EVM_KEYS_JSON);
-  }
-  const keysFile = process.env.RELAYER_EVM_KEYS_FILE?.trim() || DEFAULT_KEYS_FILE;
-  if (fs.existsSync(keysFile)) {
-    return JSON.parse(fs.readFileSync(keysFile, "utf8"));
-  }
-  const csv = process.env.RELAYER_EVM_PRIVATE_KEYS?.trim();
-  if (csv) {
-    return { relayEvmPrivateKeys: csv.split(",").map((v) => v.trim()).filter(Boolean) };
-  }
-  return null;
-}
-
-function loadRelaySigners(relayerId) {
-  const relayIndexFromEnvRaw = process.env.RELAYER_INDEX?.trim();
-  const relayIndexFromEnv =
-    relayIndexFromEnvRaw && /^\d+$/.test(relayIndexFromEnvRaw) ? Number(relayIndexFromEnvRaw) : null;
-  const singlePrivateKey = process.env.RELAYER_EVM_PRIVATE_KEY?.trim();
-  if (singlePrivateKey) {
-    if (relayIndexFromEnv == null) {
-      throw new Error("RELAYER_INDEX is required in single-relayer mode.");
-    }
-    const relayIndex = relayIndexFromEnv;
-    const wallet = new ethers.Wallet(singlePrivateKey);
-    return [
-      {
-        relayIndex,
-        relayerId,
-        signerId: wallet.address,
-        signerPubKeyHex: wallet.signingKey.publicKey,
-        signDigestHex: (digestHex) => wallet.signingKey.sign(digestHex).serialized,
-      },
-    ];
-  }
-
-  const payload = loadRelayKeyPayload();
-  if (!payload) return [];
-  const keys =
-    (Array.isArray(payload.relayEvmPrivateKeys) ? payload.relayEvmPrivateKeys : null) ??
-    (Array.isArray(payload.relayPrivateKeys) ? payload.relayPrivateKeys : []);
-  const payloadStartIndex =
-    payload?.startIndex != null && Number.isInteger(Number(payload.startIndex))
-      ? Number(payload.startIndex)
-      : null;
-  const indexOffset =
-    payloadStartIndex != null ? payloadStartIndex : keys.length === 1 && relayIndexFromEnv != null ? relayIndexFromEnv : 0;
-
-  return keys.map((key, position) => {
-    const relayIndex = indexOffset + position;
-    const wallet = new ethers.Wallet(String(key).trim());
-    return {
-      relayIndex,
-      relayerId,
-      signerId: wallet.address,
-      signerPubKeyHex: wallet.signingKey.publicKey,
-      signDigestHex: (digestHex) => wallet.signingKey.sign(digestHex).serialized,
-    };
-  });
-}
-
 function canonicalPayload(message) {
   return [
     `v=${message.version}`,
@@ -597,7 +536,10 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
     mapping.opnet.bridgeHex = await resolveOpnetAddressViaRpcToHex32(String(mapping.opnet.bridgeAddress), provider);
   }
   const bridge = getContract(mapping.opnet.bridgeAddress, BRIDGE_EVENTS_ABI, provider, opnetNetwork);
-  const relaySigners = loadRelaySigners(relayerId);
+  const relaySigners = await loadEvmRelaySigners({
+    relayerId,
+    defaultKeysFile: DEFAULT_KEYS_FILE,
+  });
 
   fs.mkdirSync(path.dirname(outputFile), { recursive: true });
   const latestBlock = await provider.getBlockNumber();
@@ -771,13 +713,15 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                   };
                   const payloadHashBytes = encodeReleaseAttestationHash(message);
                   const payloadHashHex = bytesToHex(payloadHashBytes);
-                  const signatures = relaySigners.map((signer) => ({
-                    relayIndex: signer.relayIndex,
-                    relayerId: signer.relayerId,
-                    signerId: signer.signerId,
-                    signerPubKeyHex: signer.signerPubKeyHex,
-                    signatureHex: signer.signDigestHex(payloadHashHex),
-                  }));
+                  const signatures = await Promise.all(
+                    relaySigners.map(async (signer) => ({
+                      relayIndex: signer.relayIndex,
+                      relayerId: signer.relayerId,
+                      signerId: signer.signerId,
+                      signerPubKeyHex: signer.signerPubKeyHex,
+                      signatureHex: await Promise.resolve(signer.signDigestHex(payloadHashHex)),
+                    })),
+                  );
 
                   pending.push({
                     observationId,

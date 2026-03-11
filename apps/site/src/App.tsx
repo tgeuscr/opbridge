@@ -962,6 +962,10 @@ export function App() {
     }
   }
 
+  function toggleBridgeDirection(direction: BridgeDirection) {
+    setBridgeDirection((current) => (current === direction ? null : direction));
+  }
+
   function confirmBridgeTransaction() {
     if (!bridgeConfirm) return;
     const direction = bridgeConfirm.direction;
@@ -2396,9 +2400,28 @@ export function App() {
                 alt="Heptad"
               />
               <p className="eyebrow">HEPTAD BRIDGE TESTNET LIVE</p>
-              <div className="powered-by" aria-label="Powered by OPNet">
-                <span>Powered by</span>
-                <img src="/branding/opnet-logo.svg" alt="OPNet" />
+              <div className="brand-meta">
+                <a
+                  className="powered-by"
+                  href="https://opnet.org"
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="Powered by OPNet"
+                  title="Visit opnet.org"
+                >
+                  <span>Powered by</span>
+                  <img src="/branding/opnet-logo.svg" alt="OPNet" />
+                </a>
+                <a
+                  className="brand-social-link"
+                  href="https://x.com/heptadbtc"
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="Follow Heptad on X"
+                  title="Follow Heptad on X"
+                >
+                  <img src="/branding/x.svg" alt="" aria-hidden="true" />
+                </a>
               </div>
             </div>
             <div className="hero-actions">
@@ -2442,9 +2465,7 @@ export function App() {
             role="radio"
             aria-checked={bridgeDirection === 'ethToBtc'}
             className={`bridge-direction-choice ${bridgeDirection === 'ethToBtc' ? 'selected' : ''}`}
-            onClick={() => {
-              setBridgeDirection('ethToBtc');
-            }}
+            onClick={() => toggleBridgeDirection('ethToBtc')}
           >
             <span className="flow-icon-title" aria-hidden="true">
               <img src="/branding/eth.svg" alt="Ethereum" />
@@ -2457,9 +2478,7 @@ export function App() {
             role="radio"
             aria-checked={bridgeDirection === 'btcToEth'}
             className={`bridge-direction-choice ${bridgeDirection === 'btcToEth' ? 'selected' : ''}`}
-            onClick={() => {
-              setBridgeDirection('btcToEth');
-            }}
+            onClick={() => toggleBridgeDirection('btcToEth')}
           >
             <span className="flow-icon-title" aria-hidden="true">
               <img src="/branding/btc.svg" alt="Bitcoin" />
@@ -2693,6 +2712,15 @@ export function App() {
           </div>
         </div>
       ) : null}
+
+      <footer className="site-credit" aria-label="Site credit">
+        <span>made by</span>
+        <img
+          className="site-credit-wordmark"
+          src={themeMode === 'dark' ? '/branding/heptad-wordmark-dark.svg' : '/branding/heptad-wordmark.svg'}
+          alt="Heptad"
+        />
+      </footer>
 
       </main>
     </>

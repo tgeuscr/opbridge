@@ -36,9 +36,14 @@ Required env vars:
 Optional env vars:
 
 - `RELAYER_ID` (default: `relayer-0`)
+- `RELAYER_SIGNER_MODE` (`local` default, or `kms`)
 - Single-relayer mode (recommended for multi-instance topology):
   - `RELAYER_PRIVATE_KEY` (single MLDSA private key)
+  - `RELAYER_PRIVATE_KEY_SECRET_REF` (`aws-sm://...`, `aws-ssm://...`, or `file://...`)
   - `RELAYER_INDEX` (relay index in bridge config, `0..255`)
+- KMS mode:
+  - `RELAYER_KMS_KEY_ID` or `KMS_OPNET_KEY_ID`
+  - `RELAYER_INDEX` (required)
 - `RELAYER_MAPPING_FILE` (default: `contracts/ethereum/deployments/sepolia-latest.json`)
 - `OPNET_BRIDGE_ADDRESS` (required only when mapping/deployment JSON does not contain `opnet.bridgeAddress`)
 - `OPNET_BRIDGE_HEX` (32-byte hex bridge address used in attestation hash; required when bridge address is `op...`)
@@ -46,6 +51,7 @@ Optional env vars:
 - Relay key inputs (for signing):
   - `RELAYER_KEYS_FILE` (default: `services/relayer/.data/relay-keys.json`)
   - `RELAYER_KEYS_JSON` (inline JSON with `relayPrivateKeys`)
+  - `RELAYER_KEYS_SECRET_REF` (JSON secret ref with `relayPrivateKeys`)
   - `RELAYER_PRIVATE_KEYS` (comma-separated hex keys fallback)
 - `RELAYER_OUTPUT_FILE` (default: `services/relayer/.data/pending-attestations.json`)
 - `RELAYER_START_BLOCK` (default: latest-20)
@@ -75,6 +81,21 @@ Combined key file (recommended for both directions):
   "relayPrivateKeys": ["0x..."],
   "relayEvmPrivateKeys": ["0x..."]
 }
+```
+
+Secret ref selectors support nested JSON access. Example:
+
+```bash
+RELAYER_KEYS_SECRET_REF=aws-sm://heptad/mainnet/relayer-a
+RELAYER_PRIVATE_KEY_SECRET_REF=aws-sm://heptad/mainnet/relayer-a#relayPrivateKeys.0
+```
+
+KMS signer example:
+
+```bash
+RELAYER_SIGNER_MODE=kms
+RELAYER_INDEX=0
+RELAYER_KMS_KEY_ID=arn:aws:kms:us-east-2:123456789012:key/...
 ```
 
 ## Deterministic relay key generation (MLDSA + ECDSA)
@@ -133,6 +154,17 @@ Current pending attestation output now includes per-signer signatures:
   - `signerId`
   - `signerPubKeyHex`
   - `signatureHex`
+
+## AWS KMS compatibility spike
+
+Validate whether AWS KMS can replace local relay signing:
+
+```bash
+npm run kms:spike:opnet --workspace @heptad/relayer
+npm run kms:spike:evm --workspace @heptad/relayer
+```
+
+See `docs/kms-spike.md` for required env vars and success criteria.
 
 ## Multi-relayer setup (3 independent signers)
 
