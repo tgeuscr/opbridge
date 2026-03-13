@@ -632,9 +632,10 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
               }
             }
             for (let txIndex = 0; txIndex < transactions.length; txIndex += 1) {
-              let tx = transactions[txIndex];
+              const parsedTx = transactions[txIndex];
               const rawTxAtIndex = Array.isArray(block.rawTransactions) ? block.rawTransactions[txIndex] : null;
-              const txIds = txIdentifierCandidates(tx);
+              let tx = rawTxAtIndex ?? parsedTx;
+              const txIds = [...new Set([...txIdentifierCandidates(parsedTx), ...txIdentifierCandidates(rawTxAtIndex)])];
               const txHash = txIds[0] ?? `${block.hash}:${blockHeight.toString()}:${txIndex.toString()}`;
               try {
                 if (usedRawFallback && txIds.length > 0) {
@@ -670,27 +671,45 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                 let bridgeEventsRaw = [];
                 let structuredBurnEvents = [];
                 let structuredMintEvents = [];
-                try {
-                  ({
-                    bridgeEventsRaw,
-                    structuredBurnEvents,
-                    structuredMintEvents,
-                  } = collectBridgeEventArtifacts(tx, mapping.opnet.bridgeAddress, mapping.opnet.bridgeHex));
-                } catch (error) {
-                  if (!rawTxAtIndex || rawTxAtIndex === tx) {
+                const eventCandidates = [];
+                if (rawTxAtIndex) eventCandidates.push({ tx: rawTxAtIndex, label: "raw" });
+                if (parsedTx && parsedTx !== rawTxAtIndex) eventCandidates.push({ tx: parsedTx, label: "parsed" });
+                if (eventCandidates.length === 0) eventCandidates.push({ tx, label: "selected" });
+                let lastEventError = null;
+                for (const candidate of eventCandidates) {
+                  try {
+                    ({
+                      bridgeEventsRaw,
+                      structuredBurnEvents,
+                      structuredMintEvents,
+                    } = collectBridgeEventArtifacts(candidate.tx, mapping.opnet.bridgeAddress, mapping.opnet.bridgeHex));
+                    tx = candidate.tx;
+                    if (bridgeEventsRaw.length > 0 || structuredBurnEvents.length > 0 || structuredMintEvents.length > 0) {
+                      break;
+                    }
+                  } catch (error) {
+                    lastEventError = error;
+                    if (candidate.label === "parsed" && rawTxAtIndex) {
+                      console.warn(
+                        `[opnet-burn-poller] tx=${txHash} parsed tx event access failed; retaining raw tx events: ${
+                          error instanceof Error ? error.message : String(error)
+                        }`,
+                      );
+                      continue;
+                    }
+                    if (candidate.label === "raw" && parsedTx && parsedTx !== rawTxAtIndex) {
+                      console.warn(
+                        `[opnet-burn-poller] tx=${txHash} raw tx event access failed; trying parsed tx events: ${
+                          error instanceof Error ? error.message : String(error)
+                        }`,
+                      );
+                      continue;
+                    }
                     throw error;
                   }
-                  ({
-                    bridgeEventsRaw,
-                    structuredBurnEvents,
-                    structuredMintEvents,
-                  } = collectBridgeEventArtifacts(rawTxAtIndex, mapping.opnet.bridgeAddress, mapping.opnet.bridgeHex));
-                  tx = rawTxAtIndex;
-                  console.warn(
-                    `[opnet-burn-poller] tx=${txHash} falling back to raw tx events after parsed tx event access failed: ${
-                      error instanceof Error ? error.message : String(error)
-                    }`,
-                  );
+                }
+                if (bridgeEventsRaw.length === 0 && structuredBurnEvents.length === 0 && structuredMintEvents.length === 0 && lastEventError) {
+                  throw lastEventError;
                 }
                 if (bridgeEventsRaw.length === 0 && structuredBurnEvents.length === 0 && structuredMintEvents.length === 0) continue;
                 const decodedEvents = [
