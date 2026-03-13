@@ -239,7 +239,7 @@ function parseMapping(raw, options = {}) {
   return mapping;
 }
 
-async function buildPendingAttestation(log, mapping, relaySigners) {
+async function buildPendingAttestation(log, mapping, relaySigners, requiredConfirmations) {
   if (!Array.isArray(log.topics) || log.topics.length < 4) {
     throw new Error(`Unexpected log topics length: ${log.topics?.length ?? 0}`);
   }
@@ -321,6 +321,8 @@ async function buildPendingAttestation(log, mapping, relaySigners) {
       blockNumber: Number(hexToBigInt(log.blockNumber)),
       txHash: log.transactionHash,
       logIndex: Number(hexToBigInt(log.logIndex)),
+      observedAt: new Date().toISOString(),
+      requiredConfirmations,
     },
   };
 }
@@ -459,7 +461,7 @@ Example:
               const id = `deposit:${log.transactionHash}:${Number(hexToBigInt(log.logIndex))}`;
               if (seen.has(id)) continue;
               seen.add(id);
-              pending.push(await buildPendingAttestation(log, mapping, relaySigners));
+              pending.push(await buildPendingAttestation(log, mapping, relaySigners, minConfirmations));
               continue;
             }
             if (topic0 === WITHDRAWAL_RELEASED_TOPIC0) {

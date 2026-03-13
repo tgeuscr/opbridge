@@ -103,6 +103,19 @@ type MintSubmission = {
   relaySignaturesPackedHex?: string;
 };
 
+type FinalityInfo = {
+  status?: string;
+  sourceChain?: string;
+  sourceBlockNumber?: number | string | null;
+  sourceBlockHash?: string | null;
+  sourceTxHash?: string | null;
+  sourceLogIndex?: number | string | null;
+  observedAt?: string | null;
+  requiredConfirmations?: number | string | null;
+  currentConfirmations?: number | string | null;
+  remainingConfirmations?: number | string | null;
+};
+
 type MintCandidate = {
   depositId?: string;
   ready?: boolean;
@@ -111,6 +124,7 @@ type MintCandidate = {
   processed?: boolean | number | string;
   message?: Record<string, unknown> | null;
   mintSubmission?: MintSubmission;
+  finality?: FinalityInfo | null;
 };
 
 type ReleaseSubmission = {
@@ -131,6 +145,7 @@ type ReleaseCandidate = {
   processed?: boolean | number | string;
   message?: Record<string, unknown> | null;
   releaseSubmission?: ReleaseSubmission;
+  finality?: FinalityInfo | null;
 };
 
 const BRIDGE_BURN_ABI = [
@@ -179,6 +194,19 @@ function short(value?: string | null) {
   if (!value) return '-';
   if (value.length < 14) return value;
   return `${value.slice(0, 8)}...${value.slice(-6)}`;
+}
+
+function formatFinalitySummary(finality?: FinalityInfo | null) {
+  if (!finality) return null;
+  const parts = [];
+  if (finality.status) parts.push(`status=${finality.status}`);
+  if (finality.sourceChain) parts.push(`sourceChain=${finality.sourceChain}`);
+  if (finality.sourceBlockNumber != null) parts.push(`sourceBlock=${String(finality.sourceBlockNumber)}`);
+  if (finality.requiredConfirmations != null) parts.push(`requiredConfirmations=${String(finality.requiredConfirmations)}`);
+  if (finality.currentConfirmations != null) parts.push(`currentConfirmations=${String(finality.currentConfirmations)}`);
+  if (finality.remainingConfirmations != null) parts.push(`remainingConfirmations=${String(finality.remainingConfirmations)}`);
+  if (finality.observedAt) parts.push(`observedAt=${finality.observedAt}`);
+  return parts.length ? parts.join(' ') : null;
 }
 
 function isThemeMode(value: string): value is 'light' | 'dark' {
@@ -990,11 +1018,12 @@ export function App() {
     try {
       setDepositLookupBusy(true);
       const response = await fetch(`${statusApiUrl.replace(/\/$/, '')}/deposits/${encodeURIComponent(id)}`);
-      const body = (await response.json()) as Record<string, unknown>;
+      const body = (await response.json()) as { mintCandidate?: MintCandidate } & Record<string, unknown>;
       if (!response.ok) {
         throw new Error(typeof body.error === 'string' ? body.error : `HTTP ${response.status}`);
       }
-      setDepositLookupResult(JSON.stringify(body, null, 2));
+      const summary = formatFinalitySummary(body.mintCandidate?.finality);
+      setDepositLookupResult(summary ? `${summary}\n\n${JSON.stringify(body, null, 2)}` : JSON.stringify(body, null, 2));
     } catch (error) {
       setDepositLookupResult(`Deposit lookup failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -1015,11 +1044,12 @@ export function App() {
     try {
       setWithdrawalLookupBusy(true);
       const response = await fetch(`${statusApiUrl.replace(/\/$/, '')}/withdrawals/${encodeURIComponent(id)}`);
-      const body = (await response.json()) as Record<string, unknown>;
+      const body = (await response.json()) as { releaseCandidate?: ReleaseCandidate } & Record<string, unknown>;
       if (!response.ok) {
         throw new Error(typeof body.error === 'string' ? body.error : `HTTP ${response.status}`);
       }
-      setWithdrawalLookupResult(JSON.stringify(body, null, 2));
+      const summary = formatFinalitySummary(body.releaseCandidate?.finality);
+      setWithdrawalLookupResult(summary ? `${summary}\n\n${JSON.stringify(body, null, 2)}` : JSON.stringify(body, null, 2));
     } catch (error) {
       setWithdrawalLookupResult(`Withdrawal lookup failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -1814,7 +1844,12 @@ export function App() {
           return;
         }
         if (!selected.ready) {
-          setClaimMintStatus(`Deposit ${wantedDepositId} is not ready yet. Wait for relayer aggregation and retry.`);
+          const finalitySummary = formatFinalitySummary(selected.finality);
+          setClaimMintStatus(
+            finalitySummary
+              ? `Deposit ${wantedDepositId} is not ready yet. ${finalitySummary}`
+              : `Deposit ${wantedDepositId} is not ready yet. Wait for relayer aggregation and retry.`,
+          );
           return;
         }
       } else {

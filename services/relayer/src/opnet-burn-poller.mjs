@@ -789,6 +789,8 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                       txIndex: tx?.index ?? txIndex,
                       eventType: evt.type,
                       eventIndex: burnOrdinal - 1,
+                      observedAt: new Date().toISOString(),
+                      requiredConfirmations: minConfirmations,
                     },
                   });
                 }

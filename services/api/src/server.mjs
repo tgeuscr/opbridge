@@ -2,6 +2,8 @@ import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { JSONRpcProvider } from 'opnet';
+import { networks } from '@btc-vision/bitcoin';
 import {
   openApiDb,
   getApiSummary,
@@ -27,10 +29,23 @@ const CORS_ALLOW_METHODS = 'GET, POST, OPTIONS';
 const CORS_MAX_AGE_SECONDS = '600';
 const ORIGIN_RULES = buildOriginRules(CORS_ALLOWED_ORIGINS);
 const HEARTBEAT_STALE_MS = Number(process.env.RELAYER_API_HEARTBEAT_STALE_MS?.trim() || '90000');
+const HEAD_CACHE_POLL_MS = Number(process.env.RELAYER_API_HEAD_CACHE_POLL_MS?.trim() || '15000');
+const SEPOLIA_RPC_URL = process.env.RELAYER_API_SEPOLIA_RPC_URL?.trim() || '';
+const OPNET_RPC_URL = process.env.RELAYER_API_OPNET_RPC_URL?.trim() || '';
+const OPNET_NETWORK_NAME = process.env.RELAYER_API_OPNET_NETWORK?.trim() || 'testnet';
 const EXPECTED_RELAYER_NAMES = String(process.env.RELAYER_API_EXPECTED_RELAYER_NAMES || '')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
+const headCache = new Map();
+
+function resolveOpnetNetwork(name) {
+  const normalized = String(name ?? 'testnet').trim().toLowerCase();
+  if (normalized === 'regtest') return networks.regtest;
+  if (normalized === 'testnet') return networks.opnetTestnet;
+  if (normalized === 'mainnet') return networks.bitcoin;
+  throw new Error(`Unsupported RELAYER_API_OPNET_NETWORK=${name}`);
+}
 
 function json(req, res, statusCode, body) {
   res.writeHead(statusCode, {
@@ -103,6 +118,37 @@ function readJsonBody(req) {
   });
 }
 
+async function fetchEthereumHead(rpcUrl) {
+  const response = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] }),
+  });
+  const body = await response.json();
+  if (!response.ok || body?.error || typeof body?.result !== 'string') {
+    throw new Error(`eth_blockNumber failed: ${JSON.stringify(body)}`);
+  }
+  return Number(BigInt(body.result));
+}
+
+async function fetchOpnetHead(rpcUrl, networkName) {
+  const provider = new JSONRpcProvider({
+    url: rpcUrl,
+    network: resolveOpnetNetwork(networkName),
+  });
+  return Number(await provider.getBlockNumber());
+}
+
+function getCachedHead(sourceChain) {
+  const value = String(sourceChain ?? '').trim().toLowerCase();
+  if (!value) return null;
+  if (value.includes('sepolia')) return headCache.get('sepolia') ?? null;
+  if (value === 'testnet' || value === 'regtest' || value === 'mainnet' || value.includes('opnet')) {
+    return headCache.get('opnet') ?? null;
+  }
+  return null;
+}
+
 function isAuthorized(req) {
   const token = process.env.RELAYER_API_WRITE_TOKEN?.trim();
   if (!token) return true;
@@ -117,6 +163,7 @@ function normalizePath(url) {
 
 function withMintCandidate(row) {
   if (!row) return null;
+  const observationSource = safeJson(row.observation_source_json);
   return {
     payloadHashHex: row.payload_hash_hex,
     depositId: row.deposit_id,
@@ -134,6 +181,8 @@ function withMintCandidate(row) {
     processed: row.processed === 1,
     processedTxHash: row.processed_tx_hash ?? null,
     processedAt: row.processed_at ?? null,
+    observationSource,
+    finality: buildFinality(observationSource, row.ready === 1, row.processed === 1),
     sourceFile: row.source_file,
     updatedAt: row.updated_at,
   };
@@ -141,6 +190,7 @@ function withMintCandidate(row) {
 
 function withReleaseCandidate(row) {
   if (!row) return null;
+  const observationSource = safeJson(row.observation_source_json);
   return {
     payloadHashHex: row.payload_hash_hex,
     withdrawalId: row.withdrawal_id,
@@ -158,6 +208,8 @@ function withReleaseCandidate(row) {
     processed: row.processed === 1,
     processedTxHash: row.processed_tx_hash ?? null,
     processedAt: row.processed_at ?? null,
+    observationSource,
+    finality: buildFinality(observationSource, row.ready === 1, row.processed === 1),
     sourceFile: row.source_file,
     updatedAt: row.updated_at,
   };
@@ -169,6 +221,42 @@ function safeJson(value) {
   } catch {
     return null;
   }
+}
+
+function buildFinality(source, ready, processed) {
+  if (!source || typeof source !== 'object') return null;
+  const requiredConfirmationsRaw = Number(source.requiredConfirmations);
+  const requiredConfirmations = Number.isInteger(requiredConfirmationsRaw) && requiredConfirmationsRaw >= 0
+    ? requiredConfirmationsRaw
+    : null;
+  const sourceBlockNumberRaw = Number(source.blockNumber);
+  const sourceBlockNumber = Number.isInteger(sourceBlockNumberRaw) && sourceBlockNumberRaw >= 0
+    ? sourceBlockNumberRaw
+    : null;
+  const currentHead = getCachedHead(source.network);
+  const currentConfirmations =
+    sourceBlockNumber != null && Number.isInteger(currentHead) && currentHead >= sourceBlockNumber
+      ? currentHead - sourceBlockNumber + 1
+      : null;
+  const remainingConfirmations =
+    requiredConfirmations != null && currentConfirmations != null
+      ? Math.max(requiredConfirmations - currentConfirmations, 0)
+      : null;
+  let status = requiredConfirmations != null ? 'confirming' : 'observed';
+  if (processed) status = 'processed';
+  else if (ready) status = 'ready';
+  return {
+    status,
+    sourceChain: source.network ?? null,
+    sourceBlockNumber,
+    sourceBlockHash: source.blockHash ?? null,
+    sourceTxHash: source.txHash ?? null,
+    sourceLogIndex: source.logIndex ?? source.eventIndex ?? null,
+    observedAt: source.observedAt ?? null,
+    requiredConfirmations,
+    currentConfirmations,
+    remainingConfirmations,
+  };
 }
 
 function summarizeRelayers(rows) {
@@ -210,6 +298,28 @@ function summarizeRelayers(rows) {
 
 export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
   const db = openApiDb(dbPath);
+  let headPollTimer = null;
+
+  async function refreshHeads() {
+    const jobs = [];
+    if (SEPOLIA_RPC_URL) {
+      jobs.push(
+        fetchEthereumHead(SEPOLIA_RPC_URL)
+          .then((value) => headCache.set('sepolia', value))
+          .catch((error) => console.error(`[api-heads] sepolia ${error instanceof Error ? error.message : String(error)}`)),
+      );
+    }
+    if (OPNET_RPC_URL) {
+      jobs.push(
+        fetchOpnetHead(OPNET_RPC_URL, OPNET_NETWORK_NAME)
+          .then((value) => headCache.set('opnet', value))
+          .catch((error) => console.error(`[api-heads] opnet ${error instanceof Error ? error.message : String(error)}`)),
+      );
+    }
+    if (jobs.length > 0) {
+      await Promise.all(jobs);
+    }
+  }
 
   const server = http.createServer((req, res) => {
     const method = req.method || 'GET';
@@ -417,6 +527,13 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
       const rows = db.prepare(`
         SELECT
           mc.*,
+          (
+            SELECT ma.source_json
+            FROM mint_attestations ma
+            WHERE ma.nonce = mc.deposit_id
+            ORDER BY ma.updated_at DESC
+            LIMIT 1
+          ) AS observation_source_json,
           CASE WHEN pm.deposit_id IS NULL THEN 0 ELSE 1 END AS processed,
           pm.tx_hash AS processed_tx_hash,
           pm.updated_at AS processed_at
@@ -434,6 +551,13 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
       const rows = db.prepare(`
         SELECT
           mc.*,
+          (
+            SELECT ma.source_json
+            FROM mint_attestations ma
+            WHERE ma.nonce = mc.deposit_id
+            ORDER BY ma.updated_at DESC
+            LIMIT 1
+          ) AS observation_source_json,
           CASE WHEN pm.deposit_id IS NULL THEN 0 ELSE 1 END AS processed,
           pm.tx_hash AS processed_tx_hash,
           pm.updated_at AS processed_at
@@ -450,6 +574,13 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
       const row = db.prepare(`
         SELECT
           mc.*,
+          (
+            SELECT ma.source_json
+            FROM mint_attestations ma
+            WHERE ma.nonce = mc.deposit_id
+            ORDER BY ma.updated_at DESC
+            LIMIT 1
+          ) AS observation_source_json,
           CASE WHEN pm.deposit_id IS NULL THEN 0 ELSE 1 END AS processed,
           pm.tx_hash AS processed_tx_hash,
           pm.updated_at AS processed_at
@@ -540,6 +671,13 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
       const rows = db.prepare(`
         SELECT
           rc.*,
+          (
+            SELECT ra.source_json
+            FROM release_attestations ra
+            WHERE ra.withdrawal_id = rc.withdrawal_id
+            ORDER BY ra.updated_at DESC
+            LIMIT 1
+          ) AS observation_source_json,
           CASE WHEN pr.withdrawal_id IS NULL THEN 0 ELSE 1 END AS processed,
           pr.tx_hash AS processed_tx_hash,
           pr.updated_at AS processed_at
@@ -557,6 +695,13 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
       const row = db.prepare(`
         SELECT
           rc.*,
+          (
+            SELECT ra.source_json
+            FROM release_attestations ra
+            WHERE ra.withdrawal_id = rc.withdrawal_id
+            ORDER BY ra.updated_at DESC
+            LIMIT 1
+          ) AS observation_source_json,
           CASE WHEN pr.withdrawal_id IS NULL THEN 0 ELSE 1 END AS processed,
           pr.tx_hash AS processed_tx_hash,
           pr.updated_at AS processed_at
@@ -596,6 +741,12 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
   return {
     server,
     listen() {
+      if ((SEPOLIA_RPC_URL || OPNET_RPC_URL) && !headPollTimer) {
+        void refreshHeads();
+        headPollTimer = setInterval(() => {
+          void refreshHeads();
+        }, HEAD_CACHE_POLL_MS);
+      }
       server.listen(PORT, HOST, () => {
         // eslint-disable-next-line no-console
         console.log(
@@ -611,6 +762,13 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
           ),
         );
       });
+    },
+    close(callback) {
+      if (headPollTimer) {
+        clearInterval(headPollTimer);
+        headPollTimer = null;
+      }
+      return server.close(callback);
     },
   };
 }
