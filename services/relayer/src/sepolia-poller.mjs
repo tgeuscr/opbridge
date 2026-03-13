@@ -375,9 +375,13 @@ Example:
   const opnetBridgeAddress = process.env.OPNET_BRIDGE_ADDRESS;
   const opnetBridgeHex = process.env.OPNET_BRIDGE_HEX;
   const maxBlockRange = Number(process.env.RELAYER_MAX_BLOCK_RANGE || 10);
+  const minConfirmations = Number(process.env.RELAYER_MIN_CONFIRMATIONS?.trim() || "10");
 
   if (!rpcUrl) {
     throw new Error("SEPOLIA_RPC_URL is required.");
+  }
+  if (!Number.isInteger(minConfirmations) || minConfirmations < 0) {
+    throw new Error("RELAYER_MIN_CONFIRMATIONS must be >= 0.");
   }
 
   const mappingRaw = fs.readFileSync(mappingFile, "utf8");
@@ -402,7 +406,7 @@ Example:
   const seen = new Set();
 
   console.log(
-    `Relayer poller started. id=${relayerId} vault=${mapping.ethereum.vaultAddress} fromBlock=${nextFromBlock} intervalMs=${pollIntervalMs} maxBlockRange=${maxBlockRange} signers=${relaySigners.length}`,
+    `Relayer poller started. id=${relayerId} vault=${mapping.ethereum.vaultAddress} fromBlock=${nextFromBlock} intervalMs=${pollIntervalMs} maxBlockRange=${maxBlockRange} minConfirmations=${minConfirmations} signers=${relaySigners.length}`,
   );
   if (relaySigners.length === 0) {
     console.log("[poller] no relay signer keys configured; pending attestations will be unsigned.");
@@ -412,13 +416,14 @@ Example:
   while (true) {
     try {
       const latest = hexToBigInt(await rpc(rpcUrl, "eth_blockNumber", []));
-      if (latest >= nextFromBlock) {
+      const finalizedHead = latest >= BigInt(minConfirmations) ? latest - BigInt(minConfirmations) : -1n;
+      if (finalizedHead >= nextFromBlock) {
         const pending = [];
         const processedReleases = [];
         let windowStart = nextFromBlock;
-        while (windowStart <= latest) {
+        while (windowStart <= finalizedHead) {
           const initialEnd = windowStart + BigInt(maxBlockRange) - 1n;
-          let clampedEnd = initialEnd < latest ? initialEnd : latest;
+          let clampedEnd = initialEnd < finalizedHead ? initialEnd : finalizedHead;
           let logs = null;
           while (logs === null) {
             const fromHex = `0x${windowStart.toString(16)}`;
@@ -525,7 +530,7 @@ Example:
           }
         }
 
-        nextFromBlock = latest + 1n;
+        nextFromBlock = finalizedHead + 1n;
       }
     } catch (error) {
       console.error(`[poller-error] ${error instanceof Error ? error.message : String(error)}`);
@@ -536,7 +541,7 @@ Example:
         relayerName: relayerId,
         role: "sepolia-poller",
         status: "ok",
-        detail: `nextFromBlock=${nextFromBlock.toString()}`,
+        detail: `nextFromBlock=${nextFromBlock.toString()} minConfirmations=${minConfirmations}`,
       });
     } catch (error) {
       console.error(`[poller-heartbeat] ${error instanceof Error ? error.message : String(error)}`);

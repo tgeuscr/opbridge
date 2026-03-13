@@ -532,6 +532,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
   const attestationVersion = Number(process.env.ATTESTATION_VERSION?.trim() || `${DEFAULT_ATTESTATION_VERSION}`);
   const pollIntervalMs = Number(process.env.RELAYER_POLL_INTERVAL_MS?.trim() || "30000");
   const maxBlockRange = Number(process.env.RELAYER_MAX_BLOCK_RANGE?.trim() || "5");
+  const minConfirmations = Number(process.env.RELAYER_MIN_CONFIRMATIONS?.trim() || "10");
   const startBlockEnv = process.env.RELAYER_START_BLOCK?.trim();
 
   if (!Number.isInteger(attestationVersion) || attestationVersion < 0 || attestationVersion > 255) {
@@ -542,6 +543,9 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
   }
   if (!Number.isInteger(maxBlockRange) || maxBlockRange < 1) {
     throw new Error("RELAYER_MAX_BLOCK_RANGE must be >= 1.");
+  }
+  if (!Number.isInteger(minConfirmations) || minConfirmations < 0) {
+    throw new Error("RELAYER_MIN_CONFIRMATIONS must be >= 0.");
   }
 
   const provider = createOpnetJsonRpcProvider({ url: rpcUrl, network: opnetNetwork });
@@ -564,7 +568,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
   const seen = new Set();
 
   console.log(
-    `OP_NET burn poller started. id=${relayerId} bridge=${mapping.opnet.bridgeAddress} fromBlock=${nextFromBlock} intervalMs=${pollIntervalMs} maxBlockRange=${maxBlockRange} signers=${relaySigners.length}`,
+    `OP_NET burn poller started. id=${relayerId} bridge=${mapping.opnet.bridgeAddress} fromBlock=${nextFromBlock} intervalMs=${pollIntervalMs} maxBlockRange=${maxBlockRange} minConfirmations=${minConfirmations} signers=${relaySigners.length}`,
   );
   console.log(`Output file: ${outputFile}`);
   console.log(`OP_NET RPC transport: ${describeOpnetRpcTransport()} -> ${rpcUrl}`);
@@ -575,13 +579,17 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
   while (true) {
     try {
       const head = await provider.getBlockNumber();
-      if (head >= nextFromBlock) {
+      const finalizedHead = head >= BigInt(minConfirmations) ? head - BigInt(minConfirmations) : -1n;
+      if (finalizedHead >= nextFromBlock) {
         const pending = [];
         const processedMints = [];
         let retryFromBlock = null;
         let cursor = nextFromBlock;
-        while (cursor <= head) {
-          const end = cursor + BigInt(maxBlockRange) - 1n <= head ? cursor + BigInt(maxBlockRange) - 1n : head;
+        while (cursor <= finalizedHead) {
+          const end =
+            cursor + BigInt(maxBlockRange) - 1n <= finalizedHead
+              ? cursor + BigInt(maxBlockRange) - 1n
+              : finalizedHead;
           for (let height = cursor; height <= end; height++) {
             let block;
             try {
@@ -860,7 +868,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
             `[opnet-burn-poller] retaining cursor at block=${nextFromBlock.toString()} for retry after parse failures.`,
           );
         } else {
-          nextFromBlock = head + 1n;
+          nextFromBlock = finalizedHead + 1n;
         }
       }
     } catch (error) {
@@ -872,7 +880,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
         relayerName: relayerId,
         role: "opnet-burn-poller",
         status: "ok",
-        detail: `nextFromBlock=${nextFromBlock.toString()}`,
+        detail: `nextFromBlock=${nextFromBlock.toString()} minConfirmations=${minConfirmations}`,
       });
     } catch (error) {
       console.error(`[opnet-burn-heartbeat] ${error instanceof Error ? error.message : String(error)}`);
