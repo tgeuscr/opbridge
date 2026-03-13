@@ -539,7 +539,7 @@ Example:
     }
 
     try {
-      const heartbeatHead = await provider.getBlockNumber();
+      const heartbeatHead = hexToBigInt(await rpc(rpcUrl, "eth_blockNumber", []));
       const heartbeatFinalizedHead =
         heartbeatHead >= BigInt(minConfirmations) ? heartbeatHead - BigInt(minConfirmations) : -1n;
       await publishRelayerHeartbeat({
