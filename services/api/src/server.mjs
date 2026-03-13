@@ -129,16 +129,36 @@ async function fetchEthereumHead(rpcUrl) {
   return Number(BigInt(body.result));
 }
 
+function parseHeadResult(result) {
+  if (typeof result === 'number' && Number.isFinite(result)) {
+    return Math.trunc(result);
+  }
+  if (typeof result === 'string' && result.trim()) {
+    return Number(BigInt(result));
+  }
+  throw new Error(`Unsupported head result: ${JSON.stringify(result)}`);
+}
+
 async function fetchOpnetHead(rpcUrl, networkName) {
-  const [{ JSONRpcProvider }, { networks }] = await Promise.all([
-    import('opnet'),
-    import('@btc-vision/bitcoin'),
-  ]);
-  const provider = new JSONRpcProvider({
-    url: rpcUrl,
-    network: networks[resolveOpnetNetwork(networkName)],
-  });
-  return Number(await provider.getBlockNumber());
+  const methods = ['getBlockNumber', 'eth_blockNumber'];
+  let lastError = null;
+  for (const method of methods) {
+    try {
+      const response = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: [] }),
+      });
+      const body = await response.json();
+      if (!response.ok || body?.error) {
+        throw new Error(`${method} failed: ${JSON.stringify(body)}`);
+      }
+      return parseHeadResult(body?.result);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(`Failed to fetch OPNet head for network=${networkName}`);
 }
 
 function getCachedHead(sourceChain) {
