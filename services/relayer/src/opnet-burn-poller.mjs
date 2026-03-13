@@ -878,11 +878,20 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
     }
 
     try {
+      const heartbeatHead = await provider.getBlockNumber();
+      const heartbeatFinalizedHead =
+        heartbeatHead >= BigInt(minConfirmations) ? heartbeatHead - BigInt(minConfirmations) : -1n;
       await publishRelayerHeartbeat({
         relayerName: relayerId,
         role: "opnet-burn-poller",
         status: "ok",
-        detail: `nextFromBlock=${nextFromBlock.toString()} minConfirmations=${minConfirmations}`,
+        detail: JSON.stringify({
+          sourceChain: opnetNetworkName,
+          currentHead: Number(heartbeatHead),
+          finalizedHead: heartbeatFinalizedHead >= 0n ? Number(heartbeatFinalizedHead) : null,
+          minConfirmations,
+          nextFromBlock: nextFromBlock.toString(),
+        }),
       });
     } catch (error) {
       console.error(`[opnet-burn-heartbeat] ${error instanceof Error ? error.message : String(error)}`);

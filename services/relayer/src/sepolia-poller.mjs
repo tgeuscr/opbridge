@@ -539,11 +539,20 @@ Example:
     }
 
     try {
+      const heartbeatHead = await provider.getBlockNumber();
+      const heartbeatFinalizedHead =
+        heartbeatHead >= BigInt(minConfirmations) ? heartbeatHead - BigInt(minConfirmations) : -1n;
       await publishRelayerHeartbeat({
         relayerName: relayerId,
         role: "sepolia-poller",
         status: "ok",
-        detail: `nextFromBlock=${nextFromBlock.toString()} minConfirmations=${minConfirmations}`,
+        detail: JSON.stringify({
+          sourceChain: "sepolia",
+          currentHead: Number(heartbeatHead),
+          finalizedHead: heartbeatFinalizedHead >= 0n ? Number(heartbeatFinalizedHead) : null,
+          minConfirmations,
+          nextFromBlock: nextFromBlock.toString(),
+        }),
       });
     } catch (error) {
       console.error(`[poller-heartbeat] ${error instanceof Error ? error.message : String(error)}`);

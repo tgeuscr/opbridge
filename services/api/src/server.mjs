@@ -27,24 +27,10 @@ const CORS_ALLOW_METHODS = 'GET, POST, OPTIONS';
 const CORS_MAX_AGE_SECONDS = '600';
 const ORIGIN_RULES = buildOriginRules(CORS_ALLOWED_ORIGINS);
 const HEARTBEAT_STALE_MS = Number(process.env.RELAYER_API_HEARTBEAT_STALE_MS?.trim() || '90000');
-const HEAD_CACHE_POLL_MS = Number(process.env.RELAYER_API_HEAD_CACHE_POLL_MS?.trim() || '15000');
-const SEPOLIA_RPC_URL = process.env.RELAYER_API_SEPOLIA_RPC_URL?.trim() || '';
-const OPNET_RPC_URL = process.env.RELAYER_API_OPNET_RPC_URL?.trim() || '';
-const OPNET_NETWORK_NAME = process.env.RELAYER_API_OPNET_NETWORK?.trim() || 'testnet';
 const EXPECTED_RELAYER_NAMES = String(process.env.RELAYER_API_EXPECTED_RELAYER_NAMES || '')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
-const headCache = new Map();
-
-function resolveOpnetNetwork(name) {
-  const normalized = String(name ?? 'testnet').trim().toLowerCase();
-  if (normalized === 'regtest') return 'regtest';
-  if (normalized === 'testnet') return 'opnetTestnet';
-  if (normalized === 'mainnet') return 'bitcoin';
-  throw new Error(`Unsupported RELAYER_API_OPNET_NETWORK=${name}`);
-}
-
 function json(req, res, statusCode, body) {
   res.writeHead(statusCode, {
     ...corsHeaders(req),
@@ -116,61 +102,6 @@ function readJsonBody(req) {
   });
 }
 
-async function fetchEthereumHead(rpcUrl) {
-  const response = await fetch(rpcUrl, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] }),
-  });
-  const body = await response.json();
-  if (!response.ok || body?.error || typeof body?.result !== 'string') {
-    throw new Error(`eth_blockNumber failed: ${JSON.stringify(body)}`);
-  }
-  return Number(BigInt(body.result));
-}
-
-function parseHeadResult(result) {
-  if (typeof result === 'number' && Number.isFinite(result)) {
-    return Math.trunc(result);
-  }
-  if (typeof result === 'string' && result.trim()) {
-    return Number(BigInt(result));
-  }
-  throw new Error(`Unsupported head result: ${JSON.stringify(result)}`);
-}
-
-async function fetchOpnetHead(rpcUrl, networkName) {
-  const methods = ['getBlockNumber', 'eth_blockNumber'];
-  let lastError = null;
-  for (const method of methods) {
-    try {
-      const response = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: [] }),
-      });
-      const body = await response.json();
-      if (!response.ok || body?.error) {
-        throw new Error(`${method} failed: ${JSON.stringify(body)}`);
-      }
-      return parseHeadResult(body?.result);
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error(`Failed to fetch OPNet head for network=${networkName}`);
-}
-
-function getCachedHead(sourceChain) {
-  const value = String(sourceChain ?? '').trim().toLowerCase();
-  if (!value) return null;
-  if (value.includes('sepolia')) return headCache.get('sepolia') ?? null;
-  if (value === 'testnet' || value === 'regtest' || value === 'mainnet' || value.includes('opnet')) {
-    return headCache.get('opnet') ?? null;
-  }
-  return null;
-}
-
 function isAuthorized(req) {
   const token = process.env.RELAYER_API_WRITE_TOKEN?.trim();
   if (!token) return true;
@@ -183,7 +114,7 @@ function normalizePath(url) {
   return pathname.replace(/\/+$/, '') || '/';
 }
 
-function withMintCandidate(row) {
+function withMintCandidate(row, heartbeatHeads = null) {
   if (!row) return null;
   const observationSource = safeJson(row.observation_source_json);
   return {
@@ -204,13 +135,13 @@ function withMintCandidate(row) {
     processedTxHash: row.processed_tx_hash ?? null,
     processedAt: row.processed_at ?? null,
     observationSource,
-    finality: buildFinality(observationSource, row.ready === 1, row.processed === 1),
+    finality: buildFinality(observationSource, row.ready === 1, row.processed === 1, heartbeatHeads),
     sourceFile: row.source_file,
     updatedAt: row.updated_at,
   };
 }
 
-function withReleaseCandidate(row) {
+function withReleaseCandidate(row, heartbeatHeads = null) {
   if (!row) return null;
   const observationSource = safeJson(row.observation_source_json);
   return {
@@ -231,7 +162,7 @@ function withReleaseCandidate(row) {
     processedTxHash: row.processed_tx_hash ?? null,
     processedAt: row.processed_at ?? null,
     observationSource,
-    finality: buildFinality(observationSource, row.ready === 1, row.processed === 1),
+    finality: buildFinality(observationSource, row.ready === 1, row.processed === 1, heartbeatHeads),
     sourceFile: row.source_file,
     updatedAt: row.updated_at,
   };
@@ -245,7 +176,50 @@ function safeJson(value) {
   }
 }
 
-function buildFinality(source, ready, processed) {
+function parseHeartbeatDetail(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function inferSourceChain(detail, role) {
+  const explicit = String(detail?.sourceChain ?? '').trim().toLowerCase();
+  if (explicit) return explicit;
+  const normalizedRole = String(role ?? '').trim().toLowerCase();
+  if (normalizedRole === 'sepolia-poller') return 'sepolia';
+  if (normalizedRole === 'opnet-burn-poller') return 'testnet';
+  return null;
+}
+
+function deriveHeartbeatHeads(rows) {
+  const now = Date.now();
+  const map = new Map();
+  for (const row of rows) {
+    const updatedAt = row.updated_at ? Date.parse(String(row.updated_at)) : Number.NaN;
+    const isStale = !(Number.isFinite(updatedAt) && Math.max(0, now - updatedAt) <= HEARTBEAT_STALE_MS);
+    if (isStale) continue;
+    const detail = parseHeartbeatDetail(row.detail);
+    if (!detail) continue;
+    const sourceChain = inferSourceChain(detail, row.role);
+    if (!sourceChain) continue;
+    const currentHeadRaw = Number(detail.currentHead);
+    const finalizedHeadRaw = Number(detail.finalizedHead);
+    const currentHead = Number.isInteger(currentHeadRaw) && currentHeadRaw >= 0 ? currentHeadRaw : null;
+    const finalizedHead = Number.isInteger(finalizedHeadRaw) && finalizedHeadRaw >= 0 ? finalizedHeadRaw : null;
+    const existing = map.get(sourceChain) ?? { currentHead: null, finalizedHead: null };
+    map.set(sourceChain, {
+      currentHead: currentHead != null ? Math.max(existing.currentHead ?? -1, currentHead) : existing.currentHead,
+      finalizedHead: finalizedHead != null ? Math.max(existing.finalizedHead ?? -1, finalizedHead) : existing.finalizedHead,
+    });
+  }
+  return map;
+}
+
+function buildFinality(source, ready, processed, heartbeatHeads) {
   if (!source || typeof source !== 'object') return null;
   const requiredConfirmationsRaw = Number(source.requiredConfirmations);
   const requiredConfirmations = Number.isInteger(requiredConfirmationsRaw) && requiredConfirmationsRaw >= 0
@@ -255,10 +229,12 @@ function buildFinality(source, ready, processed) {
   const sourceBlockNumber = Number.isInteger(sourceBlockNumberRaw) && sourceBlockNumberRaw >= 0
     ? sourceBlockNumberRaw
     : null;
-  const currentHead = getCachedHead(source.network);
+  const heartbeatHead = heartbeatHeads?.get?.(String(source.network ?? '').trim().toLowerCase()) ?? null;
+  const currentHead = heartbeatHead?.currentHead ?? null;
+  const finalizedHead = heartbeatHead?.finalizedHead ?? currentHead;
   const currentConfirmations =
-    sourceBlockNumber != null && Number.isInteger(currentHead) && currentHead >= sourceBlockNumber
-      ? currentHead - sourceBlockNumber + 1
+    sourceBlockNumber != null && Number.isInteger(finalizedHead) && finalizedHead >= sourceBlockNumber
+      ? finalizedHead - sourceBlockNumber + 1
       : null;
   const remainingConfirmations =
     requiredConfirmations != null && currentConfirmations != null
@@ -320,28 +296,6 @@ function summarizeRelayers(rows) {
 
 export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
   const db = openApiDb(dbPath);
-  let headPollTimer = null;
-
-  async function refreshHeads() {
-    const jobs = [];
-    if (SEPOLIA_RPC_URL) {
-      jobs.push(
-        fetchEthereumHead(SEPOLIA_RPC_URL)
-          .then((value) => headCache.set('sepolia', value))
-          .catch((error) => console.error(`[api-heads] sepolia ${error instanceof Error ? error.message : String(error)}`)),
-      );
-    }
-    if (OPNET_RPC_URL) {
-      jobs.push(
-        fetchOpnetHead(OPNET_RPC_URL, OPNET_NETWORK_NAME)
-          .then((value) => headCache.set('opnet', value))
-          .catch((error) => console.error(`[api-heads] opnet ${error instanceof Error ? error.message : String(error)}`)),
-      );
-    }
-    if (jobs.length > 0) {
-      await Promise.all(jobs);
-    }
-  }
 
   const server = http.createServer((req, res) => {
     const method = req.method || 'GET';
@@ -414,7 +368,12 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
             relayerName,
             role,
             status,
-            detail: body?.detail ? String(body.detail) : null,
+            detail:
+              typeof body?.detail === 'string'
+                ? body.detail
+                : body?.detail != null
+                  ? JSON.stringify(body.detail)
+                  : null,
             updatedAt: body?.updatedAt ? String(body.updatedAt) : new Date().toISOString(),
           });
           json(req, res, 200, { ok: true, relayerName, role, status });
@@ -511,6 +470,12 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
     }
 
     if (method === 'GET' && pathname === '/mint-candidates') {
+      const heartbeatHeads = deriveHeartbeatHeads(
+        db.prepare(`
+          SELECT relayer_name, role, status, detail, updated_at
+          FROM relayer_heartbeats
+        `).all(),
+      );
       const url = new URL(req.url || '/', 'http://localhost');
       const depositId = url.searchParams.get('depositId')?.trim();
       const recipientHash = url.searchParams.get('recipientHash')?.trim()?.toLowerCase();
@@ -565,10 +530,20 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
         ORDER BY CAST(mc.deposit_id AS INTEGER) DESC, mc.updated_at DESC
         LIMIT ${limit}
       `).all(params);
-      return json(req, res, 200, { ok: true, count: rows.length, items: rows.map(withMintCandidate) });
+      return json(req, res, 200, {
+        ok: true,
+        count: rows.length,
+        items: rows.map((row) => withMintCandidate(row, heartbeatHeads)),
+      });
     }
 
     if (method === 'GET' && pathname.startsWith('/mint-candidates/')) {
+      const heartbeatHeads = deriveHeartbeatHeads(
+        db.prepare(`
+          SELECT relayer_name, role, status, detail, updated_at
+          FROM relayer_heartbeats
+        `).all(),
+      );
       const depositId = decodeURIComponent(pathname.slice('/mint-candidates/'.length));
       const rows = db.prepare(`
         SELECT
@@ -588,10 +563,21 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
         WHERE mc.deposit_id = ?
         ORDER BY mc.updated_at DESC
       `).all(depositId);
-      return json(req, res, 200, { ok: true, depositId, count: rows.length, items: rows.map(withMintCandidate) });
+      return json(req, res, 200, {
+        ok: true,
+        depositId,
+        count: rows.length,
+        items: rows.map((row) => withMintCandidate(row, heartbeatHeads)),
+      });
     }
 
     if (method === 'GET' && pathname.startsWith('/deposits/')) {
+      const heartbeatHeads = deriveHeartbeatHeads(
+        db.prepare(`
+          SELECT relayer_name, role, status, detail, updated_at
+          FROM relayer_heartbeats
+        `).all(),
+      );
       const depositId = decodeURIComponent(pathname.slice('/deposits/'.length));
       const row = db.prepare(`
         SELECT
@@ -613,7 +599,7 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
         LIMIT 1
       `).get(depositId);
       if (!row) return json(req, res, 404, { ok: false, error: 'Not found', depositId });
-      return json(req, res, 200, { ok: true, depositId, mintCandidate: withMintCandidate(row) });
+      return json(req, res, 200, { ok: true, depositId, mintCandidate: withMintCandidate(row, heartbeatHeads) });
     }
 
     if (method === 'GET' && pathname === '/mint-attestations') {
@@ -663,6 +649,12 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
     }
 
     if (method === 'GET' && pathname === '/release-candidates') {
+      const heartbeatHeads = deriveHeartbeatHeads(
+        db.prepare(`
+          SELECT relayer_name, role, status, detail, updated_at
+          FROM relayer_heartbeats
+        `).all(),
+      );
       const url = new URL(req.url || '/', 'http://localhost');
       const withdrawalId = url.searchParams.get('withdrawalId')?.trim();
       const opnetUser = url.searchParams.get('opnetUser')?.trim()?.toLowerCase();
@@ -709,10 +701,20 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
         ORDER BY CAST(rc.withdrawal_id AS INTEGER) DESC, rc.updated_at DESC
         LIMIT ${limit}
       `).all(params);
-      return json(req, res, 200, { ok: true, count: rows.length, items: rows.map(withReleaseCandidate) });
+      return json(req, res, 200, {
+        ok: true,
+        count: rows.length,
+        items: rows.map((row) => withReleaseCandidate(row, heartbeatHeads)),
+      });
     }
 
     if (method === 'GET' && pathname.startsWith('/withdrawals/')) {
+      const heartbeatHeads = deriveHeartbeatHeads(
+        db.prepare(`
+          SELECT relayer_name, role, status, detail, updated_at
+          FROM relayer_heartbeats
+        `).all(),
+      );
       const withdrawalId = decodeURIComponent(pathname.slice('/withdrawals/'.length));
       const row = db.prepare(`
         SELECT
@@ -734,7 +736,11 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
         LIMIT 1
       `).get(withdrawalId);
       if (!row) return json(req, res, 404, { ok: false, error: 'Not found', withdrawalId });
-      return json(req, res, 200, { ok: true, withdrawalId, releaseCandidate: withReleaseCandidate(row) });
+      return json(req, res, 200, {
+        ok: true,
+        withdrawalId,
+        releaseCandidate: withReleaseCandidate(row, heartbeatHeads),
+      });
     }
 
     return json(req, res, 404, {
@@ -763,12 +769,6 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
   return {
     server,
     listen() {
-      if ((SEPOLIA_RPC_URL || OPNET_RPC_URL) && !headPollTimer) {
-        void refreshHeads();
-        headPollTimer = setInterval(() => {
-          void refreshHeads();
-        }, HEAD_CACHE_POLL_MS);
-      }
       server.listen(PORT, HOST, () => {
         // eslint-disable-next-line no-console
         console.log(
@@ -786,10 +786,6 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
       });
     },
     close(callback) {
-      if (headPollTimer) {
-        clearInterval(headPollTimer);
-        headPollTimer = null;
-      }
       return server.close(callback);
     },
   };
