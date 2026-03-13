@@ -2,8 +2,6 @@ import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { JSONRpcProvider } from 'opnet';
-import { networks } from '@btc-vision/bitcoin';
 import {
   openApiDb,
   getApiSummary,
@@ -41,9 +39,9 @@ const headCache = new Map();
 
 function resolveOpnetNetwork(name) {
   const normalized = String(name ?? 'testnet').trim().toLowerCase();
-  if (normalized === 'regtest') return networks.regtest;
-  if (normalized === 'testnet') return networks.opnetTestnet;
-  if (normalized === 'mainnet') return networks.bitcoin;
+  if (normalized === 'regtest') return 'regtest';
+  if (normalized === 'testnet') return 'opnetTestnet';
+  if (normalized === 'mainnet') return 'bitcoin';
   throw new Error(`Unsupported RELAYER_API_OPNET_NETWORK=${name}`);
 }
 
@@ -132,9 +130,13 @@ async function fetchEthereumHead(rpcUrl) {
 }
 
 async function fetchOpnetHead(rpcUrl, networkName) {
+  const [{ JSONRpcProvider }, { networks }] = await Promise.all([
+    import('opnet'),
+    import('@btc-vision/bitcoin'),
+  ]);
   const provider = new JSONRpcProvider({
     url: rpcUrl,
-    network: resolveOpnetNetwork(networkName),
+    network: networks[resolveOpnetNetwork(networkName)],
   });
   return Number(await provider.getBlockNumber());
 }
