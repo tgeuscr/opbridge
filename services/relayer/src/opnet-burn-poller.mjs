@@ -443,6 +443,19 @@ function extractStructuredMintFinalizedEvents(contractEvents, bridgeAddress, bri
   return out;
 }
 
+function collectBridgeEventArtifacts(tx, bridgeAddress, bridgeHex) {
+  const contractEvents = tx?.events ?? tx?.receipt?.events;
+  const bridgeEventsRaw = normalizeEventBuckets(contractEvents, bridgeAddress, bridgeHex);
+  const structuredBurnEvents = extractStructuredBurnRequestedEvents(contractEvents, bridgeAddress, bridgeHex);
+  const structuredMintEvents = extractStructuredMintFinalizedEvents(contractEvents, bridgeAddress, bridgeHex);
+  return {
+    contractEvents,
+    bridgeEventsRaw,
+    structuredBurnEvents,
+    structuredMintEvents,
+  };
+}
+
 function decodeBridgeEventsSafely(bridge, bridgeEventsRaw, txHash, blockHeight) {
   const decodedEvents = [];
   for (let eventIndex = 0; eventIndex < bridgeEventsRaw.length; eventIndex += 1) {
@@ -620,6 +633,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
             }
             for (let txIndex = 0; txIndex < transactions.length; txIndex += 1) {
               let tx = transactions[txIndex];
+              const rawTxAtIndex = Array.isArray(block.rawTransactions) ? block.rawTransactions[txIndex] : null;
               const txIds = txIdentifierCandidates(tx);
               const txHash = txIds[0] ?? `${block.hash}:${blockHeight.toString()}:${txIndex.toString()}`;
               try {
@@ -653,22 +667,31 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                     }
                   }
                 }
-                const contractEvents = tx?.events ?? tx?.receipt?.events;
-                const bridgeEventsRaw = normalizeEventBuckets(
-                  contractEvents,
-                  mapping.opnet.bridgeAddress,
-                  mapping.opnet.bridgeHex,
-                );
-                const structuredBurnEvents = extractStructuredBurnRequestedEvents(
-                  contractEvents,
-                  mapping.opnet.bridgeAddress,
-                  mapping.opnet.bridgeHex,
-                );
-                const structuredMintEvents = extractStructuredMintFinalizedEvents(
-                  contractEvents,
-                  mapping.opnet.bridgeAddress,
-                  mapping.opnet.bridgeHex,
-                );
+                let bridgeEventsRaw = [];
+                let structuredBurnEvents = [];
+                let structuredMintEvents = [];
+                try {
+                  ({
+                    bridgeEventsRaw,
+                    structuredBurnEvents,
+                    structuredMintEvents,
+                  } = collectBridgeEventArtifacts(tx, mapping.opnet.bridgeAddress, mapping.opnet.bridgeHex));
+                } catch (error) {
+                  if (!rawTxAtIndex || rawTxAtIndex === tx) {
+                    throw error;
+                  }
+                  ({
+                    bridgeEventsRaw,
+                    structuredBurnEvents,
+                    structuredMintEvents,
+                  } = collectBridgeEventArtifacts(rawTxAtIndex, mapping.opnet.bridgeAddress, mapping.opnet.bridgeHex));
+                  tx = rawTxAtIndex;
+                  console.warn(
+                    `[opnet-burn-poller] tx=${txHash} falling back to raw tx events after parsed tx event access failed: ${
+                      error instanceof Error ? error.message : String(error)
+                    }`,
+                  );
+                }
                 if (bridgeEventsRaw.length === 0 && structuredBurnEvents.length === 0 && structuredMintEvents.length === 0) continue;
                 const decodedEvents = [
                   ...structuredMintEvents,

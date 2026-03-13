@@ -69,6 +69,21 @@ function loadEntries(files) {
   return entries;
 }
 
+function canonicalPayloadForReleaseMessage(message) {
+  const value = message ?? {};
+  return [
+    `v=${value.version}`,
+    `vault=${String(value.ethereumVault ?? "").toLowerCase()}`,
+    `bridge=${String(value.opnetBridge ?? "").toLowerCase()}`,
+    `ethUser=${String(value.ethereumUser ?? "").toLowerCase()}`,
+    `opUser=${String(value.opnetUser ?? "").toLowerCase()}`,
+    `asset=${value.assetId}`,
+    `amount=${value.amount}`,
+    `d=${value.direction}`,
+    `nonce=${value.nonce}`,
+  ].join("|");
+}
+
 function loadEntriesFromDb(dbPath) {
   const db = new DatabaseSync(dbPath, { readOnly: true });
   const rows = db.prepare(`
@@ -79,13 +94,15 @@ function loadEntriesFromDb(dbPath) {
   const entries = [];
   for (const row of rows) {
     try {
+      const message = row.message_json ? JSON.parse(row.message_json) : {};
       entries.push({
         file: `sqlite:${dbPath}`,
         relayerId: row.relayer_id ?? null,
         pending: {
           observationId: row.observation_id,
           payloadHashHex: row.payload_hash_hex,
-          message: row.message_json ? JSON.parse(row.message_json) : {},
+          message,
+          canonicalPayload: canonicalPayloadForReleaseMessage(message),
           signatures: row.signatures_json ? JSON.parse(row.signatures_json) : [],
           source: row.source_json ? JSON.parse(row.source_json) : null,
         },
@@ -153,7 +170,7 @@ function packReleaseCandidate(groupKey, groupEntries, threshold) {
     payloadHashHex: groupKey,
     ready: true,
     message,
-    canonicalPayload: first.pending.canonicalPayload,
+    canonicalPayload: first.pending.canonicalPayload || canonicalPayloadForReleaseMessage(message),
     observationIds: groupEntries.map((entry) => entry.pending.observationId),
     selectedSignatures: selected.map((entry) => ({
       relayIndex: entry.relayIndex,
