@@ -456,6 +456,8 @@ function extractStructuredMintFinalizedEvents(contractEvents, bridgeAddress, bri
 
 function collectBridgeEventArtifacts(txOrReceipt, bridgeAddress, bridgeHex) {
   const contractEvents =
+    cautiouslyReadEvents(txOrReceipt, "events") ??
+    cautiouslyReadEvents(txOrReceipt, "rawEvents") ??
     safeContractEvents(txOrReceipt) ??
     safeOwnValue(txOrReceipt, "events") ??
     safeOwnValue(txOrReceipt, "rawEvents") ??
@@ -539,6 +541,16 @@ function safeContractEvents(tx) {
   const receipt = safeOwnValue(tx, "receipt");
   const receiptEvents = safeOwnValue(receipt, "events");
   return receiptEvents && typeof receiptEvents === "object" ? receiptEvents : null;
+}
+
+function cautiouslyReadEvents(target, key) {
+  if (!target || (typeof target !== "object" && typeof target !== "function")) return null;
+  try {
+    const value = target[key];
+    return value && typeof value === "object" ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 function isLikelyTxHash(raw) {
