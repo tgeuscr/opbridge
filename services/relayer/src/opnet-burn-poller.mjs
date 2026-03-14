@@ -323,57 +323,76 @@ function canonicalPayload(message) {
   ].join("|");
 }
 
-function normalizeEventBuckets(contractEvents, bridgeAddress, bridgeHex) {
-  if (!contractEvents || typeof contractEvents !== "object") return [];
-  const targets = new Set([String(bridgeAddress).toLowerCase(), String(bridgeHex).toLowerCase()]);
-  const buckets = [];
-  const byteMapToBase64 = (value) => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-    const entries = Object.entries(value)
-      .map(([key, byte]) => [Number(key), Number(byte)])
-      .filter(([idx, byte]) => Number.isInteger(idx) && idx >= 0 && Number.isInteger(byte) && byte >= 0 && byte <= 255)
-      .sort((a, b) => a[0] - b[0]);
-    if (entries.length === 0) return null;
-    for (let i = 0; i < entries.length; i += 1) {
-      if (entries[i][0] !== i) return null;
+function eventPayloadToBase64(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.toLowerCase().startsWith("0x")) {
+    const hex = trimmed.slice(2);
+    if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
+      return null;
     }
-    return Buffer.from(entries.map(([, byte]) => byte)).toString("base64");
-  };
+    return Buffer.from(hex, "hex").toString("base64");
+  }
+  return trimmed;
+}
+
+function byteMapToBase64(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const entries = Object.entries(value)
+    .map(([key, byte]) => [Number(key), Number(byte)])
+    .filter(([idx, byte]) => Number.isInteger(idx) && idx >= 0 && Number.isInteger(byte) && byte >= 0 && byte <= 255)
+    .sort((a, b) => a[0] - b[0]);
+  if (entries.length === 0) return null;
+  for (let i = 0; i < entries.length; i += 1) {
+    if (entries[i][0] !== i) return null;
+  }
+  return Buffer.from(entries.map(([, byte]) => byte)).toString("base64");
+}
+
+function normalizeContractEventsInput(contractEvents) {
+  if (!contractEvents || typeof contractEvents !== "object") return [];
+  if (Array.isArray(contractEvents)) {
+    return contractEvents
+      .filter((event) => event && typeof event === "object")
+      .map((event) => ({
+        address: String(event.contractAddress ?? event.address ?? "").toLowerCase(),
+        event,
+      }))
+      .filter((entry) => entry.address);
+  }
+
+  const out = [];
   for (const [key, events] of Object.entries(contractEvents)) {
     if (!Array.isArray(events)) continue;
-    if (targets.has(String(key).toLowerCase())) {
-      for (const event of events) {
-        // opnet.decodeEvents expects base64 payload strings. Some RPC variants return
-        // object wrappers or hex-prefixed payloads; normalize to base64-safe strings.
-        let payload = event;
-        if (payload && typeof payload === "object") {
-          if (typeof payload.data === "string") {
-            payload = payload.data;
-          } else if (typeof payload.payload === "string") {
-            payload = payload.payload;
-          } else if (payload.data && typeof payload.data === "object") {
-            // Some OPNet RPC responses return structured events:
-            // { type: "BurnRequested", data: { "0": <byte>, ... } }.
-            payload = byteMapToBase64(payload.data);
-          }
-        }
+    for (const event of events) {
+      if (!event || typeof event !== "object") continue;
+      out.push({
+        address: String(key).toLowerCase(),
+        event,
+      });
+    }
+  }
+  return out;
+}
 
-        if (typeof payload !== "string") continue;
-        const trimmed = payload.trim();
-        if (!trimmed) continue;
-        if (trimmed.toLowerCase().startsWith("0x")) {
-          const hex = trimmed.slice(2);
-          if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
-            continue;
-          }
-          const asBase64 = Buffer.from(hex, "hex").toString("base64");
-          if (asBase64) buckets.push(asBase64);
-          continue;
-        }
-
-        buckets.push(trimmed);
+function normalizeEventBuckets(contractEvents, bridgeAddress, bridgeHex) {
+  const targets = new Set([String(bridgeAddress).toLowerCase(), String(bridgeHex).toLowerCase()]);
+  const buckets = [];
+  for (const { address, event } of normalizeContractEventsInput(contractEvents)) {
+    if (!targets.has(address)) continue;
+    let payload = event;
+    if (payload && typeof payload === "object") {
+      if (typeof payload.data === "string") {
+        payload = payload.data;
+      } else if (typeof payload.payload === "string") {
+        payload = payload.payload;
+      } else if (payload.data && typeof payload.data === "object") {
+        payload = byteMapToBase64(payload.data);
       }
     }
+    const asBase64 = eventPayloadToBase64(payload);
+    if (asBase64) buckets.push(asBase64);
   }
   return buckets;
 }
@@ -392,59 +411,55 @@ function byteMapToBytes(value) {
 }
 
 function extractStructuredBurnRequestedEvents(contractEvents, bridgeAddress, bridgeHex) {
-  if (!contractEvents || typeof contractEvents !== "object") return [];
   const targets = new Set([String(bridgeAddress).toLowerCase(), String(bridgeHex).toLowerCase()]);
   const out = [];
-  for (const [key, events] of Object.entries(contractEvents)) {
-    if (!targets.has(String(key).toLowerCase()) || !Array.isArray(events)) continue;
-    for (const event of events) {
-      if (!event || typeof event !== "object") continue;
-      if (String(event.type ?? "").trim() !== "BurnRequested") continue;
-      const bytes = byteMapToBytes(event.data);
-      if (!bytes || bytes.length < 129) continue;
+  for (const { address, event } of normalizeContractEventsInput(contractEvents)) {
+    if (!targets.has(address)) continue;
+    if (String(event.type ?? "").trim() !== "BurnRequested") continue;
+    const bytes = byteMapToBytes(event.data);
+    if (!bytes || bytes.length < 129) continue;
 
-      out.push({
-        type: "BurnRequested",
-        properties: {
-          assetId: Number(bytes[0]),
-          from: bytesToHex(bytes.slice(1, 33)),
-          ethereumRecipient: bytesToHex(bytes.slice(33, 65)),
-          amount: bytesToBigInt(bytes.slice(65, 97)).toString(),
-          withdrawalId: bytesToBigInt(bytes.slice(97, 129)).toString(),
-        },
-      });
-    }
+    out.push({
+      type: "BurnRequested",
+      properties: {
+        assetId: Number(bytes[0]),
+        from: bytesToHex(bytes.slice(1, 33)),
+        ethereumRecipient: bytesToHex(bytes.slice(33, 65)),
+        amount: bytesToBigInt(bytes.slice(65, 97)).toString(),
+        withdrawalId: bytesToBigInt(bytes.slice(97, 129)).toString(),
+      },
+    });
   }
   return out;
 }
 
 function extractStructuredMintFinalizedEvents(contractEvents, bridgeAddress, bridgeHex) {
-  if (!contractEvents || typeof contractEvents !== "object") return [];
   const targets = new Set([String(bridgeAddress).toLowerCase(), String(bridgeHex).toLowerCase()]);
   const out = [];
-  for (const [key, events] of Object.entries(contractEvents)) {
-    if (!targets.has(String(key).toLowerCase()) || !Array.isArray(events)) continue;
-    for (const event of events) {
-      if (!event || typeof event !== "object") continue;
-      if (String(event.type ?? "").trim() !== "MintFinalized") continue;
-      const bytes = byteMapToBytes(event.data);
-      if (!bytes || bytes.length < 97) continue;
-      out.push({
-        type: "MintFinalized",
-        properties: {
-          assetId: Number(bytes[0]),
-          recipient: bytesToHex(bytes.slice(1, 33)),
-          amount: bytesToBigInt(bytes.slice(33, 65)).toString(),
-          depositId: bytesToBigInt(bytes.slice(65, 97)).toString(),
-        },
-      });
-    }
+  for (const { address, event } of normalizeContractEventsInput(contractEvents)) {
+    if (!targets.has(address)) continue;
+    if (String(event.type ?? "").trim() !== "MintFinalized") continue;
+    const bytes = byteMapToBytes(event.data);
+    if (!bytes || bytes.length < 97) continue;
+    out.push({
+      type: "MintFinalized",
+      properties: {
+        assetId: Number(bytes[0]),
+        recipient: bytesToHex(bytes.slice(1, 33)),
+        amount: bytesToBigInt(bytes.slice(33, 65)).toString(),
+        depositId: bytesToBigInt(bytes.slice(65, 97)).toString(),
+      },
+    });
   }
   return out;
 }
 
-function collectBridgeEventArtifacts(tx, bridgeAddress, bridgeHex) {
-  const contractEvents = tx?.events ?? tx?.receipt?.events;
+function collectBridgeEventArtifacts(txOrReceipt, bridgeAddress, bridgeHex) {
+  const contractEvents =
+    safeContractEvents(txOrReceipt) ??
+    safeOwnValue(txOrReceipt, "events") ??
+    safeOwnValue(txOrReceipt, "rawEvents") ??
+    null;
   const bridgeEventsRaw = normalizeEventBuckets(contractEvents, bridgeAddress, bridgeHex);
   const structuredBurnEvents = extractStructuredBurnRequestedEvents(contractEvents, bridgeAddress, bridgeHex);
   const structuredMintEvents = extractStructuredMintFinalizedEvents(contractEvents, bridgeAddress, bridgeHex);
@@ -481,6 +496,51 @@ function hasStructuredBurnRequested(contractEvents, bridgeAddress, bridgeHex) {
   return structured.length > 0;
 }
 
+function safeOwnValue(target, key) {
+  if (!target || (typeof target !== "object" && typeof target !== "function")) return undefined;
+  let current = target;
+  while (current && (typeof current === "object" || typeof current === "function")) {
+    const descriptor = Object.getOwnPropertyDescriptor(current, key);
+    if (descriptor) {
+      if (Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+        return descriptor.value;
+      }
+      return undefined;
+    }
+    current = Object.getPrototypeOf(current);
+  }
+  return undefined;
+}
+
+function safeStringProperty(target, keys) {
+  for (const key of keys) {
+    const value = safeOwnValue(target, key);
+    if (typeof value !== "string") continue;
+    const normalized = value.trim().toLowerCase();
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+function safeNumericProperty(target, key) {
+  const value = safeOwnValue(target, key);
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function safeContractEvents(tx) {
+  const directEvents = safeOwnValue(tx, "events");
+  if (directEvents && typeof directEvents === "object") return directEvents;
+  const receipt = safeOwnValue(tx, "receipt");
+  const receiptEvents = safeOwnValue(receipt, "events");
+  return receiptEvents && typeof receiptEvents === "object" ? receiptEvents : null;
+}
+
 function isLikelyTxHash(raw) {
   const value = String(raw ?? "").trim().toLowerCase();
   return /^[0-9a-f]{64}$/.test(value);
@@ -489,7 +549,7 @@ function isLikelyTxHash(raw) {
 function txIdentifierCandidates(tx) {
   const out = [];
   for (const key of ["id", "txid", "hash", "transactionHash", "transactionId"]) {
-    const value = String(tx?.[key] ?? "").trim().toLowerCase();
+    const value = safeStringProperty(tx, [key]);
     if (!value || !isLikelyTxHash(value) || out.includes(value)) continue;
     out.push(value);
   }
@@ -647,7 +707,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
               const txHash = txIds[0] ?? `${block.hash}:${blockHeight.toString()}:${txIndex.toString()}`;
               try {
                 if (usedRawFallback && txIds.length > 0) {
-                  const rawEvents = tx?.events ?? tx?.receipt?.events;
+                  const rawEvents = safeContractEvents(tx);
                   const hasRawEvents = rawEvents && typeof rawEvents === "object" && Object.keys(rawEvents).length > 0;
                   const rawHasStructuredBurnRequested = hasStructuredBurnRequested(
                     rawEvents,
@@ -680,9 +740,23 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                 let structuredBurnEvents = [];
                 let structuredMintEvents = [];
                 const eventCandidates = [];
+                let receiptLoaded = false;
+                if (txIds.length > 0 && typeof provider.getTransactionReceipt === "function") {
+                  for (const candidate of txIds) {
+                    try {
+                      const receipt = await provider.getTransactionReceipt(candidate);
+                      if (!receipt || typeof receipt !== "object") continue;
+                      eventCandidates.push({ tx: receipt, label: "receipt" });
+                      receiptLoaded = true;
+                      break;
+                    } catch {
+                      // Try next candidate hash/id form.
+                    }
+                  }
+                }
                 if (rawTxAtIndex) eventCandidates.push({ tx: rawTxAtIndex, label: "raw" });
                 if (parsedTx && parsedTx !== rawTxAtIndex) eventCandidates.push({ tx: parsedTx, label: "parsed" });
-                if (eventCandidates.length === 0) eventCandidates.push({ tx, label: "selected" });
+                if (eventCandidates.length === 0) eventCandidates.push({ tx, label: receiptLoaded ? "receipt" : "selected" });
                 let lastEventError = null;
                 for (const candidate of eventCandidates) {
                   try {
@@ -697,6 +771,14 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                     }
                   } catch (error) {
                     lastEventError = error;
+                    if (candidate.label === "receipt") {
+                      console.warn(
+                        `[opnet-burn-poller] tx=${txHash} receipt event access failed; falling back to tx object events: ${
+                          error instanceof Error ? error.message : String(error)
+                        }`,
+                      );
+                      continue;
+                    }
                     if (candidate.label === "parsed" && rawTxAtIndex) {
                       console.warn(
                         `[opnet-burn-poller] tx=${txHash} parsed tx event access failed; retaining raw tx events: ${
@@ -786,7 +868,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                       blockNumber: Number(blockHeight),
                       blockHash: block.hash,
                       txHash,
-                      txIndex: tx?.index ?? txIndex,
+                      txIndex: safeNumericProperty(tx, "index") ?? txIndex,
                       eventType: evt.type,
                       eventIndex: burnOrdinal - 1,
                       observedAt: new Date().toISOString(),
