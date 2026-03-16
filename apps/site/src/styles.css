@@ -284,6 +284,71 @@ h2 {
   padding-top: 0.75rem;
 }
 
+.opnet-token-panel {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border: 1px dashed #c2c2c2;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.token-contract-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.token-contract-item {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.72rem;
+  border: 1px solid #d3d3d3;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-strong) 92%, white);
+}
+
+.token-contract-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.token-contract-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.token-contract-title img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  display: block;
+}
+
+.token-contract-address {
+  display: block;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid #d7d7d7;
+  background: #f5f5f3;
+  overflow-wrap: anywhere;
+}
+
+.token-contract-balance,
+.token-action-status {
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+.token-contract-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 h3 {
   margin: 0;
 }
@@ -995,6 +1060,14 @@ html[data-theme='dark'] .log-box {
   color: var(--ink);
 }
 
+html[data-theme='dark'] .opnet-token-panel,
+html[data-theme='dark'] .token-contract-item,
+html[data-theme='dark'] .token-contract-address {
+  border-color: #394253;
+  background: #1a1f28;
+  color: var(--ink);
+}
+
 html[data-theme='dark'] .api-status-pill.ok {
   border-color: #45b167;
   background: #173124;
@@ -1037,6 +1110,11 @@ html[data-theme='dark'] .route-box > div + div {
   .kv > div {
     grid-template-columns: 1fr;
     gap: 0.2rem;
+  }
+
+  .token-contract-meta {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .actions button {

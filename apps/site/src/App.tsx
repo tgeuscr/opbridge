@@ -395,6 +395,14 @@ function buildOpscanTxUrl(txid: string): string {
   return `${OPSCANN_TX_BASE_URL}${encodeURIComponent(normalized)}?network=op_testnet`;
 }
 
+function formatWrappedTokenBalance(state: OpnetAssetBalanceState, asset: AssetSymbol): string {
+  if (state.balanceRaw != null) {
+    return `${formatTokenAmount(state.balanceRaw, ETH_ASSET_CONFIG[asset].decimals)} ${formatOpnetTicker(asset)}`;
+  }
+  if (state.error) return 'Balance unavailable';
+  return '-';
+}
+
 function formatDurationShort(totalSeconds: bigint): string {
   if (totalSeconds <= 0n) return '0s';
   const day = 86400n;
@@ -829,6 +837,7 @@ export function App() {
   const [claimReleaseBusy, setClaimReleaseBusy] = useState(false);
   const [claimReleaseStatus, setClaimReleaseStatus] = useState('No withdrawal claim started yet.');
   const [claimReleaseTxHash, setClaimReleaseTxHash] = useState('');
+  const [tokenActionStatus, setTokenActionStatus] = useState('');
   const [fallbackSigner, setFallbackSigner] = useState<UnisatSigner | null>(null);
   const [fallbackSignerError, setFallbackSignerError] = useState<string | null>(null);
   const [showUxGuide, setShowUxGuide] = useState(false);
@@ -1960,6 +1969,10 @@ export function App() {
       setDepositLookupId(depositId.toString());
       setClaimMintStatus('Deposit claim sent.');
       await fetchReadyMintCandidates();
+      const mintedAsset = symbolForAssetId(assetId);
+      if (mintedAsset) {
+        await refreshOpnetBalance([mintedAsset]);
+      }
     } catch (error) {
       setClaimMintOpnetTxId('');
       const baseMessage = `Mint claim failed: ${formatEthereumError(error)}`;
@@ -2136,6 +2149,61 @@ export function App() {
     } finally {
       setClaimReleaseBusy(false);
     }
+  }
+
+  async function copyWrappedTokenAddress(asset: AssetSymbol) {
+    const tokenAddress = OPNET_TOKEN_ADDRESSES[asset]?.trim() || '';
+    if (!tokenAddress) {
+      setTokenActionStatus(`Missing ${formatOpnetTicker(asset)} contract address.`);
+      return;
+    }
+
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error('Clipboard access is unavailable in this browser.');
+      }
+      await navigator.clipboard.writeText(tokenAddress);
+      setTokenActionStatus(`${formatOpnetTicker(asset)} address copied.`);
+    } catch (error) {
+      setTokenActionStatus(`Copy failed: ${formatEthereumError(error)}`);
+    }
+  }
+
+  function renderWrappedTokenPanel(asset: AssetSymbol) {
+    const option = ASSET_OPTIONS.find((entry) => entry.symbol === asset);
+    const tokenAddress = OPNET_TOKEN_ADDRESSES[asset];
+    const balanceState = opnetBalanceByAsset[asset];
+    return (
+      <section className="opnet-token-panel" aria-label="Wrapped token contracts on OPNet">
+        <div className="card-head">
+          <div>
+            <h3>{formatOpnetTicker(asset)} Contract on OPNet</h3>
+            <p className="muted">Use this contract address in OP_WALLET for the selected bridge token.</p>
+          </div>
+          <button type="button" onClick={() => void refreshOpnetBalance([asset])} disabled={!opWalletReady}>
+            Refresh Balance
+          </button>
+        </div>
+        <div className="token-contract-list">
+          <article key={`wrapped-token:${asset}`} className="token-contract-item">
+            <div className="token-contract-meta">
+              <div className="token-contract-title">
+                {option ? <img src={option.logo} alt={option.alt} /> : null}
+                <strong>{formatOpnetTicker(asset)}</strong>
+              </div>
+              <p className="token-contract-balance">{formatWrappedTokenBalance(balanceState, asset)}</p>
+            </div>
+            <code className="token-contract-address">{tokenAddress || `Set VITE_OPNET_${asset}_ADDRESS`}</code>
+            <div className="token-contract-actions">
+              <button type="button" onClick={() => void copyWrappedTokenAddress(asset)} disabled={!tokenAddress}>
+                Copy Address
+              </button>
+            </div>
+          </article>
+        </div>
+        {tokenActionStatus ? <p className="muted token-action-status">{tokenActionStatus}</p> : null}
+      </section>
+    );
   }
 
   return (
@@ -2623,6 +2691,7 @@ export function App() {
                 </>
               ) : null}
             </pre>
+            {opConnected ? renderWrappedTokenPanel(depositAsset) : null}
           </div>
         ) : null}
 
@@ -2664,6 +2733,7 @@ export function App() {
             </label>
             <p className="muted">Balance: {burnAssetBalanceLabel}</p>
             {burnAssetState?.error ? <p className="muted">OPNet balance error: {burnAssetState.error}</p> : null}
+            {renderWrappedTokenPanel(burnAsset)}
             <div className="actions">
               <button
                 className="primary"
