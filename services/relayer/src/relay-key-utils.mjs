@@ -2,23 +2,9 @@ import { createHash } from "node:crypto";
 import { Mnemonic, Address } from "@btc-vision/transaction";
 import { networks } from "@btc-vision/bitcoin";
 import { ethers } from "ethers";
+import { concatBytes, bytesToHex, hexToBytes } from "./byte-utils.mjs";
 
 export const MLDSA_PUBKEY_BYTES = 1312;
-
-export function bytesToHex(bytes) {
-  return `0x${Buffer.from(bytes).toString("hex")}`;
-}
-
-export function concatBytes(parts) {
-  const total = parts.reduce((acc, part) => acc + part.length, 0);
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
-  }
-  return out;
-}
 
 export function requireMnemonicFromEnv() {
   const phrase = process.env.RELAYER_KEYS_MNEMONIC?.trim();
@@ -68,7 +54,7 @@ export function deriveRelayKeys({ phrase, passphrase, count, startIndex, account
       const mldsaPublicKey = new Uint8Array(opWallet.quantumPublicKey);
       const mldsaPrivateKeyHex = opWallet.quantumPrivateKeyHex;
       const mldsaPublicKeyHex = bytesToHex(mldsaPublicKey);
-      const mldsaPubKeyHashHex = bytesToHex(createHash("sha256").update(Buffer.from(mldsaPublicKey)).digest());
+      const mldsaPubKeyHashHex = bytesToHex(createHash("sha256").update(mldsaPublicKey).digest());
       const opnetRelayId = new Address(mldsaPublicKey).toHex();
 
       if (mldsaPublicKey.length !== MLDSA_PUBKEY_BYTES) {
@@ -108,7 +94,7 @@ export function deriveRelayKeys({ phrase, passphrase, count, startIndex, account
 
 export function buildRelayPublicPayload({ relayRows, opnetNetworkName }) {
   const relayPubKeysPackedHex = bytesToHex(
-    concatBytes(relayRows.map((row) => Buffer.from(row.opnet.mldsaPublicKeyHex.slice(2), "hex"))),
+    concatBytes(relayRows.map((row) => hexToBytes(row.opnet.mldsaPublicKeyHex))),
   );
   return {
     generatedAt: new Date().toISOString(),

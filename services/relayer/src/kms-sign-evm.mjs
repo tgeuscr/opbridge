@@ -1,6 +1,7 @@
 import process from 'node:process';
 import { buildReleaseAttestationHash, bytesToHex, hexToBytes } from './attestation-hash-utils.mjs';
 import {
+  base64ToBytes,
   deriveEthereumAddressFromSpki,
   kmsGetPublicKey,
   kmsSign,
@@ -55,7 +56,7 @@ This script checks:
   const digestHex = bytesToHex(digestBytes);
 
   const publicKeyResponse = await kmsGetPublicKey(keyId);
-  const spkiDer = Buffer.from(String(publicKeyResponse.PublicKey), 'base64');
+  const spkiDer = base64ToBytes(String(publicKeyResponse.PublicKey));
   const ethereumAddress = deriveEthereumAddressFromSpki(spkiDer);
 
   const signResponse = await kmsSign({
@@ -64,7 +65,7 @@ This script checks:
     messageBytes: digestBytes,
     messageType,
   });
-  const derSignatureBytes = Buffer.from(String(signResponse.Signature), 'base64');
+  const derSignatureBytes = base64ToBytes(String(signResponse.Signature));
   const verifyResponse = await kmsVerify({
     keyId,
     signingAlgorithm,

@@ -2,6 +2,7 @@ import process from 'node:process';
 import { Address } from '@btc-vision/transaction';
 import { buildMintAttestationHash, bytesToHex, hexToBytes } from './attestation-hash-utils.mjs';
 import {
+  base64ToBytes,
   decodeSpkiBitString,
   deriveOpnetRelayId,
   kmsGetPublicKey,
@@ -54,7 +55,7 @@ This script checks:
   const messageBytes = loadMessageBytes();
 
   const publicKeyResponse = await kmsGetPublicKey(keyId);
-  const spkiDer = Buffer.from(String(publicKeyResponse.PublicKey), 'base64');
+  const spkiDer = base64ToBytes(String(publicKeyResponse.PublicKey));
   const publicKeyBytes = decodeSpkiBitString(spkiDer);
   const opnetRelayId = new Address(publicKeyBytes).toHex();
   const relayMeta = deriveOpnetRelayId(publicKeyBytes);
@@ -65,7 +66,7 @@ This script checks:
     messageBytes,
     messageType,
   });
-  const signatureBytes = Buffer.from(String(signResponse.Signature), 'base64');
+  const signatureBytes = base64ToBytes(String(signResponse.Signature));
   const verifyResponse = await kmsVerify({
     keyId,
     signingAlgorithm,

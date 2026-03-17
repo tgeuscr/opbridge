@@ -276,6 +276,22 @@
                 {
                     "name": "amount",
                     "type": "UINT256"
+                },
+                {
+                    "name": "operator",
+                    "type": "ADDRESS"
+                },
+                {
+                    "name": "from",
+                    "type": "ADDRESS"
+                },
+                {
+                    "name": "to",
+                    "type": "ADDRESS"
+                },
+                {
+                    "name": "tokenId",
+                    "type": "UINT256"
                 }
             ],
             "type": "Event"

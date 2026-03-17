@@ -1,5 +1,13 @@
 import process from 'node:process';
-import { bytesToHex, deriveEthereumAddressFromSpki, kmsGetPublicKey, kmsSign, recoverEthereumPackedSignature } from '../aws-kms-utils.mjs';
+import {
+  base64ToBytes,
+  bytesToHex,
+  deriveEthereumAddressFromSpki,
+  hexToBytes,
+  kmsGetPublicKey,
+  kmsSign,
+  recoverEthereumPackedSignature,
+} from '../aws-kms-utils.mjs';
 
 export async function loadKmsEvmRelaySigners({ relayerId, relayIndexFromEnv }) {
   if (relayIndexFromEnv == null) {
@@ -16,7 +24,7 @@ export async function loadKmsEvmRelaySigners({ relayerId, relayIndexFromEnv }) {
   const signingAlgorithm = process.env.KMS_EVM_SIGNING_ALGORITHM?.trim() || 'ECDSA_SHA_256';
   const messageType = process.env.KMS_EVM_MESSAGE_TYPE?.trim() || 'DIGEST';
   const publicKeyResponse = await kmsGetPublicKey(keyId);
-  const spkiDer = Buffer.from(String(publicKeyResponse.PublicKey), 'base64');
+  const spkiDer = base64ToBytes(String(publicKeyResponse.PublicKey));
   const signerAddress = deriveEthereumAddressFromSpki(spkiDer);
 
   return [
@@ -30,10 +38,10 @@ export async function loadKmsEvmRelaySigners({ relayerId, relayIndexFromEnv }) {
         const signResponse = await kmsSign({
           keyId,
           signingAlgorithm,
-          messageBytes: Buffer.from(String(digestHex).replace(/^0x/, ''), 'hex'),
+          messageBytes: hexToBytes(digestHex),
           messageType,
         });
-        const derSignature = Buffer.from(String(signResponse.Signature), 'base64');
+        const derSignature = base64ToBytes(String(signResponse.Signature));
         const packed = recoverEthereumPackedSignature(digestHex, derSignature, signerAddress);
         return bytesToHex(packed.packedSignature);
       },

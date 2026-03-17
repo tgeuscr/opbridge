@@ -7,6 +7,7 @@ import { networks } from "@btc-vision/bitcoin";
 import { Address } from "@btc-vision/transaction";
 import { ABIDataTypes, BitcoinAbiTypes, getContract } from "opnet";
 import { ethers } from "ethers";
+import { bytesToBase64, hexToBytes } from "./byte-utils.mjs";
 import { createOpnetJsonRpcProvider, describeOpnetRpcTransport } from "./opnet-rpc-provider.mjs";
 import {
   publishProcessedMintsSnapshot,
@@ -108,19 +109,6 @@ function bytesToHex(bytes) {
   return `0x${Array.from(bytes)
     .map((value) => value.toString(16).padStart(2, "0"))
     .join("")}`;
-}
-
-function hexToBytes(raw) {
-  const value = String(raw ?? "").trim();
-  const normalized = value.startsWith("0x") ? value.slice(2) : value;
-  if (!/^[0-9a-fA-F]+$/.test(normalized) || normalized.length % 2 !== 0) {
-    throw new Error(`Invalid hex string: ${raw}`);
-  }
-  const out = new Uint8Array(normalized.length / 2);
-  for (let i = 0; i < out.length; i++) {
-    out[i] = Number.parseInt(normalized.slice(i * 2, i * 2 + 2), 16);
-  }
-  return out;
 }
 
 function concatBytes(parts) {
@@ -332,7 +320,7 @@ function eventPayloadToBase64(value) {
     if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
       return null;
     }
-    return Buffer.from(hex, "hex").toString("base64");
+    return bytesToBase64(hexToBytes(hex));
   }
   return trimmed;
 }
@@ -347,7 +335,7 @@ function byteMapToBase64(value) {
   for (let i = 0; i < entries.length; i += 1) {
     if (entries[i][0] !== i) return null;
   }
-  return Buffer.from(entries.map(([, byte]) => byte)).toString("base64");
+  return bytesToBase64(Uint8Array.from(entries.map(([, byte]) => byte)));
 }
 
 function normalizeContractEventsInput(contractEvents) {

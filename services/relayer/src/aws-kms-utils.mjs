@@ -5,6 +5,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { computeAddress, recoverAddress, Signature } from 'ethers';
+import { base64ToBytes, bytesToHex, hexToBytes } from './byte-utils.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -62,18 +63,6 @@ function leftPad32(bytes) {
   return out;
 }
 
-export function bytesToHex(bytes) {
-  return `0x${Buffer.from(bytes).toString('hex')}`;
-}
-
-export function hexToBytes(raw) {
-  const normalized = String(raw ?? '').trim().replace(/^0x/, '');
-  if (!/^[0-9a-fA-F]+$/.test(normalized) || normalized.length % 2 !== 0) {
-    throw new Error(`Invalid hex string: ${raw}`);
-  }
-  return Uint8Array.from(Buffer.from(normalized, 'hex'));
-}
-
 export async function runAwsCliJson(args) {
   try {
     const { stdout } = await execFileAsync('aws', args, {
@@ -101,7 +90,7 @@ export async function kmsSign({ keyId, signingAlgorithm, messageBytes, messageTy
   const messagePath = path.join(tempDir, 'message.bin');
   return runAwsCliJson([
     ...(await (async () => {
-      await fs.writeFile(messagePath, Buffer.from(messageBytes));
+      await fs.writeFile(messagePath, messageBytes);
       return [
         'kms',
         'sign',
@@ -128,8 +117,8 @@ export async function kmsVerify({ keyId, signingAlgorithm, messageBytes, message
   const signaturePath = path.join(tempDir, 'signature.bin');
   return runAwsCliJson([
     ...(await (async () => {
-      await fs.writeFile(messagePath, Buffer.from(messageBytes));
-      await fs.writeFile(signaturePath, Buffer.from(signatureBytes));
+      await fs.writeFile(messagePath, messageBytes);
+      await fs.writeFile(signaturePath, signatureBytes);
       return [
         'kms',
         'verify',
@@ -215,10 +204,12 @@ export function recoverEthereumPackedSignature(digestHex, derSignatureBytes, exp
 }
 
 export function deriveOpnetRelayId(publicKeyBytes) {
-  const relayPubKeyHashHex = bytesToHex(createHash('sha256').update(Buffer.from(publicKeyBytes)).digest());
+  const relayPubKeyHashHex = bytesToHex(createHash('sha256').update(publicKeyBytes).digest());
   return {
     publicKeyHex: bytesToHex(publicKeyBytes),
     publicKeyBytes: publicKeyBytes.length,
     relayPubKeyHashHex,
   };
 }
+
+export { base64ToBytes, bytesToHex, hexToBytes };

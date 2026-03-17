@@ -1,6 +1,6 @@
 import process from 'node:process';
 import { Address } from '@btc-vision/transaction';
-import { decodeSpkiBitString, kmsGetPublicKey, kmsSign } from '../aws-kms-utils.mjs';
+import { base64ToBytes, decodeSpkiBitString, kmsGetPublicKey, kmsSign } from '../aws-kms-utils.mjs';
 
 export async function loadKmsOpnetRelaySigners({ relayerId, relayIndexFromEnv }) {
   if (relayIndexFromEnv == null) {
@@ -17,7 +17,7 @@ export async function loadKmsOpnetRelaySigners({ relayerId, relayIndexFromEnv })
   const signingAlgorithm = process.env.KMS_OPNET_SIGNING_ALGORITHM?.trim() || 'ML_DSA_SHAKE_256';
   const messageType = process.env.KMS_OPNET_MESSAGE_TYPE?.trim() || 'RAW';
   const publicKeyResponse = await kmsGetPublicKey(keyId);
-  const spkiDer = Buffer.from(String(publicKeyResponse.PublicKey), 'base64');
+  const spkiDer = base64ToBytes(String(publicKeyResponse.PublicKey));
   const publicKey = decodeSpkiBitString(spkiDer);
   const signerId = new Address(publicKey).toHex();
 
@@ -35,7 +35,7 @@ export async function loadKmsOpnetRelaySigners({ relayerId, relayIndexFromEnv })
           messageBytes: messageHashBytes,
           messageType,
         });
-        return new Uint8Array(Buffer.from(String(signResponse.Signature), 'base64'));
+        return base64ToBytes(String(signResponse.Signature));
       },
     },
   ];

@@ -2,18 +2,10 @@ import fs from 'node:fs';
 import process from 'node:process';
 import { Address, MLDSASecurityLevel, QuantumBIP32Factory } from '@btc-vision/transaction';
 import { loadJsonSecretPayload, loadSecretString } from '../secret-provider.mjs';
+import { hexToBytes } from '../byte-utils.mjs';
 
 const ZERO_CHAIN_CODE = new Uint8Array(32);
 const DEFAULT_KEYS_FILE = 'services/relayer/.data/relay-keys.json';
-
-function hexToBytes(raw) {
-  const value = String(raw ?? '').trim();
-  const normalized = value.startsWith('0x') ? value.slice(2) : value;
-  if (!/^[0-9a-fA-F]+$/.test(normalized) || normalized.length % 2 !== 0) {
-    throw new Error('Invalid hex string.');
-  }
-  return new Uint8Array(Buffer.from(normalized, 'hex'));
-}
 
 function parseMldsaPrivateKey(raw) {
   const value = String(raw ?? '').trim();

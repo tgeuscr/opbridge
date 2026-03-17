@@ -1,29 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Address } from '@btc-vision/transaction';
-
-export function hexToBytes(raw) {
-  const value = String(raw ?? '').trim();
-  const normalized = value.startsWith('0x') ? value.slice(2) : value;
-  if (!/^[0-9a-fA-F]+$/.test(normalized) || normalized.length % 2 !== 0) {
-    throw new Error(`Invalid hex string: ${raw}`);
-  }
-  return Uint8Array.from(Buffer.from(normalized, 'hex'));
-}
-
-export function bytesToHex(bytes) {
-  return `0x${Buffer.from(bytes).toString('hex')}`;
-}
-
-export function concatBytes(parts) {
-  const totalLength = parts.reduce((acc, part) => acc + part.length, 0);
-  const out = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
-  }
-  return out;
-}
+import { bytesToHex, concatBytes, hexToBytes } from './byte-utils.mjs';
 
 export function u256ToBytes(value) {
   const bigint = BigInt(value);

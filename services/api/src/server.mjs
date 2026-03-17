@@ -31,6 +31,7 @@ const EXPECTED_RELAYER_NAMES = String(process.env.RELAYER_API_EXPECTED_RELAYER_N
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
+const UTF8_DECODER = new TextDecoder();
 function json(req, res, statusCode, body) {
   res.writeHead(statusCode, {
     ...corsHeaders(req),
@@ -92,7 +93,14 @@ function readJsonBody(req) {
     req.on('data', (chunk) => chunks.push(chunk));
     req.on('end', () => {
       try {
-        const raw = Buffer.concat(chunks).toString('utf8');
+        const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const bodyBytes = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+          bodyBytes.set(chunk, offset);
+          offset += chunk.length;
+        }
+        const raw = UTF8_DECODER.decode(bodyBytes);
         resolve(raw ? JSON.parse(raw) : {});
       } catch (error) {
         reject(error);
