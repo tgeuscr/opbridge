@@ -1,7 +1,7 @@
 import { BufferHelper } from '@btc-vision/transaction';
 
 export function bytesToHex(bytes) {
-  return `0x${BufferHelper.toHex(bytes)}`;
+  return `0x${BufferHelper.uint8ArrayToHex(bytes)}`;
 }
 
 export function hexToBytes(raw) {
@@ -10,7 +10,7 @@ export function hexToBytes(raw) {
   if (!/^[0-9a-fA-F]+$/.test(normalized) || normalized.length % 2 !== 0) {
     throw new Error(`Invalid hex string: ${raw}`);
   }
-  return BufferHelper.fromHex(normalized);
+  return BufferHelper.hexToUint8Array(normalized);
 }
 
 export function concatBytes(parts) {
