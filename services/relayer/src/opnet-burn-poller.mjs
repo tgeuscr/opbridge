@@ -25,6 +25,9 @@ const DIRECTION_OP_TO_ETH_RELEASE = 2;
 const DEFAULT_ATTESTATION_VERSION = 1;
 const DEFAULT_OPNET_RPC_URL = "https://regtest.opnet.org";
 const TESTNET_OPNET_RPC_URL = "https://testnet.opnet.org";
+const DISCOVERY_DEBUG_ENABLED =
+  process.env.RELAYER_DEBUG_DISCOVERY?.trim() === "1" ||
+  process.env.RELAYER_DEBUG_DISCOVERY?.trim()?.toLowerCase() === "true";
 
 const BRIDGE_EVENTS_ABI = [
   {
@@ -103,6 +106,12 @@ function requireEnv(name) {
     throw new Error(`Missing required env var: ${name}`);
   }
   return value.trim();
+}
+
+function logDiscovery(message) {
+  if (DISCOVERY_DEBUG_ENABLED) {
+    console.log(message);
+  }
 }
 
 function bytesToHex(bytes) {
@@ -572,6 +581,7 @@ Optional:
   RELAYER_START_BLOCK (default: latest-20)
   RELAYER_MAX_BLOCK_RANGE (default: 5)
   RELAYER_POLL_INTERVAL_MS (default: 30000)
+  RELAYER_DEBUG_DISCOVERY (default: false; enables verbose tx probing/fallback logs)
 
 ECDSA relay key options (one required for signatures; otherwise unsigned attestations are written):
   RELAYER_EVM_PRIVATE_KEY + RELAYER_INDEX
@@ -675,7 +685,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                 transactions = block.transactions;
               }
             } catch (error) {
-              console.warn(
+              logDiscovery(
                 `[opnet-burn-poller] block=${height.toString()} parsed tx list error: ${
                   error instanceof Error ? error.message : String(error)
                 }; falling back to rawTransactions.`,
@@ -732,7 +742,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                       }
                     }
                     if (!hydratedOk) {
-                      console.warn(`[opnet-burn-poller] tx=${txHash} hydration failed for ids=[${txIds.join(",")}].`);
+                      logDiscovery(`[opnet-burn-poller] tx=${txHash} hydration failed for ids=[${txIds.join(",")}].`);
                     }
                   }
                 }
@@ -772,7 +782,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                   } catch (error) {
                     lastEventError = error;
                     if (candidate.label === "receipt") {
-                      console.warn(
+                      logDiscovery(
                         `[opnet-burn-poller] tx=${txHash} receipt event access failed; falling back to tx object events: ${
                           error instanceof Error ? error.message : String(error)
                         }`,
@@ -780,7 +790,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                       continue;
                     }
                     if (candidate.label === "parsed" && rawTxAtIndex) {
-                      console.warn(
+                      logDiscovery(
                         `[opnet-burn-poller] tx=${txHash} parsed tx event access failed; retaining raw tx events: ${
                           error instanceof Error ? error.message : String(error)
                         }`,
@@ -788,7 +798,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                       continue;
                     }
                     if (candidate.label === "raw" && parsedTx && parsedTx !== rawTxAtIndex) {
-                      console.warn(
+                      logDiscovery(
                         `[opnet-burn-poller] tx=${txHash} raw tx event access failed; trying parsed tx events: ${
                           error instanceof Error ? error.message : String(error)
                         }`,
