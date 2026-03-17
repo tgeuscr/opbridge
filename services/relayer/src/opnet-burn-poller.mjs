@@ -845,15 +845,33 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                   };
                   const payloadHashBytes = encodeReleaseAttestationHash(message);
                   const payloadHashHex = bytesToHex(payloadHashBytes);
-                  const signatures = await Promise.all(
-                    relaySigners.map(async (signer) => ({
-                      relayIndex: signer.relayIndex,
-                      relayerId: signer.relayerId,
-                      signerId: signer.signerId,
-                      signerPubKeyHex: signer.signerPubKeyHex,
-                      signatureHex: await Promise.resolve(signer.signDigestHex(payloadHashHex)),
-                    })),
+                  const signatureResults = await Promise.all(
+                    relaySigners.map(async (signer) => {
+                      try {
+                        return {
+                          ok: true,
+                          signature: {
+                            relayIndex: signer.relayIndex,
+                            relayerId: signer.relayerId,
+                            signerId: signer.signerId,
+                            signerPubKeyHex: signer.signerPubKeyHex,
+                            signatureHex: await Promise.resolve(signer.signDigestHex(payloadHashHex)),
+                          },
+                        };
+                      } catch (error) {
+                        console.warn(
+                          `[opnet-burn-poller] tx=${txHash} withdrawalId=${message.nonce} signer=${signer.relayerId} signature generation failed: ${
+                            error instanceof Error ? error.message : String(error)
+                          }`,
+                        );
+                        return {
+                          ok: false,
+                          signerId: signer.signerId,
+                        };
+                      }
+                    }),
                   );
+                  const signatures = signatureResults.filter((result) => result.ok).map((result) => result.signature);
 
                   pending.push({
                     observationId,

@@ -8,6 +8,8 @@ import { computeAddress, recoverAddress, Signature } from 'ethers';
 import { base64ToBytes, bytesToHex, hexToBytes } from './byte-utils.mjs';
 
 const execFileAsync = promisify(execFile);
+const SECP256K1_ORDER = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141');
+const SECP256K1_HALF_ORDER = SECP256K1_ORDER >> 1n;
 
 function readLength(bytes, offset) {
   const first = bytes[offset];
@@ -60,6 +62,30 @@ function leftPad32(bytes) {
   }
   const out = new Uint8Array(32);
   out.set(bytes, 32 - bytes.length);
+  return out;
+}
+
+function bytesToBigInt(bytes) {
+  let value = 0n;
+  for (const byte of bytes) {
+    value = (value << 8n) | BigInt(byte);
+  }
+  return value;
+}
+
+function normalizeLowS(bytes) {
+  const value = bytesToBigInt(bytes);
+  if (value <= SECP256K1_HALF_ORDER) {
+    return bytes;
+  }
+
+  const normalized = SECP256K1_ORDER - value;
+  const out = new Uint8Array(32);
+  let cursor = normalized;
+  for (let i = 31; i >= 0; i -= 1) {
+    out[i] = Number(cursor & 0xffn);
+    cursor >>= 8n;
+  }
   return out;
 }
 
@@ -182,14 +208,15 @@ export function deriveEthereumAddressFromSpki(spkiDerBytes) {
 
 export function recoverEthereumPackedSignature(digestHex, derSignatureBytes, expectedAddress) {
   const { r, s } = decodeDerEcdsaSignature(derSignatureBytes);
+  const normalizedS = normalizeLowS(s);
   const rHex = bytesToHex(r);
-  const sHex = bytesToHex(s);
+  const sHex = bytesToHex(normalizedS);
   for (const v of [27, 28]) {
     const recovered = recoverAddress(digestHex, Signature.from({ r: rHex, s: sHex, v }));
     if (recovered.toLowerCase() === expectedAddress.toLowerCase()) {
       const packed = new Uint8Array(65);
       packed.set(r, 0);
-      packed.set(s, 32);
+      packed.set(normalizedS, 32);
       packed[64] = v;
       return {
         recovered,
