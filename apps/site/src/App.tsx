@@ -2,7 +2,7 @@ import { SupportedWallets, useWalletConnect } from '@btc-vision/walletconnect';
 import { networks } from '@btc-vision/bitcoin';
 import { Address, UnisatSigner } from '@btc-vision/transaction';
 import { ABIDataTypes, BitcoinAbiTypes, OP_NET_ABI, getContract } from 'opnet';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 type EthereumProvider = {
   isMetaMask?: boolean;
@@ -207,6 +207,91 @@ function formatFinalitySummary(finality?: FinalityInfo | null) {
   if (finality.remainingConfirmations != null) parts.push(`remainingConfirmations=${String(finality.remainingConfirmations)}`);
   if (finality.observedAt) parts.push(`observedAt=${finality.observedAt}`);
   return parts.length ? parts.join(' ') : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function formatStatusSummaryLabel(key: string): string {
+  const normalized = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\bmint\b/gi, 'deposit')
+    .replace(/\brelease\b/gi, 'withdrawal')
+    .replace(/\bprocessed\b/gi, 'claimed');
+
+  return normalized.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatStatusSummaryValue(value: unknown): string {
+  if (value == null) return '-';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'number' || typeof value === 'bigint') return String(value);
+  if (typeof value === 'string') return value || '-';
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '-';
+    if (value.every((item) => ['string', 'number', 'boolean'].includes(typeof item))) {
+      return value.map((item) => String(item)).join(', ');
+    }
+    return `${value.length} items`;
+  }
+  if (isRecord(value)) {
+    const keys = Object.keys(value);
+    return keys.length === 0 ? '-' : `${keys.length} fields`;
+  }
+  return String(value);
+}
+
+function renderStatusSummaryContent(summary: Record<string, unknown>): ReactNode {
+  const entries = Object.entries(summary);
+  if (entries.length === 0) {
+    return <p className="muted">No summary yet.</p>;
+  }
+
+  return (
+    <div className="kv api-summary-grid">
+      {entries.map(([key, value]) => (
+        <div key={key}>
+          <h3>{formatStatusSummaryLabel(key)}</h3>
+          {isRecord(value) ? (
+            <div className="api-summary-subgrid">
+              {Object.entries(value).map(([nestedKey, nestedValue]) => (
+                <p key={`${key}:${nestedKey}`} className="muted">
+                  <strong>{formatStatusSummaryLabel(nestedKey)}:</strong> {formatStatusSummaryValue(nestedValue)}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <p>{formatStatusSummaryValue(value)}</p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function readHeartbeatHeads(detail?: string | null): { watchingFrom: string; readyThrough: string } {
+  if (!detail) {
+    return { watchingFrom: '-', readyThrough: '-' };
+  }
+
+  try {
+    const parsed = JSON.parse(detail) as { currentHead?: unknown; finalizedHead?: unknown };
+    const watchingFrom =
+      typeof parsed.currentHead === 'number' || typeof parsed.currentHead === 'string'
+        ? String(parsed.currentHead)
+        : '-';
+    const readyThrough =
+      typeof parsed.finalizedHead === 'number' || typeof parsed.finalizedHead === 'string'
+        ? String(parsed.finalizedHead)
+        : '-';
+    return { watchingFrom, readyThrough };
+  } catch {
+    return { watchingFrom: '-', readyThrough: '-' };
+  }
 }
 
 function isThemeMode(value: string): value is 'light' | 'dark' {
@@ -2257,10 +2342,14 @@ export function App() {
                     aria-label={opConnected ? 'Disconnect OP Wallet' : 'Connect OP Wallet'}
                     title={opConnected ? 'Disconnect OP Wallet' : 'Connect OP Wallet (OPNet testnet)'}
                   >
-                    <img className="wallet-provider-logo" src="/branding/op.svg" alt="OP Wallet" />
+                    <img
+                      className="wallet-provider-logo"
+                      src={themeMode === 'dark' && !opConnected ? '/branding/op-dark.svg' : '/branding/op.svg'}
+                      alt="OP Wallet"
+                    />
                   </button>
                   <h3>OP Wallet</h3>
-                  <p><strong>Status:</strong> {opWalletReady ? '✅ (OPNet testnet)' : opConnected ? '❌ (Wrong network)' : '❌'}</p>
+                  <p><strong>Status:</strong> {opWalletReady ? '✓ (OPNet testnet)' : opConnected ? '❌ (Wrong network)' : '❌'}</p>
                   <p><strong>Address:</strong> <code>{short(walletAddress)}</code></p>
                 </div>
                 <div>
@@ -2283,7 +2372,7 @@ export function App() {
                     </button>
                   </div>
                   <h3>EVM Wallet</h3>
-                  <p><strong>Status:</strong> {ethWalletReady ? '✅ (Sepolia)' : ethConnected ? '❌ (Wrong network)' : '❌'}</p>
+                  <p><strong>Status:</strong> {ethWalletReady ? '✓ (Sepolia)' : ethConnected ? '❌ (Wrong network)' : '❌'}</p>
                   <p><strong>Address:</strong> <code>{ethConnected ? short(ethAddress) : '-'}</code></p>
                   {ethConnected && !onSepolia ? (
                     <div className="actions">
@@ -2439,7 +2528,7 @@ export function App() {
                     {statusApiState === 'ok' ? <span className="api-health-check">✓</span> : null}
                   </p>
                   <p className="muted">Last checked: {statusApiUpdatedAt || '-'}</p>
-                  <pre className="log-box compact">{statusApiSummary ? JSON.stringify(statusApiSummary, null, 2) : 'No summary yet.'}</pre>
+                  {statusApiSummary ? renderStatusSummaryContent(statusApiSummary) : <p className="muted">No summary yet.</p>}
                 </div>
                 <div>
                   <h3>Relayer Heartbeats</h3>
@@ -2447,15 +2536,22 @@ export function App() {
                     <p className="muted">No relayer heartbeat records yet.</p>
                   ) : (
                     <ul className="heartbeat-list">
-                      {statusApiRelayers.map((relayer) => (
-                        <li key={`${relayer.relayerName}:${relayer.role}`}>
-                          <code>{relayer.relayerName}</code>{' '}
-                          <span className={`pill api-status-pill ${relayer.status === 'ok' ? 'ok' : ''}`}>
-                            {relayer.status === 'ok' ? '✓' : relayer.status}
-                          </span>
-                          <div className="muted">{relayer.role} {relayer.detail ? `| ${relayer.detail}` : ''}</div>
-                        </li>
-                      ))}
+                      {statusApiRelayers.map((relayer) => {
+                        const heads = readHeartbeatHeads(relayer.detail);
+                        return (
+                          <li
+                            key={`${relayer.relayerName}:${relayer.role}`}
+                            title={relayer.updatedAt || relayer.detail || undefined}
+                          >
+                            <code>{relayer.relayerName}</code>{' '}
+                            <span className={`pill api-status-pill ${relayer.status === 'ok' ? 'ok' : ''}`}>
+                              {relayer.status === 'ok' ? '✓' : relayer.status}
+                            </span>
+                            <div className="muted">Watching from block {heads.watchingFrom}</div>
+                            <div className="muted">Ready through block {heads.readyThrough}</div>
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </div>
@@ -2498,8 +2594,11 @@ export function App() {
           <div className="hero-top">
             <div className="hero-brand">
               <div className="brand-lockup" aria-label="OPbridge">
-                <img className="brand-op-logo" src="/branding/op.svg" alt="" aria-hidden="true" />
-                <span className="brand-bridge-word">bridge</span>
+                <img
+                  className="brand-wordmark"
+                  src={themeMode === 'dark' ? '/branding/opbridge-wordmark-dark.svg' : '/branding/opbridge-wordmark.svg'}
+                  alt="OPbridge"
+                />
               </div>
               <p className="eyebrow">OP_BRIDGE TESTNET LIVE</p>
               <div className="brand-meta">
@@ -2512,7 +2611,10 @@ export function App() {
                     aria-label="Visit opnet.org"
                     title="Visit opnet.org"
                   >
-                    <img src="/branding/opnet-logo.svg" alt="OPNet" />
+                    <img
+                      src={themeMode === 'dark' ? '/branding/opnet-logo-dark.svg' : '/branding/opnet-logo.svg'}
+                      alt="OPNet"
+                    />
                   </a>
                 </div>
                 <a
@@ -2520,8 +2622,8 @@ export function App() {
                   href="https://x.com/opbridgebtc"
                   target="_blank"
                   rel="noreferrer"
-                  aria-label="Follow OPbridge on X"
-                  title="Follow OPbridge on X"
+                  aria-label="Follow OP_BRIDGE on X"
+                  title="Follow OP_BRIDGE on X"
                 >
                   <img src={themeMode === 'dark' ? '/branding/x-dark.svg' : '/branding/x.svg'} alt="" aria-hidden="true" />
                 </a>
@@ -2530,8 +2632,8 @@ export function App() {
                   href="https://t.me/opbridgebtc"
                   target="_blank"
                   rel="noreferrer"
-                  aria-label="Join Heptad on Telegram"
-                  title="Join Heptad on Telegram"
+                  aria-label="Join OP_BRIDGE on Telegram"
+                  title="Join OP_BRIDGE on Telegram"
                 >
                   <img
                     src={themeMode === 'dark' ? '/branding/telegram-dark.svg' : '/branding/telegram.svg'}
@@ -2575,8 +2677,8 @@ export function App() {
                     className="hero-theme-toggle-track-icon"
                     src={
                       themeMode === 'dark'
-                        ? '/branding/light_icon_dark.svg'
-                        : '/branding/dark_icon.svg'
+                        ? '/branding/light-icon-dark.svg'
+                        : '/branding/dark-icon.svg'
                     }
                     alt=""
                   />
@@ -2623,7 +2725,9 @@ export function App() {
         {bridgeDirection === 'ethToBtc' ? (
           <div className="bridge-panel">
             <div className="card-head flow-direction-head">
-              <span className={`pill ${depositReady ? 'ok' : ''}`}>{depositReady ? 'Ready' : 'Blocked'}</span>
+              <span className={`pill ${depositReady ? 'ok' : ''}`}>
+                {depositReady ? '✓ (Ready to bridge assets)' : walletPairReady ? 'Blocked' : '❌ (Connect OP_WALLET and EVM wallet)'}
+              </span>
             </div>
             <div className="field">
               <span>Select Token</span>
@@ -2720,14 +2824,16 @@ export function App() {
                 </>
               ) : null}
             </pre>
-            {opConnected ? renderWrappedTokenPanel(depositAsset) : null}
+            {renderWrappedTokenPanel(depositAsset)}
           </div>
         ) : null}
 
         {bridgeDirection === 'btcToEth' ? (
           <div className="bridge-panel">
             <div className="card-head flow-direction-head">
-              <span className={`pill ${burnReady ? 'ok' : ''}`}>{burnReady ? 'Ready' : 'Blocked'}</span>
+              <span className={`pill ${burnReady ? 'ok' : ''}`}>
+                {burnReady ? '✓ (Ready to bridge assets)' : '❌ (Connect OP_WALLET and EVM wallet)'}
+              </span>
             </div>
             <div className="field">
               <span>Select Token</span>
@@ -2762,7 +2868,6 @@ export function App() {
             </label>
             <p className="muted">Balance: {burnAssetBalanceLabel}</p>
             {burnAssetState?.error ? <p className="muted">OPNet balance error: {burnAssetState.error}</p> : null}
-            {renderWrappedTokenPanel(burnAsset)}
             <div className="actions">
               <button
                 className="primary"
@@ -2854,8 +2959,8 @@ export function App() {
           href="https://x.com/heptadbtc"
           target="_blank"
           rel="noreferrer"
-          aria-label="Follow Heptad on X"
-          title="Follow Heptad on X"
+          aria-label="Follow heptad on X"
+          title="Follow heptad on X"
         >
           <img
             className="site-credit-wordmark"
