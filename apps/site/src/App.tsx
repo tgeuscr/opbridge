@@ -2497,33 +2497,47 @@ export function App() {
         <section className="hero card">
           <div className="hero-top">
             <div className="hero-brand">
-              <img
-                className="brand-wordmark"
-                src={themeMode === 'dark' ? '/branding/heptad-wordmark-dark.svg' : '/branding/heptad-wordmark.svg'}
-                alt="Heptad"
-              />
-              <p className="eyebrow">HEPTAD BRIDGE TESTNET LIVE</p>
+              <div className="brand-lockup" aria-label="OPbridge">
+                <img className="brand-op-logo" src="/branding/op.svg" alt="" aria-hidden="true" />
+                <span className="brand-bridge-word">bridge</span>
+              </div>
+              <p className="eyebrow">OP_BRIDGE TESTNET LIVE</p>
               <div className="brand-meta">
+                <div className="powered-by">
+                  <span>Powered by</span>
+                  <a
+                    href="https://opnet.org"
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Visit opnet.org"
+                    title="Visit opnet.org"
+                  >
+                    <img src="/branding/opnet-logo.svg" alt="OPNet" />
+                  </a>
+                </div>
                 <a
-                  className="powered-by"
-                  href="https://opnet.org"
+                  className="brand-social-link"
+                  href="https://x.com/opbridgebtc"
                   target="_blank"
                   rel="noreferrer"
-                  aria-label="Powered by OPNet"
-                  title="Visit opnet.org"
+                  aria-label="Follow OPbridge on X"
+                  title="Follow OPbridge on X"
                 >
-                  <span>Powered by</span>
-                  <img src="/branding/opnet-logo.svg" alt="OPNet" />
+                  <img src={themeMode === 'dark' ? '/branding/x-dark.svg' : '/branding/x.svg'} alt="" aria-hidden="true" />
                 </a>
                 <a
                   className="brand-social-link"
-                  href="https://x.com/heptadbtc"
+                  href="https://t.me/opbridgebtc"
                   target="_blank"
                   rel="noreferrer"
-                  aria-label="Follow Heptad on X"
-                  title="Follow Heptad on X"
+                  aria-label="Join Heptad on Telegram"
+                  title="Join Heptad on Telegram"
                 >
-                  <img src="/branding/x.svg" alt="" aria-hidden="true" />
+                  <img
+                    src={themeMode === 'dark' ? '/branding/telegram-dark.svg' : '/branding/telegram.svg'}
+                    alt=""
+                    aria-hidden="true"
+                  />
                 </a>
               </div>
             </div>
@@ -2554,8 +2568,23 @@ export function App() {
                 className="hero-theme-button"
                 onClick={toggleThemeMode}
                 title="Toggle light and dark mode"
+                aria-label={themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               >
-                {themeMode === 'dark' ? 'Light mode' : 'Dark mode'}
+                <span className={`hero-theme-toggle ${themeMode === 'dark' ? 'is-dark' : ''}`} aria-hidden="true">
+                  <img
+                    className="hero-theme-toggle-track-icon"
+                    src={
+                      themeMode === 'dark'
+                        ? '/branding/light_icon_dark.svg'
+                        : '/branding/dark_icon.svg'
+                    }
+                    alt=""
+                  />
+                  <span className="hero-theme-toggle-thumb" />
+                </span>
+                <span className="sr-only">
+                  {themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                </span>
               </button>
             </div>
           </div>
@@ -2819,12 +2848,21 @@ export function App() {
       ) : null}
 
       <footer className="site-credit" aria-label="Site credit">
-        <span>made by</span>
-        <img
-          className="site-credit-wordmark"
-          src={themeMode === 'dark' ? '/branding/heptad-wordmark-dark.svg' : '/branding/heptad-wordmark.svg'}
-          alt="Heptad"
-        />
+        <span>built with ❤️ by</span>
+        <a
+          className="site-credit-link"
+          href="https://x.com/heptadbtc"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Follow Heptad on X"
+          title="Follow Heptad on X"
+        >
+          <img
+            className="site-credit-wordmark"
+            src={themeMode === 'dark' ? '/branding/heptad-wordmark-dark.svg' : '/branding/heptad-wordmark.svg'}
+            alt="Heptad"
+          />
+        </a>
       </footer>
 
       </main>
