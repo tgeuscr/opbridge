@@ -495,6 +495,11 @@ function hasStructuredBurnRequested(contractEvents, bridgeAddress, bridgeHex) {
   return structured.length > 0;
 }
 
+function hasBridgeMention(contractEvents, bridgeAddress, bridgeHex) {
+  const targets = new Set([String(bridgeAddress).toLowerCase(), String(bridgeHex).toLowerCase()]);
+  return normalizeContractEventsInput(contractEvents).some(({ address }) => targets.has(address));
+}
+
 function safeOwnValue(target, key) {
   if (!target || (typeof target !== "object" && typeof target !== "function")) return undefined;
   let current = target;
@@ -676,88 +681,46 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
               continue;
             }
             const blockHeight = BigInt(block.height);
-            let transactions = [];
-            let usedRawFallback = false;
-            try {
-              // Prefer SDK-parsed transactions first because some RPC variants do
-              // not populate usable event payloads on `rawTransactions`.
-              if (Array.isArray(block.transactions) && block.transactions.length > 0) {
-                transactions = block.transactions;
-              }
-            } catch (error) {
-              logDiscovery(
-                `[opnet-burn-poller] block=${height.toString()} parsed tx list error: ${
-                  error instanceof Error ? error.message : String(error)
-                }; falling back to rawTransactions.`,
-              );
-            }
-            if (transactions.length === 0) {
+            const rawTransactions = Array.isArray(block.rawTransactions) ? block.rawTransactions : [];
+            let parsedTransactions = [];
+            if (rawTransactions.length === 0) {
               try {
-                if (Array.isArray(block.rawTransactions)) {
-                  transactions = block.rawTransactions;
-                  usedRawFallback = true;
+                if (Array.isArray(block.transactions)) {
+                  parsedTransactions = block.transactions;
                 }
               } catch (error) {
-                console.warn(
-                  `[opnet-burn-poller] skipping block=${height.toString()} raw tx list parse error: ${
+                logDiscovery(
+                  `[opnet-burn-poller] block=${height.toString()} parsed tx list error: ${
                     error instanceof Error ? error.message : String(error)
-                  }`,
+                  }; using available rawTransactions only.`,
                 );
-                if (retryFromBlock == null || height < retryFromBlock) {
-                  retryFromBlock = height;
-                }
-                continue;
               }
             }
+            const transactions = rawTransactions.length > 0 ? rawTransactions : parsedTransactions;
             for (let txIndex = 0; txIndex < transactions.length; txIndex += 1) {
-              const parsedTx = transactions[txIndex];
-              const rawTxAtIndex = Array.isArray(block.rawTransactions) ? block.rawTransactions[txIndex] : null;
-              let tx = rawTxAtIndex ?? parsedTx;
-              const txIds = [...new Set([...txIdentifierCandidates(parsedTx), ...txIdentifierCandidates(rawTxAtIndex)])];
+              const rawTxAtIndex = rawTransactions[txIndex] ?? null;
+              const parsedTx = parsedTransactions[txIndex] ?? null;
+              const tx = rawTxAtIndex ?? parsedTx;
+              const bridgeHintEvents =
+                cautiouslyReadEvents(tx, "events") ??
+                safeOwnValue(tx, "events") ??
+                null;
+              if (!hasBridgeMention(bridgeHintEvents, mapping.opnet.bridgeAddress, mapping.opnet.bridgeHex)) {
+                continue;
+              }
+              const txIds = [...new Set([...txIdentifierCandidates(rawTxAtIndex), ...txIdentifierCandidates(parsedTx)])];
               const txHash = txIds[0] ?? `${block.hash}:${blockHeight.toString()}:${txIndex.toString()}`;
               try {
-                if (usedRawFallback && txIds.length > 0) {
-                  const rawEvents = safeContractEvents(tx);
-                  const hasRawEvents = rawEvents && typeof rawEvents === "object" && Object.keys(rawEvents).length > 0;
-                  const rawHasStructuredBurnRequested = hasStructuredBurnRequested(
-                    rawEvents,
-                    mapping.opnet.bridgeAddress,
-                    mapping.opnet.bridgeHex,
-                  );
-                  // In fallback mode, hydrate when tx has no events OR lacks structured BurnRequested.
-                  // Some block-level raw tx entries include bridge payloads that are malformed/mis-encoded.
-                  const shouldHydrate = !hasRawEvents || !rawHasStructuredBurnRequested;
-                  if (shouldHydrate) {
-                    let hydratedOk = false;
-                    for (const candidate of txIds) {
-                      try {
-                        const hydrated = await provider.getTransaction(candidate);
-                        if (hydrated && typeof hydrated === "object") {
-                          tx = hydrated;
-                          hydratedOk = true;
-                          break;
-                        }
-                      } catch {
-                        // Try next candidate id/hash form.
-                      }
-                    }
-                    if (!hydratedOk) {
-                      logDiscovery(`[opnet-burn-poller] tx=${txHash} hydration failed for ids=[${txIds.join(",")}].`);
-                    }
-                  }
-                }
                 let bridgeEventsRaw = [];
                 let structuredBurnEvents = [];
                 let structuredMintEvents = [];
                 const eventCandidates = [];
-                let receiptLoaded = false;
                 if (txIds.length > 0 && typeof provider.getTransactionReceipt === "function") {
                   for (const candidate of txIds) {
                     try {
                       const receipt = await provider.getTransactionReceipt(candidate);
                       if (!receipt || typeof receipt !== "object") continue;
                       eventCandidates.push({ tx: receipt, label: "receipt" });
-                      receiptLoaded = true;
                       break;
                     } catch {
                       // Try next candidate hash/id form.
@@ -766,7 +729,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                 }
                 if (rawTxAtIndex) eventCandidates.push({ tx: rawTxAtIndex, label: "raw" });
                 if (parsedTx && parsedTx !== rawTxAtIndex) eventCandidates.push({ tx: parsedTx, label: "parsed" });
-                if (eventCandidates.length === 0) eventCandidates.push({ tx, label: receiptLoaded ? "receipt" : "selected" });
+                if (eventCandidates.length === 0) eventCandidates.push({ tx, label: "selected" });
                 let lastEventError = null;
                 for (const candidate of eventCandidates) {
                   try {
@@ -775,7 +738,6 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                       structuredBurnEvents,
                       structuredMintEvents,
                     } = collectBridgeEventArtifacts(candidate.tx, mapping.opnet.bridgeAddress, mapping.opnet.bridgeHex));
-                    tx = candidate.tx;
                     if (bridgeEventsRaw.length > 0 || structuredBurnEvents.length > 0 || structuredMintEvents.length > 0) {
                       break;
                     }
@@ -815,7 +777,9 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                 const decodedEvents = [
                   ...structuredMintEvents,
                   ...structuredBurnEvents,
-                  ...decodeBridgeEventsSafely(bridge, bridgeEventsRaw, txHash, blockHeight),
+                  ...((structuredMintEvents.length === 0 && structuredBurnEvents.length === 0)
+                    ? decodeBridgeEventsSafely(bridge, bridgeEventsRaw, txHash, blockHeight)
+                    : []),
                 ];
                 if (decodedEvents.length === 0) continue;
                 let burnOrdinal = 0;
@@ -896,7 +860,7 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
                       blockNumber: Number(blockHeight),
                       blockHash: block.hash,
                       txHash,
-                      txIndex: safeNumericProperty(tx, "index") ?? txIndex,
+                      txIndex: safeNumericProperty(rawTxAtIndex ?? parsedTx ?? tx, "index") ?? txIndex,
                       eventType: evt.type,
                       eventIndex: burnOrdinal - 1,
                       observedAt: new Date().toISOString(),
