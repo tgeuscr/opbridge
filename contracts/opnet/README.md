@@ -4,10 +4,10 @@ This package contains the OP_NET side of OP_BRIDGE:
 
 - Bridge contract: `src/bridge/OpBridgeBridge.ts`
 - Wrapped OP_20 tokens:
-  - `src/wrapped/husdt/HUSDT.ts`
-  - `src/wrapped/hwbtc/HWBTC.ts`
-  - `src/wrapped/heth/HETH.ts`
-  - `src/wrapped/hpaxg/HPAXG.ts`
+  - `src/wrapped/opusdt/opUSDT.ts`
+  - `src/wrapped/opwbtc/opWBTC.ts`
+  - `src/wrapped/opweth/opWETH.ts`
+  - `src/wrapped/oppaxg/opPAXG.ts`
 
 ## Bridge behavior
 
@@ -72,7 +72,7 @@ Each wrapped token includes:
 ## Deployment flow
 
 1. Deploy `OpBridgeBridge.wasm` (empty deployment calldata).
-2. Deploy wrapped token contracts (`HUSDT`, `HWBTC`, `HETH`, `HPAXG`).
+2. Deploy wrapped token contracts (`opUSDT`, `opWBTC`, `opWETH`, `opPAXG`).
 3. While bridge is paused:
    - configure supported assets (`setSupportedAssetsPacked`)
    - configure relays (`setRelaysConfigPacked`)

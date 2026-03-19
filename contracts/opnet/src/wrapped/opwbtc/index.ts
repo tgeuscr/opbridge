@@ -1,9 +1,9 @@
 import { Blockchain } from '@btc-vision/btc-runtime/runtime';
 import { revertOnError } from '@btc-vision/btc-runtime/runtime/abort/abort';
-import { HUSDT } from './HUSDT';
+import { opWBTC } from './opWBTC';
 
 Blockchain.contract = () => {
-    return new HUSDT();
+    return new opWBTC();
 };
 
 export * from '@btc-vision/btc-runtime/runtime/exports';

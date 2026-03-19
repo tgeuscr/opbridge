@@ -81,7 +81,7 @@ OPNet contracts:
 - [`contracts/opnet`](/home/m/projects/opbridge/contracts/opnet)
 - bridge deployment
 - wrapped token deployments
-- token metadata if you want on-chain naming to change from `opbridge-bridged ...`
+- token metadata if you want on-chain naming to change from `OP_BRIDGE Bridged ...`
 
 ## Hard recommendation
 
@@ -208,10 +208,10 @@ Tomorrow’s coding pass should prioritize these surfaces:
 
 If you are redeploying fresh testnet contracts tomorrow, also rename:
 - bridge contract naming from `OpBridgeBridge` if desired
-- wrapped token names like `opbridge-bridged ETH`, `opbridge-bridged PAXG`, etc.
+- wrapped token names like `OP_BRIDGE Bridged WETH`, `OP_BRIDGE Bridged PAXG`, etc.
 
 Relevant files include:
-- [`contracts/opnet/src/wrapped/heth/HETH.ts`](/home/m/projects/opbridge/contracts/opnet/src/wrapped/heth/HETH.ts)
+- [`contracts/opnet/src/wrapped/opweth/opWETH.ts`](/home/m/projects/opbridge/contracts/opnet/src/wrapped/opweth/opWETH.ts)
 - analogous wrapped token files for `husdt`, `hwbtc`, `hpaxg`
 - bridge source in [`contracts/opnet/src/bridge/OpBridgeBridge.ts`](/home/m/projects/opbridge/contracts/opnet/src/bridge/OpBridgeBridge.ts)
 

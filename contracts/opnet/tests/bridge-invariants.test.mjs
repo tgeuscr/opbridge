@@ -8,10 +8,10 @@ const bridgeSource = readFileSync(
 );
 
 const wrappedTokenSources = [
-  'src/wrapped/husdt/HUSDT.ts',
-  'src/wrapped/hwbtc/HWBTC.ts',
-  'src/wrapped/heth/HETH.ts',
-  'src/wrapped/hpaxg/HPAXG.ts',
+  'src/wrapped/opusdt/opUSDT.ts',
+  'src/wrapped/opwbtc/opWBTC.ts',
+  'src/wrapped/opweth/opWETH.ts',
+  'src/wrapped/oppaxg/opPAXG.ts',
 ].map((relativePath) => ({
   path: relativePath,
   source: readFileSync(join(process.cwd(), relativePath), 'utf8'),

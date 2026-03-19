@@ -25,7 +25,7 @@ const TOKEN_CONFIG_SUBPOINTER = new Uint8Array(0);
 const TOKEN_CONFIG_INDEX_PAUSED: u8 = 0;
 
 @final
-export class HETH extends OP20 {
+export class opPAXG extends OP20 {
     private readonly _bridgeAuthority: StoredAddress;
     private readonly _owner: StoredAddress;
     private readonly _tokenConfig: StoredU32;
@@ -40,8 +40,8 @@ export class HETH extends OP20 {
     public override onDeployment(_: Calldata): void {
         const maxSupply: u256 = u256.Max;
         const decimals: u8 = 18;
-        const name = 'opbridge-bridged ETH';
-        const symbol = 'hETH';
+        const name = 'OP_BRIDGE Bridged PAXG';
+        const symbol = 'opPAXG';
 
         this.instantiate(new OP20InitParameters(maxSupply, decimals, name, symbol));
 

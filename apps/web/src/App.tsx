@@ -4633,7 +4633,7 @@ flow: approve(token -> vault) then depositERC20(assetId, amount, recipient)`}
                 />
               </label>
               <label>
-                hUSDT (assetId 0)
+                opUSDT (assetId 0)
                 <input
                   value={opnetWrappedAddresses.USDT}
                   onChange={(e) =>
@@ -4643,7 +4643,7 @@ flow: approve(token -> vault) then depositERC20(assetId, amount, recipient)`}
                 />
               </label>
               <label>
-                hWBTC (assetId 1)
+                opWBTC (assetId 1)
                 <input
                   value={opnetWrappedAddresses.WBTC}
                   onChange={(e) =>
@@ -4653,7 +4653,7 @@ flow: approve(token -> vault) then depositERC20(assetId, amount, recipient)`}
                 />
               </label>
               <label>
-                hWETH (assetId 2)
+                opWETH (assetId 2)
                 <input
                   value={opnetWrappedAddresses.WETH}
                   onChange={(e) =>
@@ -4663,7 +4663,7 @@ flow: approve(token -> vault) then depositERC20(assetId, amount, recipient)`}
                 />
               </label>
               <label>
-                hPAXG (assetId 3)
+                opPAXG (assetId 3)
                 <input
                   value={opnetWrappedAddresses.PAXG}
                   onChange={(e) =>

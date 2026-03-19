@@ -4,21 +4,21 @@
       "outFile": "build/OpBridgeBridge.wasm",
       "use": ["abort=src/bridge/index/abort"]
     },
-    "husdt": {
-      "outFile": "build/HUSDT.wasm",
-      "use": ["abort=src/wrapped/husdt/index/abort"]
+    "opusdt": {
+      "outFile": "build/opUSDT.wasm",
+      "use": ["abort=src/wrapped/opusdt/index/abort"]
     },
-    "hwbtc": {
-      "outFile": "build/HWBTC.wasm",
-      "use": ["abort=src/wrapped/hwbtc/index/abort"]
+    "opwbtc": {
+      "outFile": "build/opWBTC.wasm",
+      "use": ["abort=src/wrapped/opwbtc/index/abort"]
     },
-    "heth": {
-      "outFile": "build/HETH.wasm",
-      "use": ["abort=src/wrapped/heth/index/abort"]
+    "opweth": {
+      "outFile": "build/opWETH.wasm",
+      "use": ["abort=src/wrapped/opweth/index/abort"]
     },
-    "hpaxg": {
-      "outFile": "build/HPAXG.wasm",
-      "use": ["abort=src/wrapped/hpaxg/index/abort"]
+    "oppaxg": {
+      "outFile": "build/opPAXG.wasm",
+      "use": ["abort=src/wrapped/oppaxg/index/abort"]
     }
   },
   "options": {

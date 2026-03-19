@@ -1,9 +1,9 @@
 import { Blockchain } from '@btc-vision/btc-runtime/runtime';
 import { revertOnError } from '@btc-vision/btc-runtime/runtime/abort/abort';
-import { HPAXG } from './HPAXG';
+import { opUSDT } from './opUSDT';
 
 Blockchain.contract = () => {
-    return new HPAXG();
+    return new opUSDT();
 };
 
 export * from '@btc-vision/btc-runtime/runtime/exports';

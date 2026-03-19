@@ -25,7 +25,7 @@ const TOKEN_CONFIG_SUBPOINTER = new Uint8Array(0);
 const TOKEN_CONFIG_INDEX_PAUSED: u8 = 0;
 
 @final
-export class HUSDT extends OP20 {
+export class opWETH extends OP20 {
     private readonly _bridgeAuthority: StoredAddress;
     private readonly _owner: StoredAddress;
     private readonly _tokenConfig: StoredU32;
@@ -39,9 +39,9 @@ export class HUSDT extends OP20 {
 
     public override onDeployment(_: Calldata): void {
         const maxSupply: u256 = u256.Max;
-        const decimals: u8 = 6;
-        const name = 'opbridge-bridged USDT';
-        const symbol = 'hUSDT';
+        const decimals: u8 = 18;
+        const name = 'OP_BRIDGE Bridged WETH';
+        const symbol = 'opWETH';
 
         this.instantiate(new OP20InitParameters(maxSupply, decimals, name, symbol));
 

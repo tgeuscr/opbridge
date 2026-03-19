@@ -7,12 +7,12 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "build": "npm run build:bridge && npm run build:husdt && npm run build:hwbtc && npm run build:heth && npm run build:hpaxg",
+    "build": "npm run build:bridge && npm run build:opusdt && npm run build:opwbtc && npm run build:opweth && npm run build:oppaxg",
     "build:bridge": "asc src/bridge/index.ts --config asconfig.json --target bridge --measure --uncheckedBehavior never",
-    "build:husdt": "asc src/wrapped/husdt/index.ts --config asconfig.json --target husdt --measure --uncheckedBehavior never",
-    "build:hwbtc": "asc src/wrapped/hwbtc/index.ts --config asconfig.json --target hwbtc --measure --uncheckedBehavior never",
-    "build:heth": "asc src/wrapped/heth/index.ts --config asconfig.json --target heth --measure --uncheckedBehavior never",
-    "build:hpaxg": "asc src/wrapped/hpaxg/index.ts --config asconfig.json --target hpaxg --measure --uncheckedBehavior never",
+    "build:opusdt": "asc src/wrapped/opusdt/index.ts --config asconfig.json --target opusdt --measure --uncheckedBehavior never",
+    "build:opwbtc": "asc src/wrapped/opwbtc/index.ts --config asconfig.json --target opwbtc --measure --uncheckedBehavior never",
+    "build:opweth": "asc src/wrapped/opweth/index.ts --config asconfig.json --target opweth --measure --uncheckedBehavior never",
+    "build:oppaxg": "asc src/wrapped/oppaxg/index.ts --config asconfig.json --target oppaxg --measure --uncheckedBehavior never",
     "test": "node tests/bridge-invariants.test.mjs",
     "typecheck": "echo 'TODO: add OP_NET-compatible type/lint checks'"
   },
