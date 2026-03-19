@@ -875,6 +875,34 @@ button.primary:hover {
   color: #f4f4f4;
 }
 
+.bridge-status-popup {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 23;
+  width: min(420px, calc(100vw - 2rem));
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.9rem;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.18);
+}
+
+.bridge-status-popup-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.bridge-status-popup-head h3 {
+  margin: 0;
+}
+
+.bridge-status-popup-close {
+  padding: 0.4rem 0.7rem;
+  white-space: nowrap;
+}
+
 .tx-confirm-overlay {
   position: fixed;
   inset: 0;
@@ -1210,6 +1238,10 @@ html[data-theme='dark'] .api-status-pill.ok {
   color: #8fe2ab;
 }
 
+html[data-theme='dark'] .bridge-status-popup {
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.42);
+}
+
 html[data-theme='dark'] .flow-direction-head .pill {
   border-color: #394253;
   background: #1a1f28;
@@ -1325,6 +1357,12 @@ html[data-theme='dark'] .route-box > div + div {
 
   .brand-wordmark {
     height: 2.15rem;
+  }
+
+  .bridge-status-popup {
+    right: 0.8rem;
+    bottom: 0.8rem;
+    width: min(100vw - 1.6rem, 420px);
   }
 
 

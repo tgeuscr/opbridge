@@ -78,6 +78,13 @@ type BridgeConfirmState = {
   toAddress: string;
 };
 
+type BridgeNoticeState = {
+  key: string;
+  eyebrow: string;
+  title: string;
+  message: string;
+};
+
 type FaucetAssetState = {
   balanceRaw: bigint | null;
   claimAmountRaw: bigint | null;
@@ -929,6 +936,7 @@ export function App() {
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [showFaucetModal, setShowFaucetModal] = useState(false);
   const [showApiModal, setShowApiModal] = useState(false);
+  const [dismissedBridgeNoticeKey, setDismissedBridgeNoticeKey] = useState('');
   const [evmWalletType, setEvmWalletType] = useState<EvmWalletType | null>(null);
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>(() => {
     try {
@@ -1366,6 +1374,75 @@ export function App() {
     !opRecipientHash ? 'Hashed MLDSA key unavailable' : '',
   ].filter(Boolean);
   const claimReleaseReady = Boolean(walletPairReady && statusApiUrl.trim() && ETH_VAULT_ADDRESS && opRecipientHash);
+  let bridgeNotice: BridgeNoticeState | null = null;
+  if (bridgeDirection === 'ethToBtc') {
+    if (claimMintBusy) {
+      bridgeNotice = {
+        key: `claim-mint:${claimMintOpnetTxId || 'pending'}`,
+        eyebrow: 'Deposit Claim',
+        title: 'Claim in progress',
+        message: 'Your OP_WALLET confirmation is being processed. Once the claim lands, your bridged balance will update below.',
+      };
+    } else if (readyMintCandidates.length > 0) {
+      bridgeNotice = {
+        key: `claim-ready:${readyMintCandidates.length}:${readyMintCandidates.map((item) => item.depositId ?? item.mintSubmission?.nonce ?? '').join(',')}`,
+        eyebrow: 'Deposit Ready',
+        title: 'Claim candidate available',
+        message: `${readyMintCandidates.length} deposit claim candidate${readyMintCandidates.length === 1 ? '' : 's'} ready below. You can claim now.`,
+      };
+    } else if (depositTxHash) {
+      bridgeNotice = {
+        key: `deposit-wait:${depositTxHash}`,
+        eyebrow: 'Deposit Submitted',
+        title: 'Waiting for claim candidate',
+        message: 'Your deposit is confirmed. Relayers are preparing the deposit claim candidate now. Keep this tab open or use Refresh Ready Deposits.',
+      };
+    } else if (depositBusy || depositApproveTxHash) {
+      bridgeNotice = {
+        key: `deposit-busy:${depositApproveTxHash || 'pending'}`,
+        eyebrow: 'Deposit Flow',
+        title: 'Deposit in progress',
+        message: 'Follow the wallet prompts to approve and submit the deposit. The claim candidate will appear here after the deposit is indexed.',
+      };
+    }
+  } else if (bridgeDirection === 'btcToEth') {
+    if (claimReleaseBusy) {
+      bridgeNotice = {
+        key: `claim-release:${claimReleaseTxHash || 'pending'}`,
+        eyebrow: 'Withdrawal Claim',
+        title: 'Claim in progress',
+        message: 'Your EVM wallet confirmation is being processed. Once the claim lands, the withdrawal will finalize on Ethereum.',
+      };
+    } else if (readyReleaseCandidates.length > 0) {
+      bridgeNotice = {
+        key: `withdrawal-ready:${readyReleaseCandidates.length}:${readyReleaseCandidates.map((item) => item.withdrawalId ?? item.releaseSubmission?.withdrawalId ?? '').join(',')}`,
+        eyebrow: 'Withdrawal Ready',
+        title: 'Claim candidate available',
+        message: `${readyReleaseCandidates.length} withdrawal claim candidate${readyReleaseCandidates.length === 1 ? '' : 's'} ready below. You can claim now.`,
+      };
+    } else if (burnOpnetTxId) {
+      bridgeNotice = {
+        key: `withdrawal-wait:${burnOpnetTxId}`,
+        eyebrow: 'Withdrawal Submitted',
+        title: 'Waiting for claim candidate',
+        message: 'Your OPNet burn is confirmed. Relayers are preparing the withdrawal claim candidate now. Keep this tab open or use Refresh Ready Withdrawals.',
+      };
+    } else if (burnBusy) {
+      bridgeNotice = {
+        key: 'burn-busy',
+        eyebrow: 'Withdrawal Flow',
+        title: 'Burn in progress',
+        message: 'Follow the OP_WALLET prompts to submit the burn. The withdrawal claim candidate will appear here after relayers index it.',
+      };
+    }
+  }
+  const activeBridgeNotice = bridgeNotice && dismissedBridgeNoticeKey !== bridgeNotice.key ? bridgeNotice : null;
+
+  useEffect(() => {
+    if (bridgeNotice?.key) {
+      setDismissedBridgeNoticeKey((current) => (current === bridgeNotice.key ? current : ''));
+    }
+  }, [bridgeNotice?.key]);
 
   useEffect(() => {
     if (!opWalletReady || !opnetProvider || !walletAddress) return;
@@ -2924,6 +3001,26 @@ export function App() {
           </div>
         ) : null}
       </section>
+      {activeBridgeNotice ? (
+        <div className="bridge-status-popup card" role="status" aria-live="polite" aria-atomic="true">
+          <div className="bridge-status-popup-head">
+            <div>
+              <p className="eyebrow">{activeBridgeNotice.eyebrow}</p>
+              <h3>{activeBridgeNotice.title}</h3>
+            </div>
+            <button
+              type="button"
+              className="bridge-status-popup-close"
+              onClick={() => setDismissedBridgeNoticeKey(activeBridgeNotice.key)}
+              aria-label="Dismiss bridge status popup"
+              title="Dismiss bridge status popup"
+            >
+              Close
+            </button>
+          </div>
+          <p className="muted">{activeBridgeNotice.message}</p>
+        </div>
+      ) : null}
       {bridgeConfirm ? (
         <div className="tx-confirm-overlay" role="dialog" aria-modal="true" aria-label="Bridge confirmation">
           <div className="card tx-confirm-dialog">
