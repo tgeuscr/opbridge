@@ -2,7 +2,7 @@ import {
   MESSAGE_PROTOCOL_VERSION,
   canonicalizeBridgeMessage,
   type BridgeMessageV1,
-} from '@heptad/shared';
+} from '@opbridge/shared';
 import type { EthereumDepositObservation } from './types';
 
 export interface RelayerProtocolConfig {

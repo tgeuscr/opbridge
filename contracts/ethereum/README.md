@@ -2,7 +2,7 @@
 
 Current scaffolding:
 
-- `HeptadVault.sol` includes:
+- `OpBridgeVault.sol` includes:
   - owner / pause controls
   - deploys **paused by default**
   - per-asset configuration (`assetId -> token/enabled`)
@@ -15,7 +15,7 @@ Current scaffolding:
     - `feeRecipient` (default = owner, configurable)
   - monotonic `depositId` generation
   - canonical `DepositInitiated` event for relayers
-- `HeptadTestToken.sol` for Sepolia test assets (owner-mintable ERC20 + faucet `claim()`)
+- `OpBridgeTestToken.sol` for Sepolia test assets (owner-mintable ERC20 + faucet `claim()`)
 
 ## Sepolia deployment scripts
 
@@ -45,11 +45,11 @@ Environment variables:
 Commands:
 
 ```bash
-npm run deploy:sepolia --workspace @heptad/ethereum-contracts
-npm run configure:sepolia --workspace @heptad/ethereum-contracts
-npm run configure:release-relays:sepolia --workspace @heptad/ethereum-contracts
-npm run admin:sepolia --workspace @heptad/ethereum-contracts
-npm run deposit:sepolia --workspace @heptad/ethereum-contracts
+npm run deploy:sepolia --workspace @opbridge/ethereum-contracts
+npm run configure:sepolia --workspace @opbridge/ethereum-contracts
+npm run configure:release-relays:sepolia --workspace @opbridge/ethereum-contracts
+npm run admin:sepolia --workspace @opbridge/ethereum-contracts
+npm run deposit:sepolia --workspace @opbridge/ethereum-contracts
 ```
 
 Notes:
@@ -87,7 +87,7 @@ SEPOLIA_RPC_URL=... \
 SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-key> \
 ETH_VAULT_FEE_RECIPIENT=0x<fee-recipient> \
 SEPOLIA_VAULT_PAUSED=true \
-npm run admin:sepolia --workspace @heptad/ethereum-contracts
+npm run admin:sepolia --workspace @opbridge/ethereum-contracts
 ```
 
 Set fee bps (1%) and unpause:
@@ -97,7 +97,7 @@ SEPOLIA_RPC_URL=... \
 SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-key> \
 ETH_VAULT_FEE_BPS=100 \
 SEPOLIA_VAULT_PAUSED=false \
-npm run admin:sepolia --workspace @heptad/ethereum-contracts
+npm run admin:sepolia --workspace @opbridge/ethereum-contracts
 ```
 
 ## Sepolia terminal deposit (approve + depositERC20)
@@ -125,7 +125,7 @@ SEPOLIA_DEPOSITOR_PRIVATE_KEY=0x... \
 SEPOLIA_DEPOSIT_ASSET=USDT \
 SEPOLIA_DEPOSIT_AMOUNT=25 \
 SEPOLIA_DEPOSIT_RECIPIENT=0x<64-hex> \
-npm run deposit:sepolia --workspace @heptad/ethereum-contracts
+npm run deposit:sepolia --workspace @opbridge/ethereum-contracts
 ```
 
 Outputs:
@@ -150,10 +150,8 @@ Required env vars:
 
 - `SEPOLIA_RPC_URL`
 - `SEPOLIA_DEPLOYER_PRIVATE_KEY`
-- Relay EVM keys:
-  - `RELAYER_EVM_KEYS_FILE`, or
-  - `RELAYER_EVM_KEYS_JSON`, or
-  - `RELAYER_EVM_PRIVATE_KEYS`
+- Relay EVM signer KMS keys:
+  - `RELAYER_EVM_KMS_KEY_IDS` (comma-separated in relay index order)
 - OP_NET bridge hash binding:
   - `OPNET_BRIDGE_HEX` (32-byte hex), or deployment JSON containing `opnet.bridgeHex`
 
@@ -165,7 +163,7 @@ Optional:
 Command:
 
 ```bash
-npm run configure:release-relays:sepolia --workspace @heptad/ethereum-contracts
+npm run configure:release-relays:sepolia --workspace @opbridge/ethereum-contracts
 ```
 
 This must be done while the vault is paused.

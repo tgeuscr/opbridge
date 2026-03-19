@@ -1,5 +1,5 @@
 {
-  "name": "@heptad/relayer",
+  "name": "@opbridge/relayer",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,10 +17,9 @@
   "scripts": {
     "run:sepolia": "node src/sepolia-poller.mjs",
     "run:opnet-burn": "node src/opnet-burn-poller.mjs",
+    "relay-config:kms": "node src/generate-kms-relay-public-config.mjs",
     "diag:opnet-rpc": "node src/opnet-rpc-diagnose.mjs",
     "sdk:opnet-testnet-smoke": "node src/opnet-sdk-testnet-smoke.mjs",
-    "keys:generate": "node src/generate-relay-keys.mjs",
-    "keys:verify": "node src/verify-relay-keys.mjs",
     "kms:spike:opnet": "node src/kms-sign-opnet.mjs",
     "kms:spike:evm": "node src/kms-sign-evm.mjs",
     "aggregate:sepolia": "node src/aggregate-attestations.mjs",

@@ -21,7 +21,7 @@ const HOST = process.env.RELAYER_API_HOST?.trim() || '0.0.0.0';
 const PORT = Number(process.env.RELAYER_API_PORT?.trim() || '8787');
 const CORS_ALLOWED_ORIGINS =
   process.env.RELAYER_API_CORS_ALLOWED_ORIGINS?.trim() ||
-  'https://heptad.app,https://www.heptad.app,https://*.vercel.app,http://localhost:5173,http://127.0.0.1:5173';
+  'https://testnet.opbridge.app,https://testnet.opbridge.app,https://*.vercel.app,http://localhost:5173,http://127.0.0.1:5173';
 const CORS_ALLOW_HEADERS = 'content-type, x-relayer-token';
 const CORS_ALLOW_METHODS = 'GET, POST, OPTIONS';
 const CORS_MAX_AGE_SECONDS = '600';
@@ -316,7 +316,7 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
     if (method === 'GET' && pathname === '/health') {
       return json(req, res, 200, {
         ok: true,
-        service: 'heptad-relayer-api',
+        service: 'opbridge-relayer-api',
         time: new Date().toISOString(),
         dbPath,
       });
@@ -467,7 +467,7 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
       const relayerSummary = summarizeRelayers(heartbeats);
       return json(req, res, 200, {
         ok: true,
-        service: 'heptad-relayer-api',
+        service: 'opbridge-relayer-api',
         time: new Date().toISOString(),
         summary,
         relayers: relayerSummary.relayers,

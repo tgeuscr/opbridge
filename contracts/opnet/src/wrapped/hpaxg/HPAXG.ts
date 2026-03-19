@@ -40,7 +40,7 @@ export class HPAXG extends OP20 {
     public override onDeployment(_: Calldata): void {
         const maxSupply: u256 = u256.Max;
         const decimals: u8 = 18;
-        const name = 'heptad-bridged PAXG';
+        const name = 'opbridge-bridged PAXG';
         const symbol = 'hPAXG';
 
         this.instantiate(new OP20InitParameters(maxSupply, decimals, name, symbol));

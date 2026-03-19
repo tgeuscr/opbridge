@@ -1,11 +1,11 @@
-# Heptad KMS Compatibility Spike
+# OP_BRIDGE KMS Compatibility Spike
 
-Goal: prove AWS KMS can replace local relayer signing for both Heptad relay paths.
+Goal: validate AWS KMS signing for both OP_BRIDGE relay paths.
 
 ## What this spike proves
 
 - OPNet path:
-  - AWS KMS `ML_DSA_44` can sign the exact bytes Heptad relay code signs
+  - AWS KMS `ML_DSA_44` can sign the exact bytes OP_BRIDGE relay code signs
   - returned public key length matches bridge expectation
   - returned signature length matches bridge expectation
   - AWS KMS verify succeeds on the same message
@@ -32,17 +32,17 @@ Ethereum relay key:
 
 ## OPNet spike
 
-Use either a direct message hex blob or a Heptad mint attestation JSON object.
+Use either a direct message hex blob or a OP_BRIDGE mint attestation JSON object.
 
 Direct message bytes:
 
 ```bash
 KMS_KEY_ID=<opnet-kms-key-id> \
 OPNET_MESSAGE_HEX=0x<32-byte-attestation-hash-or-message-bytes> \
-npm run kms:spike:opnet --workspace @heptad/relayer
+npm run kms:spike:opnet --workspace @opbridge/relayer
 ```
 
-Heptad mint attestation JSON:
+OP_BRIDGE mint attestation JSON:
 
 ```bash
 KMS_KEY_ID=<opnet-kms-key-id> \
@@ -57,7 +57,7 @@ OPNET_ATTESTATION_JSON='{
   "direction": 1,
   "nonce": "42"
 }' \
-npm run kms:spike:opnet --workspace @heptad/relayer
+npm run kms:spike:opnet --workspace @opbridge/relayer
 ```
 
 Expected success conditions:
@@ -69,17 +69,17 @@ Expected success conditions:
 
 ## Ethereum spike
 
-Use either a direct 32-byte digest or a Heptad release attestation JSON object.
+Use either a direct 32-byte digest or a OP_BRIDGE release attestation JSON object.
 
 Direct digest:
 
 ```bash
 KMS_KEY_ID=<evm-kms-key-id> \
 EVM_MESSAGE_DIGEST_HEX=0x<32-byte-release-attestation-hash> \
-npm run kms:spike:evm --workspace @heptad/relayer
+npm run kms:spike:evm --workspace @opbridge/relayer
 ```
 
-Heptad release attestation JSON:
+OP_BRIDGE release attestation JSON:
 
 ```bash
 KMS_KEY_ID=<evm-kms-key-id> \
@@ -94,7 +94,7 @@ EVM_RELEASE_JSON='{
   "direction": 2,
   "nonce": "7"
 }' \
-npm run kms:spike:evm --workspace @heptad/relayer
+npm run kms:spike:evm --workspace @opbridge/relayer
 ```
 
 Expected success conditions:

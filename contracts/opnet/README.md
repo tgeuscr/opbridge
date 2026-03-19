@@ -1,8 +1,8 @@
 # OP_NET Contracts
 
-This package contains the OP_NET side of Heptad:
+This package contains the OP_NET side of OP_BRIDGE:
 
-- Bridge contract: `src/bridge/HeptadBridge.ts`
+- Bridge contract: `src/bridge/OpBridgeBridge.ts`
 - Wrapped OP_20 tokens:
   - `src/wrapped/husdt/HUSDT.ts`
   - `src/wrapped/hwbtc/HWBTC.ts`
@@ -25,6 +25,7 @@ This package contains the OP_NET side of Heptad:
 
 - Preferred one-tx method: `setRelaysConfigPacked(relayPubKeysPacked, threshold)`.
 - Pubkeys are ML-DSA-44 (`1312` bytes each), packed contiguously.
+- The repository can generate the packed blob from AWS KMS ML-DSA keys via `npm run relay-config:kms --workspace @opbridge/relayer`.
 - Additional methods exist for granular updates:
   - `setRelayPubKey`
   - `setRelayPubKeysPacked`
@@ -70,7 +71,7 @@ Each wrapped token includes:
 
 ## Deployment flow
 
-1. Deploy `HeptadBridge.wasm` (empty deployment calldata).
+1. Deploy `OpBridgeBridge.wasm` (empty deployment calldata).
 2. Deploy wrapped token contracts (`HUSDT`, `HWBTC`, `HETH`, `HPAXG`).
 3. While bridge is paused:
    - configure supported assets (`setSupportedAssetsPacked`)

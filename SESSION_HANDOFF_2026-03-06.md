@@ -33,7 +33,7 @@
 
 ## Unrelated Working Tree State (left untouched)
 - `scripts/OPS_TOOLING.md` (modified)
-- `scripts/ec2/systemd/heptad-relayer-api.service` (modified)
+- `scripts/ec2/systemd/opbridge-relayer-api.service` (modified)
 - `services/api/README.md` (modified)
 - `scripts/ec2/nginx/` (untracked)
 

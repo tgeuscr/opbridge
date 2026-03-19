@@ -1,4 +1,4 @@
-# Heptad Mainnet Production Plan
+# OP_BRIDGE Mainnet Production Plan
 
 Target: launch-ready before OP_NET mainnet week.
 
@@ -18,7 +18,7 @@ Do not introduce HashiCorp Vault before mainnet unless there is a non-negotiable
 
 Reasoning:
 
-- Heptad is already targeting EC2, so Secrets Manager removes an entire control plane that Vault would add.
+- OP_BRIDGE is already targeting EC2, so Secrets Manager removes an entire control plane that Vault would add.
 - Vault would still need secure bootstrap and auth setup. That is operationally heavier than the problem we need to solve in one week.
 - The relayer code currently needs raw MLDSA and ECDSA private key material at runtime. For day one, storing encrypted secret payloads and loading them at process start is the shortest reliable path.
 
@@ -40,8 +40,8 @@ Each instance runs:
 Optional central services:
 
 - one relayer API instance
-- one reverse proxy at `api.heptad.app`
-- one hosted operator UI at `dev.heptad.app`
+- one reverse proxy at `api.testnet.opbridge.app`
+- one hosted operator UI at `dev.testnet.opbridge.app`
 
 ## Secret Layout
 
@@ -49,9 +49,9 @@ Store one JSON secret per relayer instance.
 
 Suggested secret names:
 
-- `heptad/mainnet/relayer-a`
-- `heptad/mainnet/relayer-b`
-- `heptad/mainnet/relayer-c`
+- `opbridge/mainnet/relayer-a`
+- `opbridge/mainnet/relayer-b`
+- `opbridge/mainnet/relayer-c`
 
 Suggested secret JSON shape:
 
@@ -64,20 +64,13 @@ Suggested secret JSON shape:
 
 Optional split-secret layout:
 
-- `heptad/mainnet/relayer-a/opnet`
-- `heptad/mainnet/relayer-a/ethereum`
+- `opbridge/mainnet/relayer-a/opnet`
+- `opbridge/mainnet/relayer-a/ethereum`
 
-The relayer now supports:
+The relayer should use AWS KMS directly for signing:
 
-- `RELAYER_KEYS_SECRET_REF=aws-sm://heptad/mainnet/relayer-a`
-- `RELAYER_EVM_KEYS_SECRET_REF=aws-sm://heptad/mainnet/relayer-a#relayEvmPrivateKeys`
-- `RELAYER_PRIVATE_KEY_SECRET_REF=aws-sm://secret#relayPrivateKeys.0`
-- `RELAYER_EVM_PRIVATE_KEY_SECRET_REF=aws-sm://secret#relayEvmPrivateKeys.0`
-
-Also supported:
-
-- `aws-ssm://parameter-name`
-- `file:///absolute/path/to/secret.json`
+- `RELAYER_KMS_KEY_ID`
+- `RELAYER_EVM_KMS_KEY_ID`
 
 ## Instance Configuration
 
@@ -87,21 +80,23 @@ Common instance role permissions should include:
 - `ssm:GetParameter` only if Parameter Store is used
 - CloudWatch Logs shipping if journald forwarding is enabled
 
-Instance env should stop referencing local key files in production.
+Instance env should use KMS-only signer settings.
 
 Example per-instance env:
 
 ```bash
 RELAYER_ID=relayer-mainnet-a
 RELAYER_INDEX=0
-RELAYER_KEYS_SECRET_REF=aws-sm://heptad/mainnet/relayer-a
-RELAYER_EVM_KEYS_SECRET_REF=aws-sm://heptad/mainnet/relayer-a#relayEvmPrivateKeys
+RELAYER_SIGNER_MODE=kms
+RELAYER_KMS_KEY_ID=arn:aws:kms:...mldsa
+RELAYER_EVM_SIGNER_MODE=kms
+RELAYER_EVM_KMS_KEY_ID=arn:aws:kms:...ecdsa
 RELAYER_API_URL=http://10.0.1.10:8787
 ```
 
 ## Operator Surface
 
-`apps/web` should become the hosted operator console at `dev.heptad.app`.
+`apps/web` should become the hosted operator console at `dev.testnet.opbridge.app`.
 
 Primary functions:
 
@@ -133,6 +128,6 @@ Before final mainnet deployment, do a clean reinstall and rebuild of `contracts/
 
 1. Provision three EC2 instances and IAM roles.
 2. Move mainnet relayer secrets into AWS Secrets Manager.
-3. Add edge auth and deployment target for `dev.heptad.app`.
+3. Add edge auth and deployment target for `dev.testnet.opbridge.app`.
 4. Rebuild OPNet contracts with the refreshed compiler toolchain and redeploy if bytecode changes.
 5. Run a production dress rehearsal with all three relayers and the API.

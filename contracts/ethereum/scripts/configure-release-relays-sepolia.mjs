@@ -2,6 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { ethers } from "ethers";
+import {
+  base64ToBytes,
+  deriveEthereumAddressFromSpki,
+  kmsGetPublicKey,
+} from "../../../services/relayer/src/aws-kms-utils.mjs";
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -35,53 +40,32 @@ function parseDeployment(projectRoot) {
   return { deploymentPath, deployment };
 }
 
-function loadRelayPrivateKeys() {
-  if (process.env.RELAYER_EVM_KEYS_JSON?.trim()) {
-    const parsed = JSON.parse(process.env.RELAYER_EVM_KEYS_JSON);
-    const keys = Array.isArray(parsed.relayEvmPrivateKeys)
-      ? parsed.relayEvmPrivateKeys
-      : Array.isArray(parsed.relayPrivateKeys)
-        ? parsed.relayPrivateKeys
-        : [];
-    return keys.map((k) => String(k).trim()).filter(Boolean);
-  }
-
-  const keysFile = process.env.RELAYER_EVM_KEYS_FILE?.trim();
-  if (keysFile) {
-    if (!fs.existsSync(keysFile)) {
-      throw new Error(`RELAYER_EVM_KEYS_FILE not found: ${keysFile}`);
-    }
-    const parsed = JSON.parse(fs.readFileSync(keysFile, "utf8"));
-    const keys = Array.isArray(parsed.relayEvmPrivateKeys)
-      ? parsed.relayEvmPrivateKeys
-      : Array.isArray(parsed.relayPrivateKeys)
-        ? parsed.relayPrivateKeys
-        : [];
-    return keys.map((k) => String(k).trim()).filter(Boolean);
-  }
-
-  const csv = process.env.RELAYER_EVM_PRIVATE_KEYS?.trim();
-  if (csv) {
-    return csv
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-  }
-
-  return [];
+function loadRelayEvmKmsKeyIds() {
+  const csv = process.env.RELAYER_EVM_KMS_KEY_IDS?.trim();
+  if (!csv) return [];
+  return csv
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
-function resolveRelayWallets() {
-  const keys = loadRelayPrivateKeys();
-  if (keys.length === 0) {
-    throw new Error(
-      "No relay EVM keys found. Set RELAYER_EVM_KEYS_FILE, RELAYER_EVM_KEYS_JSON, or RELAYER_EVM_PRIVATE_KEYS.",
-    );
+async function resolveRelaySigners() {
+  const keyIds = loadRelayEvmKmsKeyIds();
+  if (keyIds.length === 0) {
+    throw new Error("No relay EVM KMS keys found. Set RELAYER_EVM_KMS_KEY_IDS.");
   }
-  return keys.map((pk, relayIndex) => ({
-    relayIndex,
-    wallet: new ethers.Wallet(pk),
-  }));
+
+  const signers = [];
+  for (const [relayIndex, keyId] of keyIds.entries()) {
+    const publicKeyResponse = await kmsGetPublicKey(keyId);
+    const spkiDer = base64ToBytes(String(publicKeyResponse.PublicKey));
+    signers.push({
+      relayIndex,
+      keyId,
+      address: deriveEthereumAddressFromSpki(spkiDer),
+    });
+  }
+  return signers;
 }
 
 function resolveBridgeHex(deployment) {
@@ -106,10 +90,8 @@ Required:
   SEPOLIA_RPC_URL
   SEPOLIA_DEPLOYER_PRIVATE_KEY
 
-Relay key input (one required):
-  RELAYER_EVM_KEYS_FILE (JSON with relayEvmPrivateKeys or relayPrivateKeys array)
-  RELAYER_EVM_KEYS_JSON (inline JSON)
-  RELAYER_EVM_PRIVATE_KEYS (comma-separated private keys)
+Relay signer input (required):
+  RELAYER_EVM_KMS_KEY_IDS (comma-separated KMS key IDs/ARNs in relay index order)
 
 OP_NET bridge binding (one required):
   OPNET_BRIDGE_HEX (32-byte hex)
@@ -127,8 +109,8 @@ Optional:
   const privateKey = requireEnv("SEPOLIA_DEPLOYER_PRIVATE_KEY");
   const { deploymentPath, deployment } = parseDeployment(projectRoot);
   const bridgeHex = resolveBridgeHex(deployment);
-  const relayWallets = resolveRelayWallets();
-  const relayCount = relayWallets.length;
+  const relaySigners = await resolveRelaySigners();
+  const relayCount = relaySigners.length;
   const relayThreshold = Number(process.env.RELAYER_THRESHOLD?.trim() || "2");
   if (!Number.isInteger(relayThreshold) || relayThreshold < 1 || relayThreshold > relayCount) {
     throw new Error(`RELAYER_THRESHOLD must be between 1 and relayCount (${relayCount}).`);
@@ -159,8 +141,8 @@ Optional:
   console.log(`Deployment file: ${deploymentPath}`);
   console.log(`OPNET_BRIDGE_HEX: ${bridgeHex}`);
   console.log(`relayCount=${relayCount} relayThreshold=${relayThreshold}`);
-  relayWallets.forEach(({ relayIndex, wallet }) => {
-    console.log(`  relay[${relayIndex}] = ${wallet.address}`);
+  relaySigners.forEach(({ relayIndex, keyId, address }) => {
+    console.log(`  relay[${relayIndex}] = ${address} (${keyId})`);
   });
 
   const currentBridgeHex = String(await vault.opnetBridgeHex()).toLowerCase();
@@ -190,15 +172,15 @@ Optional:
     console.log("Skipped setRelayThreshold (already matches)");
   }
 
-  for (const { relayIndex, wallet } of relayWallets) {
+  for (const { relayIndex, address } of relaySigners) {
     const current = String(await vault.relaySigners(relayIndex)).toLowerCase();
-    if (current === wallet.address.toLowerCase()) {
-      console.log(`Skipped relay[${relayIndex}] (already ${wallet.address})`);
+    if (current === address.toLowerCase()) {
+      console.log(`Skipped relay[${relayIndex}] (already ${address})`);
       continue;
     }
-    const tx = await vault.setRelaySigner(relayIndex, wallet.address);
+    const tx = await vault.setRelaySigner(relayIndex, address);
     await tx.wait();
-    console.log(`Set relay[${relayIndex}] -> ${wallet.address}`);
+    console.log(`Set relay[${relayIndex}] -> ${address}`);
   }
 
   console.log("Vault release relay configuration complete.");

@@ -1,4 +1,4 @@
-import type { BridgeMessageV1 } from '@heptad/shared';
+import type { BridgeMessageV1 } from '@opbridge/shared';
 
 export interface EthereumDepositObservation {
   depositId: bigint;

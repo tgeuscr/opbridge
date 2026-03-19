@@ -1,9 +1,9 @@
 import { Blockchain } from '@btc-vision/btc-runtime/runtime';
 import { revertOnError } from '@btc-vision/btc-runtime/runtime/abort/abort';
-import { HeptadBridge } from './HeptadBridge';
+import { OpBridgeBridge } from './OpBridgeBridge';
 
 Blockchain.contract = () => {
-    return new HeptadBridge();
+    return new OpBridgeBridge();
 };
 
 export * from '@btc-vision/btc-runtime/runtime/exports';

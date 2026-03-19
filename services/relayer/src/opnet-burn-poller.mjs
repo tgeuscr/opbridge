@@ -20,7 +20,6 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
 const DEFAULT_MAPPING_FILE = path.resolve(REPO_ROOT, "contracts/ethereum/deployments/sepolia-latest.json");
 const DEFAULT_OUTPUT_FILE = path.resolve(REPO_ROOT, "services/relayer/.data/release-attestations/relayer-opnet.json");
-const DEFAULT_KEYS_FILE = path.resolve(REPO_ROOT, "services/relayer/.data/relay-keys.json");
 const DIRECTION_OP_TO_ETH_RELEASE = 2;
 const DEFAULT_ATTESTATION_VERSION = 1;
 const DEFAULT_OPNET_RPC_URL = "https://regtest.opnet.org";
@@ -588,11 +587,10 @@ Optional:
   RELAYER_POLL_INTERVAL_MS (default: 30000)
   RELAYER_DEBUG_DISCOVERY (default: false; enables verbose tx probing/fallback logs)
 
-ECDSA relay key options (one required for signatures; otherwise unsigned attestations are written):
-  RELAYER_EVM_PRIVATE_KEY + RELAYER_INDEX
-  RELAYER_EVM_KEYS_FILE (default: ${DEFAULT_KEYS_FILE})
-  RELAYER_EVM_KEYS_JSON
-  RELAYER_EVM_PRIVATE_KEYS (comma-separated)
+ECDSA relay signer configuration:
+  RELAYER_EVM_SIGNER_MODE (default: kms)
+  RELAYER_INDEX (required)
+  RELAYER_EVM_KMS_KEY_ID or KMS_EVM_KEY_ID (required)
 `);
     return;
   }
@@ -630,7 +628,6 @@ ECDSA relay key options (one required for signatures; otherwise unsigned attesta
   const bridge = getContract(mapping.opnet.bridgeAddress, BRIDGE_EVENTS_ABI, provider, opnetNetwork);
   const relaySigners = await loadEvmRelaySigners({
     relayerId,
-    defaultKeysFile: DEFAULT_KEYS_FILE,
   });
 
   fs.mkdirSync(path.dirname(outputFile), { recursive: true });

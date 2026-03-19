@@ -20,7 +20,6 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
 const DEFAULT_MAPPING_FILE = path.resolve(REPO_ROOT, "contracts/ethereum/deployments/sepolia-latest.json");
 const DEFAULT_OUTPUT_FILE = path.resolve(REPO_ROOT, "services/relayer/.data/pending-attestations.json");
-const DEFAULT_KEYS_FILE = path.resolve(REPO_ROOT, "services/relayer/.data/relay-keys.json");
 const DIRECTION_ETH_TO_OP_MINT = 1;
 const DEFAULT_ATTESTATION_VERSION = 1;
 
@@ -348,13 +347,12 @@ Required:
 
 Optional:
   RELAYER_ID (default: relayer-0)
-  RELAYER_PRIVATE_KEY + RELAYER_INDEX (single-relayer mode; recommended for multi-instance setup)
+  RELAYER_SIGNER_MODE (default: kms)
+  RELAYER_INDEX (required)
+  RELAYER_KMS_KEY_ID or KMS_OPNET_KEY_ID (required)
   RELAYER_MAPPING_FILE (default: ${DEFAULT_MAPPING_FILE})
   OPNET_BRIDGE_ADDRESS (required only if mapping file does not include opnet.bridgeAddress)
   OPNET_BRIDGE_HEX (32-byte hex bridge address used for signature hash; required when bridgeAddress is op...)
-  RELAYER_KEYS_FILE (default: ${DEFAULT_KEYS_FILE})
-  RELAYER_KEYS_JSON (inline JSON payload containing relayPrivateKeys)
-  RELAYER_PRIVATE_KEYS (comma-separated fallback if no key JSON is supplied)
   ATTESTATION_VERSION (default: ${DEFAULT_ATTESTATION_VERSION})
   RELAYER_OUTPUT_FILE  (default: ${DEFAULT_OUTPUT_FILE})
   RELAYER_START_BLOCK  (default: latest-20)
@@ -363,7 +361,7 @@ Optional:
 
 Example:
   SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \\
-  npm run run:sepolia --workspace @heptad/relayer
+  npm run run:sepolia --workspace @opbridge/relayer
 `);
     return;
   }
@@ -391,7 +389,6 @@ Example:
   const relaySigners = await loadOpnetRelaySigners({
     relayerId,
     opnetNetwork: resolveOPNetNetwork(mapping.opnet.network),
-    defaultKeysFile: DEFAULT_KEYS_FILE,
   });
   if (Number(mapping.ethereum.chainId) !== 11155111) {
     throw new Error(`Expected ethereum.chainId=11155111 for Sepolia, got ${mapping.ethereum.chainId}`);

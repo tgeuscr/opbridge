@@ -18,7 +18,7 @@ Current scaffolding:
   - `snapshot`
 - Sepolia poller CLI for `DepositInitiated` event ingestion:
   - `src/sepolia-poller.mjs`
-  - `npm run run:sepolia --workspace @heptad/relayer`
+  - `npm run run:sepolia --workspace @opbridge/relayer`
   - mapping loader + log polling + canonical payload + pending attestation output
 
 Still pending:
@@ -36,23 +36,13 @@ Required env vars:
 Optional env vars:
 
 - `RELAYER_ID` (default: `relayer-0`)
-- `RELAYER_SIGNER_MODE` (`local` default, or `kms`)
-- Single-relayer mode (recommended for multi-instance topology):
-  - `RELAYER_PRIVATE_KEY` (single MLDSA private key)
-  - `RELAYER_PRIVATE_KEY_SECRET_REF` (`aws-sm://...`, `aws-ssm://...`, or `file://...`)
-  - `RELAYER_INDEX` (relay index in bridge config, `0..255`)
-- KMS mode:
-  - `RELAYER_KMS_KEY_ID` or `KMS_OPNET_KEY_ID`
-  - `RELAYER_INDEX` (required)
+- `RELAYER_SIGNER_MODE` (default: `kms`; only `kms` is supported)
+- `RELAYER_KMS_KEY_ID` or `KMS_OPNET_KEY_ID`
+- `RELAYER_INDEX` (required)
 - `RELAYER_MAPPING_FILE` (default: `contracts/ethereum/deployments/sepolia-latest.json`)
 - `OPNET_BRIDGE_ADDRESS` (required only when mapping/deployment JSON does not contain `opnet.bridgeAddress`)
 - `OPNET_BRIDGE_HEX` (32-byte hex bridge address used in attestation hash; required when bridge address is `op...`)
 - `ATTESTATION_VERSION` (default: `1`; must match an accepted bridge attestation version)
-- Relay key inputs (for signing):
-  - `RELAYER_KEYS_FILE` (default: `services/relayer/.data/relay-keys.json`)
-  - `RELAYER_KEYS_JSON` (inline JSON with `relayPrivateKeys`)
-  - `RELAYER_KEYS_SECRET_REF` (JSON secret ref with `relayPrivateKeys`)
-  - `RELAYER_PRIVATE_KEYS` (comma-separated hex keys fallback)
 - `RELAYER_OUTPUT_FILE` (default: `services/relayer/.data/pending-attestations.json`)
 - `RELAYER_START_BLOCK` (default: latest-20)
 - `RELAYER_MAX_BLOCK_RANGE` (default: `10`, Alchemy free-tier safe)
@@ -61,33 +51,7 @@ Optional env vars:
 Run:
 
 ```bash
-npm run run:sepolia --workspace @heptad/relayer
-```
-
-Relay keys JSON shape:
-
-```json
-{
-  "relayPrivateKeys": [
-    "0x..."
-  ]
-}
-```
-
-Combined key file (recommended for both directions):
-
-```json
-{
-  "relayPrivateKeys": ["0x..."],
-  "relayEvmPrivateKeys": ["0x..."]
-}
-```
-
-Secret ref selectors support nested JSON access. Example:
-
-```bash
-RELAYER_KEYS_SECRET_REF=aws-sm://heptad/mainnet/relayer-a
-RELAYER_PRIVATE_KEY_SECRET_REF=aws-sm://heptad/mainnet/relayer-a#relayPrivateKeys.0
+npm run run:sepolia --workspace @opbridge/relayer
 ```
 
 KMS signer example:
@@ -98,52 +62,16 @@ RELAYER_INDEX=0
 RELAYER_KMS_KEY_ID=arn:aws:kms:us-east-2:123456789012:key/...
 ```
 
-## Deterministic relay key generation (MLDSA + ECDSA)
-
-Generate both relay key sets from one mnemonic:
+Generate the OP_NET relay public config from the same KMS signer set:
 
 ```bash
-RELAYER_KEYS_MNEMONIC="word1 word2 ... word12" \
-npm run keys:generate --workspace @heptad/relayer
+RELAYER_KMS_KEY_IDS=arn:aws:kms:...mldsa-a,arn:aws:kms:...mldsa-b,arn:aws:kms:...mldsa-c \
+RELAYER_EVM_KMS_KEY_IDS=arn:aws:kms:...ecdsa-a,arn:aws:kms:...ecdsa-b,arn:aws:kms:...ecdsa-c \
+OPNET_NETWORK=testnet \
+npm run relay-config:kms --workspace @opbridge/relayer
 ```
 
-Generate one relayer key bundle by relay index (recommended for per-instance key files):
-
-```bash
-RELAYER_KEYS_MNEMONIC="word1 word2 ... word12" \
-RELAYER_KEYS_RELAY_INDEX=1 \
-npm run keys:generate --workspace @heptad/relayer
-```
-
-Equivalent CLI form:
-
-```bash
-RELAYER_KEYS_MNEMONIC="word1 word2 ... word12" \
-npm run keys:generate --workspace @heptad/relayer -- --relay-index 1
-```
-
-Single-relayer mode defaults:
-
-- `services/relayer/.data/keys/relay-keys-relayer-<index>.json`
-- `services/relayer/.data/keys/relay-public-config-relayer-<index>.json`
-
-Outputs:
-
-- `services/relayer/.data/relay-keys.json` (private keys; local only)
-- `services/relayer/.data/relay-public-config.json` (public config for contract wiring)
-
-Public config includes:
-
-- `relayPubKeysPackedHex` for OP_NET bridge `setRelaysConfigPacked`
-- per-relay MLDSA public keys / relay IDs
-- per-relay ECDSA addresses for Ethereum vault `setRelaySigner`
-
-Verify derived keys against local public config and (optionally) Sepolia vault relay slots:
-
-```bash
-RELAYER_KEYS_MNEMONIC="word1 word2 ... word12" \
-npm run keys:verify --workspace @heptad/relayer
-```
+This writes `services/relayer/.data/relay-public-config.json`, which is consumed by `scripts/addpubkeystobridge.sh`.
 
 Current pending attestation output now includes per-signer signatures:
 
@@ -157,11 +85,11 @@ Current pending attestation output now includes per-signer signatures:
 
 ## AWS KMS compatibility spike
 
-Validate whether AWS KMS can replace local relay signing:
+Validate the KMS signing paths directly:
 
 ```bash
-npm run kms:spike:opnet --workspace @heptad/relayer
-npm run kms:spike:evm --workspace @heptad/relayer
+npm run kms:spike:opnet --workspace @opbridge/relayer
+npm run kms:spike:evm --workspace @opbridge/relayer
 ```
 
 See `docs/kms-spike.md` for required env vars and success criteria.
@@ -173,21 +101,21 @@ Run each relayer in its own process with one key and one relay index:
 ```bash
 SEPOLIA_RPC_URL=... OPNET_BRIDGE_ADDRESS=... OPNET_BRIDGE_HEX=0x... \
 RELAYER_ID=relayer-a RELAYER_INDEX=0 \
-RELAYER_KEYS_FILE=services/relayer/.data/keys/relay-keys-relayer-0.json \
+RELAYER_SIGNER_MODE=kms RELAYER_KMS_KEY_ID=arn:aws:kms:... \
 RELAYER_OUTPUT_FILE=services/relayer/.data/attestations/relayer-a.json \
-npm run run:sepolia --workspace @heptad/relayer
+npm run run:sepolia --workspace @opbridge/relayer
 
 SEPOLIA_RPC_URL=... OPNET_BRIDGE_ADDRESS=... OPNET_BRIDGE_HEX=0x... \
 RELAYER_ID=relayer-b RELAYER_INDEX=1 \
-RELAYER_KEYS_FILE=services/relayer/.data/keys/relay-keys-relayer-1.json \
+RELAYER_SIGNER_MODE=kms RELAYER_KMS_KEY_ID=arn:aws:kms:... \
 RELAYER_OUTPUT_FILE=services/relayer/.data/attestations/relayer-b.json \
-npm run run:sepolia --workspace @heptad/relayer
+npm run run:sepolia --workspace @opbridge/relayer
 
 SEPOLIA_RPC_URL=... OPNET_BRIDGE_ADDRESS=... OPNET_BRIDGE_HEX=0x... \
 RELAYER_ID=relayer-c RELAYER_INDEX=2 \
-RELAYER_KEYS_FILE=services/relayer/.data/keys/relay-keys-relayer-2.json \
+RELAYER_SIGNER_MODE=kms RELAYER_KMS_KEY_ID=arn:aws:kms:... \
 RELAYER_OUTPUT_FILE=services/relayer/.data/attestations/relayer-c.json \
-npm run run:sepolia --workspace @heptad/relayer
+npm run run:sepolia --workspace @opbridge/relayer
 ```
 
 ## Aggregate threshold attestations
@@ -195,7 +123,7 @@ npm run run:sepolia --workspace @heptad/relayer
 CLI:
 
 ```bash
-npm run aggregate:sepolia --workspace @heptad/relayer
+npm run aggregate:sepolia --workspace @opbridge/relayer
 ```
 
 Optional env vars:
@@ -220,7 +148,7 @@ Aggregator output includes threshold-ready `mintSubmission` payloads with:
 CLI:
 
 ```bash
-npm run submit:opnet --workspace @heptad/relayer
+npm run submit:opnet --workspace @opbridge/relayer
 ```
 
 Required env vars:

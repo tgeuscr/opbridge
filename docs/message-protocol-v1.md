@@ -1,4 +1,4 @@
-# Heptad Bridge Message Protocol v1
+# OP_BRIDGE Message Protocol v1
 
 Status: draft for implementation
 

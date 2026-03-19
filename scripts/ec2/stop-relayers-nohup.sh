@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PID_DIR="${HEPTAD_PID_DIR:-/tmp}"
+PID_DIR="${OP_BRIDGE_PID_DIR:-/tmp}"
 
 stop_pid_file() {
   local pid_file="$1"
@@ -26,7 +26,7 @@ stop_pid_file() {
 
 main() {
   shopt -s nullglob
-  local files=("$PID_DIR"/heptad-sepolia-*.pid "$PID_DIR"/heptad-opnet-burn-*.pid)
+  local files=("$PID_DIR"/opbridge-sepolia-*.pid "$PID_DIR"/opbridge-opnet-burn-*.pid)
   if [[ ${#files[@]} -eq 0 ]]; then
     echo "no pid files found in $PID_DIR"
     return 0

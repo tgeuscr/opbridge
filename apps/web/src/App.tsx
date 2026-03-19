@@ -8,11 +8,10 @@ import {
   UnisatSigner,
 } from '@btc-vision/transaction';
 import { JSONRpcProvider, getContract } from 'opnet';
-import { ASSET_CONFIGS, SUPPORTED_ASSETS } from '@heptad/shared';
-import HeptadBridgeAbi from './abi/HeptadBridge.abi';
+import { ASSET_CONFIGS, SUPPORTED_ASSETS } from '@opbridge/shared';
+import OpBridgeBridgeAbi from './abi/OpBridgeBridge.abi';
 import BridgeWrappedTokenAbi from './abi/BridgeWrappedToken.abi';
 import OP20ReadAbi from './abi/OP20Read.abi';
-import devRelayKeys from './dev-relay-keys.json';
 import defaultSepoliaDeployment from './dev-sepolia-latest.json';
 
 class OPWalletSigner extends UnisatSigner {
@@ -90,7 +89,7 @@ type CallResult<TProps = Record<string, unknown>> = {
   sendTransaction: (params: TxParams) => Promise<unknown>;
 };
 
-type HeptadBridgeContract = {
+type OpBridgeBridgeContract = {
   paused: () => Promise<CallResult<{ paused: boolean }>>;
   relayThreshold: () => Promise<CallResult<{ requiredSignatures: number }>>;
   relayCount: () => Promise<CallResult<{ relayCount: number }>>;
@@ -910,10 +909,10 @@ export function App() {
     try {
       return getContract(
         bridgeContractTarget,
-        HeptadBridgeAbi as any,
+        OpBridgeBridgeAbi as any,
         readProvider,
         readNetwork
-      ) as unknown as HeptadBridgeContract;
+      ) as unknown as OpBridgeBridgeContract;
     } catch {
       return null;
     }
@@ -925,10 +924,10 @@ export function App() {
     try {
       return getContract(
         bridgeContractTarget,
-        HeptadBridgeAbi as any,
+        OpBridgeBridgeAbi as any,
         walletProvider as any,
         readNetwork
-      ) as unknown as HeptadBridgeContract;
+      ) as unknown as OpBridgeBridgeContract;
     } catch {
       return null;
     }
@@ -1065,7 +1064,7 @@ export function App() {
 
   const runAction = async (
     label: string,
-    fn: (contract: HeptadBridgeContract) => Promise<CallResult>,
+    fn: (contract: OpBridgeBridgeContract) => Promise<CallResult>,
     send: boolean,
   ): Promise<{ sent: boolean; transactionId: string | null }> => {
     if (!readBridge) {
@@ -1792,20 +1791,6 @@ export function App() {
       applyRelayDataPayload(payload);
     } catch (error) {
       setOutput(`Failed to load relay JSON: ${(error as Error).message}`);
-    }
-  };
-
-  const loadBundledRelayData = (): void => {
-    try {
-      const payload = devRelayKeys as {
-        relayCount?: number;
-        relayPubKeysPacked?: string;
-        relayPrivateKeys?: string[];
-      };
-      setRelayDataJsonInput(JSON.stringify(payload, null, 2));
-      applyRelayDataPayload(payload);
-    } catch (error) {
-      setOutput(`Failed to load bundled relay JSON: ${(error as Error).message}`);
     }
   };
 
@@ -2586,7 +2571,7 @@ export function App() {
   return (
     <main className="page">
       <header className="hero">
-        <p className="kicker">heptad / op_net bridge dev console</p>
+        <p className="kicker">opbridge / op_net bridge dev console</p>
         <h1>Simple OP_NET Bridge UI</h1>
         <p>
           ABI-based bridge interaction with simulation-first flow, OP_WALLET connection,
@@ -2626,7 +2611,7 @@ export function App() {
                 <input
                   value={statusApiUrl}
                   onChange={(e) => setStatusApiUrl(e.target.value)}
-                  placeholder="https://api.heptad.app"
+                  placeholder="https://api.testnet.opbridge.app"
                 />
               </label>
               <pre className="status">
@@ -2885,7 +2870,7 @@ Address format: use op... addresses (0x... also supported).`}
             <input
               value={tokenBridgeAuthorityAddress}
               onChange={(e) => setTokenBridgeAuthorityAddress(e.target.value)}
-              placeholder="op... (HeptadBridge contract)"
+              placeholder="op... (OpBridgeBridge contract)"
             />
           </label>
           <label>
@@ -3127,7 +3112,6 @@ rawAmount: ${dummyRawAmountPreview}`}
               }}
             />
             <button onClick={() => relayJsonFileInputRef.current?.click()}>Upload Relay JSON(s)</button>
-            <button onClick={loadBundledRelayData}>Load Default Relay JSON</button>
             <button onClick={loadRelayDataFromJson}>Load Relay Data JSON From Textarea</button>
           </div>
           <div className="row">
@@ -4514,9 +4498,9 @@ balanceEth: ${ethereumBalanceEth}`}
    SEPOLIA_DEPLOYER_PRIVATE_KEY
    ETH_VAULT_OWNER (optional)
 2. Deploy vault + 4 test tokens:
-   npm run deploy:sepolia --workspace @heptad/ethereum-contracts
+   npm run deploy:sepolia --workspace @opbridge/ethereum-contracts
 3. If owner != deployer, configure assets:
-   npm run configure:sepolia --workspace @heptad/ethereum-contracts
+   npm run configure:sepolia --workspace @opbridge/ethereum-contracts
 4. Paste deployed addresses in this tab, then export mapping JSON for relayer.`}
               </pre>
               <label>
@@ -4528,7 +4512,7 @@ balanceEth: ${ethereumBalanceEth}`}
                 />
               </label>
               <label>
-                HeptadVault (Sepolia)
+                OpBridgeVault (Sepolia)
                 <input
                   value={ethereumVaultAddress}
                   onChange={(e) => setEthereumVaultAddress(e.target.value)}

@@ -33,7 +33,7 @@ Required:
 
 Message input (one required):
   OPNET_MESSAGE_HEX         0x-prefixed message bytes to sign
-  OPNET_ATTESTATION_JSON    JSON message object to hash with Heptad mint attestation format
+  OPNET_ATTESTATION_JSON    JSON message object to hash with OP_BRIDGE mint attestation format
 
 Optional:
   KMS_OPNET_SIGNING_ALGORITHM   default: ML_DSA_SHAKE_256
@@ -102,7 +102,7 @@ This script checks:
         bridgeCompatibility: {
           publicKeyLengthMatches: publicKeyBytes.length === EXPECTED_PUBLIC_KEY_BYTES,
           signatureLengthMatches: signatureBytes.length === EXPECTED_SIGNATURE_BYTES,
-          note: 'This proves KMS sign/verify and size compatibility. Final proof still requires a live Heptad bridge attestation submission.',
+          note: 'This proves KMS sign/verify and size compatibility. Final proof still requires a live OP_BRIDGE bridge attestation submission.',
         },
       },
       null,

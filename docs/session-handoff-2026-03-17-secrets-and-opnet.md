@@ -65,7 +65,7 @@ It also already supports JSON selectors like:
 
 The relayer env template already points in this direction:
 
-- `heptad-env/relayer-instance.template.env`
+- `opbridge-env/relayer-instance.template.env`
   - `RELAYER_KEYS_SECRET_REF=aws-sm://...`
   - `RELAYER_EVM_KEYS_SECRET_REF=aws-sm://...#relayEvmPrivateKeys`
 
@@ -73,16 +73,16 @@ The relayer env template already points in this direction:
 
 Systemd units still load env files directly:
 
-- `scripts/ec2/systemd/heptad-relayer-opnet-burn@.service`
-- `scripts/ec2/systemd/heptad-relayer-sepolia@.service`
-- `scripts/ec2/systemd/heptad-relayer-api.service`
+- `scripts/ec2/systemd/opbridge-relayer-opnet-burn@.service`
+- `scripts/ec2/systemd/opbridge-relayer-sepolia@.service`
+- `scripts/ec2/systemd/opbridge-relayer-api.service`
 
 Those units rely on files such as:
 
-- `heptad-env/relayer-common.env`
-- `heptad-env/opnet-burn-*.env`
-- `heptad-env/sepolia-*.env`
-- `heptad-env/relayer-api.env`
+- `opbridge-env/relayer-common.env`
+- `opbridge-env/opnet-burn-*.env`
+- `opbridge-env/sepolia-*.env`
+- `opbridge-env/relayer-api.env`
 
 Shared config currently living in plaintext includes:
 
@@ -118,7 +118,7 @@ Keep local env files only for per-instance identity/config:
 
 ### Recommended implementation shape
 
-Prefer a small bootstrap layer that resolves AWS-backed refs before the Node process starts, instead of embedding shared secrets permanently in `~/heptad-env/*.env`.
+Prefer a small bootstrap layer that resolves AWS-backed refs before the Node process starts, instead of embedding shared secrets permanently in `~/opbridge-env/*.env`.
 
 Two reasonable ways to do that:
 
@@ -133,7 +133,7 @@ The existing `services/relayer/src/secret-provider.mjs` should be reused rather 
 2. Move API write tokens and other auth secrets to Secrets Manager.
 3. Move shared URLs and endpoints to SSM Parameter Store.
 4. Update systemd startup so units resolve AWS refs at launch time.
-5. Keep only instance-local values in `heptad-env/*.env`.
+5. Keep only instance-local values in `opbridge-env/*.env`.
 6. Rotate tokens after migration to eliminate trust in older plaintext copies.
 7. Document the bootstrap/recovery flow so EC2 replacement is deterministic.
 

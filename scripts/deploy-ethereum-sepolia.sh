@@ -25,13 +25,13 @@ export ETH_VAULT_OWNER="${ETH_VAULT_OWNER:-}"
 export ETH_VAULT_FEE_RECIPIENT="${ETH_VAULT_FEE_RECIPIENT:-}"
 export SEPOLIA_TEST_MINT_PER_TOKEN="${SEPOLIA_TEST_MINT_PER_TOKEN:-1000000}"
 
-npm run deploy:sepolia --workspace @heptad/ethereum-contracts
+npm run deploy:sepolia --workspace @opbridge/ethereum-contracts
 
 if [[ "${SYNC_ENV_AFTER:-1}" == "1" ]]; then
-  scripts/heptad-env-sync.sh
+  scripts/opbridge-env-sync.sh
 fi
 
 echo
 echo "Sepolia deploy complete. Next:"
-echo "  1) verify heptad-env/contracts.env and apps/site/.env.local"
+echo "  1) verify opbridge-env/contracts.env and apps/site/.env.local"
 echo "  2) run scripts/configure-ethereum-release-relays.sh"

@@ -1,4 +1,4 @@
-# Heptad Bridge E2E Runbook (Regtest OP_NET + Sepolia)
+# OP_BRIDGE E2E Runbook (Regtest OP_NET + Sepolia)
 
 This runbook covers the full cycle:
 
@@ -12,67 +12,42 @@ This runbook covers the full cycle:
 
 ## Prereqs
 
-- Repo root: `cd /home/m/projects/heptad`
+- Repo root: `cd /home/m/projects/opbridge`
 - OP Wallet installed and using OP_NET `regtest`
 - Sepolia RPC URL and funded EOA
 - OP_NET bridge deployed with the **new burn ABI**:
   - `requestBurn(asset, from, ethereumRecipient, amount, withdrawalId)`
-- Relay key file (combined MLDSA + ECDSA):
-  - `services/relayer/.data/relay-keys.json`
+- KMS signer fleet:
+  - one ML-DSA AWS KMS key per Sepolia poller
+  - one ECDSA AWS KMS key per OP_NET burn poller
+  - relay index order still defines on-chain signer slot order (`0,1,2,...`)
 
-Recommended (deterministic generation from one mnemonic):
+Generate the OP_NET relay public config before bridge wiring:
 
 ```bash
-RELAYER_KEYS_MNEMONIC="word1 ... word12" \
-npm run keys:generate --workspace @heptad/relayer
+RELAYER_KMS_KEY_IDS=arn:aws:kms:...mldsa-a,arn:aws:kms:...mldsa-b,arn:aws:kms:...mldsa-c \
+RELAYER_EVM_KMS_KEY_IDS=arn:aws:kms:...ecdsa-a,arn:aws:kms:...ecdsa-b,arn:aws:kms:...ecdsa-c \
+OPNET_NETWORK=testnet \
+npm run relay-config:kms --workspace @opbridge/relayer
 ```
 
-This writes:
-- `services/relayer/.data/relay-keys.json` (private keys; keep local)
-- `services/relayer/.data/relay-public-config.json` (contract-facing public values)
-
-## Key File Format
-
-`services/relayer/.data/relay-keys.json`
-
-```json
-{
-  "relayPrivateKeys": [
-    "MLDSA_KEY_RELAY_0",
-    "MLDSA_KEY_RELAY_1",
-    "MLDSA_KEY_RELAY_2"
-  ],
-  "relayEvmPrivateKeys": [
-    "0xECDSA_KEY_RELAY_0",
-    "0xECDSA_KEY_RELAY_1",
-    "0xECDSA_KEY_RELAY_2"
-  ]
-}
-```
-
-Notes:
-- `relayPrivateKeys` = MLDSA keys (ETH -> OP mint path)
-- `relayEvmPrivateKeys` = ECDSA keys (OP -> ETH release path)
-- Key order defines relay index (`0,1,2,...`)
-- `relay-public-config.json` includes:
-  - `relayPubKeysPackedHex` (feed OP_NET bridge `setRelaysConfigPacked`)
-  - per-relay ECDSA addresses (feed Ethereum vault `setRelaySigner`)
+This writes `services/relayer/.data/relay-public-config.json` for `setRelaysConfigPacked(...)`.
 
 ## 1) Build/Test Before Deploying
 
 ```bash
-npm run build --workspace @heptad/opnet-contracts
-npm run test --workspace @heptad/opnet-contracts
-npm run build --workspace @heptad/ethereum-contracts
-npm run test --workspace @heptad/ethereum-contracts
-npm run typecheck --workspace @heptad/web
+npm run build --workspace @opbridge/opnet-contracts
+npm run test --workspace @opbridge/opnet-contracts
+npm run build --workspace @opbridge/ethereum-contracts
+npm run test --workspace @opbridge/ethereum-contracts
+npm run typecheck --workspace @opbridge/web
 ```
 
 ## 2) Deploy OP_NET Contracts (Manual)
 
 Deploy manually (wallet/UI/current flow):
 
-- `HeptadBridge` (new ABI)
+- `OpBridgeBridge` (new ABI)
 - `HUSDT`
 - `HWBTC`
 - `HETH`
@@ -96,7 +71,7 @@ OPNET_HUSDT_ADDRESS=op... \
 OPNET_HWBTC_ADDRESS=op... \
 OPNET_HETH_ADDRESS=op... \
 OPNET_HPAXG_ADDRESS=op... \
-npm run deploy:sepolia --workspace @heptad/ethereum-contracts
+npm run deploy:sepolia --workspace @opbridge/ethereum-contracts
 ```
 
 Notes:
@@ -110,7 +85,7 @@ Optional/required (if owner != deployer) rerun asset config + fee recipient:
 SEPOLIA_RPC_URL=... \
 SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
 ETH_VAULT_FEE_RECIPIENT=0x<fee-recipient> \
-npm run configure:sepolia --workspace @heptad/ethereum-contracts
+npm run configure:sepolia --workspace @opbridge/ethereum-contracts
 ```
 
 ## 4) Configure Ethereum Vault Release Relays (ECDSA, OP->ETH path, Terminal)
@@ -122,17 +97,17 @@ This wires the Sepolia vault to:
 - `relaySigners[index]`
 
 ```bash
-cd /home/m/projects/heptad/contracts/ethereum
+cd /home/m/projects/opbridge/contracts/ethereum
 
 SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \
 SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
 SEPOLIA_DEPLOYMENT_FILE=deployments/sepolia-latest.json \
 OPNET_BRIDGE_HEX=0x<64-hex> \
-RELAYER_EVM_KEYS_FILE=../../services/relayer/.data/relay-keys.json \
+RELAYER_EVM_KMS_KEY_IDS=arn:aws:kms:...a,arn:aws:kms:...b,arn:aws:kms:...c \
 RELAYER_THRESHOLD=2 \
 npm run configure:release-relays:sepolia
 
-cd /home/m/projects/heptad
+cd /home/m/projects/opbridge
 ```
 
 ## 5) Configure Ethereum Vault Admin State (Terminal)
@@ -146,7 +121,7 @@ SEPOLIA_RPC_URL=... \
 SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
 ETH_VAULT_FEE_RECIPIENT=0x<fee-recipient> \
 SEPOLIA_VAULT_PAUSED=true \
-npm run admin:sepolia --workspace @heptad/ethereum-contracts
+npm run admin:sepolia --workspace @opbridge/ethereum-contracts
 ```
 
 Optional: set fee bps (must be paused). `100 = 1%`.
@@ -156,7 +131,7 @@ SEPOLIA_RPC_URL=... \
 SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
 ETH_VAULT_FEE_BPS=100 \
 SEPOLIA_VAULT_PAUSED=true \
-npm run admin:sepolia --workspace @heptad/ethereum-contracts
+npm run admin:sepolia --workspace @opbridge/ethereum-contracts
 ```
 
 Do **not** unpause yet until OP_NET bridge wiring is complete.
@@ -182,7 +157,7 @@ After all wiring is complete, unpause the Sepolia vault:
 SEPOLIA_RPC_URL=... \
 SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
 SEPOLIA_VAULT_PAUSED=false \
-npm run admin:sepolia --workspace @heptad/ethereum-contracts
+npm run admin:sepolia --workspace @opbridge/ethereum-contracts
 ```
 
 `depositERC20(...)` and `releaseWithRelaySignatures(...)` will revert while paused.
@@ -195,14 +170,15 @@ Run one process per relay index (examples use 3 relayers):
 SEPOLIA_RPC_URL=... \
 RELAYER_ID=relayer-a \
 RELAYER_INDEX=0 \
-RELAYER_KEYS_FILE=services/relayer/.data/relay-keys.json \
+RELAYER_SIGNER_MODE=kms \
+RELAYER_KMS_KEY_ID=arn:aws:kms:... \
 OPNET_BRIDGE_ADDRESS=op... \
 OPNET_BRIDGE_HEX=0x<64-hex> \
 RELAYER_OUTPUT_FILE=services/relayer/.data/attestations/relayer-a.json \
 RELAYER_START_BLOCK=<recent-sepolia-block> \
 RELAYER_MAX_BLOCK_RANGE=1 \
 RELAYER_POLL_INTERVAL_MS=30000 \
-npm run run:sepolia --workspace @heptad/relayer
+npm run run:sepolia --workspace @opbridge/relayer
 ```
 
 Repeat with:
@@ -225,7 +201,7 @@ SEPOLIA_DEPOSITOR_PRIVATE_KEY=0x... \
 SEPOLIA_DEPOSIT_ASSET=USDT \
 SEPOLIA_DEPOSIT_AMOUNT=25 \
 SEPOLIA_DEPOSIT_RECIPIENT=0x<64-hex> \
-npm run deposit:sepolia --workspace @heptad/ethereum-contracts
+npm run deposit:sepolia --workspace @opbridge/ethereum-contracts
 ```
 
 ## 10) Aggregate Mint Candidate (ETH->OP)
@@ -233,7 +209,7 @@ npm run deposit:sepolia --workspace @heptad/ethereum-contracts
 ```bash
 RELAYER_THRESHOLD=2 \
 AGGREGATOR_OUTPUT_FILE=services/relayer/.data/mint-submission-candidates.json \
-npm run aggregate:sepolia --workspace @heptad/relayer
+npm run aggregate:sepolia --workspace @opbridge/relayer
 ```
 
 ## 11) Submit Mint on OP_NET
@@ -246,7 +222,7 @@ HTTPS_PROXY=http://proxy.example.corp:8080 \
 OPNET_NETWORK=testnet \
 OPNET_WALLET_MNEMONIC="..." \
 MINT_CANDIDATES_FILE=services/relayer/.data/mint-submission-candidates.json \
-npm run submit:opnet --workspace @heptad/relayer
+npm run submit:opnet --workspace @opbridge/relayer
 ```
 
 Note: if using terminal, the env var name in the script is `MINT_CANDIDATES_FILE`.
@@ -276,11 +252,12 @@ HTTPS_PROXY=http://proxy.example.corp:8080 \
 OPNET_NETWORK=testnet \
 RELAYER_ID=relayer-a \
 RELAYER_INDEX=0 \
-RELAYER_EVM_KEYS_FILE=services/relayer/.data/relay-keys.json \
+RELAYER_EVM_SIGNER_MODE=kms \
+RELAYER_EVM_KMS_KEY_ID=arn:aws:kms:... \
 RELAYER_MAPPING_FILE=contracts/ethereum/deployments/sepolia-latest.json \
 RELAYER_OUTPUT_FILE=services/relayer/.data/release-attestations/relayer-a.json \
 RELAYER_POLL_INTERVAL_MS=30000 \
-npm run run:opnet-burn --workspace @heptad/relayer
+npm run run:opnet-burn --workspace @opbridge/relayer
 ```
 
 Repeat with:
@@ -291,7 +268,7 @@ Repeat with:
 
 ```bash
 RELAYER_THRESHOLD=2 \
-npm run aggregate:release --workspace @heptad/relayer
+npm run aggregate:release --workspace @opbridge/relayer
 ```
 
 Output:
@@ -302,11 +279,11 @@ Output:
 ```bash
 SEPOLIA_RPC_URL=... \
 SEPOLIA_SUBMITTER_PRIVATE_KEY=0x... \
-npm run submit:sepolia-release --workspace @heptad/relayer
+npm run submit:sepolia-release --workspace @opbridge/relayer
 ```
 
 This calls:
-- `HeptadVault.releaseWithRelaySignatures(...)`
+- `OpBridgeVault.releaseWithRelaySignatures(...)`
 
 At the default `1%` vault fee on release:
 - OP_NET burn amount `X` is attested by relayers

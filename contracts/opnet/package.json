@@ -1,5 +1,5 @@
 {
-  "name": "@heptad/opnet-contracts",
+  "name": "@opbridge/opnet-contracts",
   "version": "0.1.0",
   "private": true,
   "type": "module",

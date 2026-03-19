@@ -40,7 +40,7 @@ export class HWBTC extends OP20 {
     public override onDeployment(_: Calldata): void {
         const maxSupply: u256 = u256.fromU64(2100000000000000);
         const decimals: u8 = 8;
-        const name = 'heptad-bridged WBTC';
+        const name = 'opbridge-bridged WBTC';
         const symbol = 'hWBTC';
 
         this.instantiate(new OP20InitParameters(maxSupply, decimals, name, symbol));

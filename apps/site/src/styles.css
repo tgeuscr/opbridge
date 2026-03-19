@@ -630,7 +630,7 @@ h3 {
   z-index: 2;
 }
 
-.heptad-symbol {
+.opbridge-symbol {
   width: min(100px, 24vw);
   height: auto;
 }
@@ -1329,7 +1329,7 @@ html[data-theme='dark'] .route-box > div + div {
     padding: 0;
   }
 
-  .heptad-symbol {
+  .opbridge-symbol {
     width: min(84px, 24vw);
   }
 }
@@ -1420,7 +1420,7 @@ html[data-theme='dark'] .route-box > div + div {
     padding: 0;
   }
 
-  .heptad-symbol {
+  .opbridge-symbol {
     width: min(72px, 22vw);
   }
 

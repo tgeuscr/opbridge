@@ -1,4 +1,4 @@
-# Heptad Public Site (`apps/site`)
+# OP_BRIDGE Public Site (`apps/site`)
 
 Public-facing bridge frontend preview (separate from the internal dev console in `apps/web`).
 
@@ -13,20 +13,20 @@ Current scope:
 From the repo root:
 
 ```bash
-npm run dev --workspace @heptad/site
+npm run dev --workspace @opbridge/site
 ```
 
 Build:
 
 ```bash
-npm run build --workspace @heptad/site
+npm run build --workspace @opbridge/site
 ```
 
 ## Environment Variables
 
 Browser-safe only.
 
-- `VITE_STATUS_API_URL`: Base URL for relayer API (example: `https://api.heptad.app`)
+- `VITE_STATUS_API_URL`: Base URL for relayer API (example: `https://api.testnet.opbridge.app`)
 - `VITE_ETHEREUM_VAULT_ADDRESS`
 - `VITE_ETHEREUM_USDT_ADDRESS`
 - `VITE_ETHEREUM_WBTC_ADDRESS`
@@ -44,7 +44,7 @@ Browser-safe only.
 Example:
 
 ```bash
-VITE_STATUS_API_URL=https://api.heptad.app
+VITE_STATUS_API_URL=https://api.testnet.opbridge.app
 VITE_ETHEREUM_VAULT_ADDRESS=0x...
 VITE_ETHEREUM_USDT_ADDRESS=0x...
 VITE_ETHEREUM_WBTC_ADDRESS=0x...
@@ -88,14 +88,14 @@ Set env vars (Vercel Project Settings -> Environment Variables):
 Recommended value for this project:
 
 ```bash
-VITE_STATUS_API_URL=https://api.heptad.app
+VITE_STATUS_API_URL=https://api.testnet.opbridge.app
 ```
 
 ## DNS Layout
 
 Recommended split:
-- `heptad.app` and `www.heptad.app` -> Vercel
-- `api.heptad.app` -> EC2 (Nginx -> local relayer API)
+- `testnet.opbridge.app` and `testnet.opbridge.app` -> Vercel
+- `api.testnet.opbridge.app` -> EC2 (Nginx -> local relayer API)
 
 ## Notes
 

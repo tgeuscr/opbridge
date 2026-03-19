@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PID_DIR="${HEPTAD_PID_DIR:-/tmp}"
-LOG_DIR="${HEPTAD_LOG_DIR:-/tmp}"
+PID_DIR="${OP_BRIDGE_PID_DIR:-/tmp}"
+LOG_DIR="${OP_BRIDGE_LOG_DIR:-/tmp}"
 
 print_status() {
   local name="$1" pid_file="$2"
@@ -29,12 +29,12 @@ print_status() {
 
 main() {
   for suffix in a b c; do
-    print_status "sepolia-$suffix" "$PID_DIR/heptad-sepolia-$suffix.pid"
-    print_status "opnet-burn-$suffix" "$PID_DIR/heptad-opnet-burn-$suffix.pid"
+    print_status "sepolia-$suffix" "$PID_DIR/opbridge-sepolia-$suffix.pid"
+    print_status "opnet-burn-$suffix" "$PID_DIR/opbridge-opnet-burn-$suffix.pid"
   done
 
   echo
-  for file in "$LOG_DIR"/heptad-sepolia-*.log "$LOG_DIR"/heptad-opnet-burn-*.log; do
+  for file in "$LOG_DIR"/opbridge-sepolia-*.log "$LOG_DIR"/opbridge-opnet-burn-*.log; do
     [[ -e "$file" ]] || continue
     echo "== $file =="
     tail -n 2 "$file" || true

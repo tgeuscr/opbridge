@@ -1,5 +1,5 @@
 {
-  "name": "heptad",
+  "name": "opbridge",
   "private": true,
   "version": "0.1.0",
   "engines": {
@@ -15,7 +15,7 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:web": "npm run dev --workspace @heptad/web",
+    "dev:web": "npm run dev --workspace @opbridge/web",
     "build": "npm run build --workspaces --if-present && npm --prefix contracts/opnet run build",
     "test": "npm run test --workspaces --if-present && npm --prefix contracts/opnet run test",
     "typecheck": "npm run typecheck --workspaces --if-present && npm --prefix contracts/opnet run typecheck"

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HEPTAD_HOME="${HEPTAD_HOME:-/home/ssm-user/heptad}"
-HEPTAD_ENV_DIR="${HEPTAD_ENV_DIR:-/home/ssm-user/heptad-env}"
-LOG_DIR="${HEPTAD_LOG_DIR:-/tmp}"
-PID_DIR="${HEPTAD_PID_DIR:-/tmp}"
+OP_BRIDGE_HOME="${OP_BRIDGE_HOME:-/home/ssm-user/opbridge}"
+OP_BRIDGE_ENV_DIR="${OP_BRIDGE_ENV_DIR:-/home/ssm-user/opbridge-env}"
+LOG_DIR="${OP_BRIDGE_LOG_DIR:-/tmp}"
+PID_DIR="${OP_BRIDGE_PID_DIR:-/tmp}"
 NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-NODE_VERSION="${HEPTAD_NODE_VERSION:-24}"
+NODE_VERSION="${OP_BRIDGE_NODE_VERSION:-24}"
 
 mkdir -p \
-  "$HEPTAD_HOME/services/relayer/.data/mint-attestations" \
-  "$HEPTAD_HOME/services/relayer/.data/release-attestations"
+  "$OP_BRIDGE_HOME/services/relayer/.data/mint-attestations" \
+  "$OP_BRIDGE_HOME/services/relayer/.data/release-attestations"
 
 idx_for() {
   case "$1" in
@@ -26,17 +26,17 @@ start_one() {
   local pid_file log_file output_file run_script env_file
 
   if [[ "$kind" == "sepolia" ]]; then
-    pid_file="$PID_DIR/heptad-sepolia-$suffix.pid"
-    log_file="$LOG_DIR/heptad-sepolia-$suffix.log"
-    output_file="$HEPTAD_HOME/services/relayer/.data/mint-attestations/relayer-$suffix.json"
+    pid_file="$PID_DIR/opbridge-sepolia-$suffix.pid"
+    log_file="$LOG_DIR/opbridge-sepolia-$suffix.log"
+    output_file="$OP_BRIDGE_HOME/services/relayer/.data/mint-attestations/relayer-$suffix.json"
     run_script="run:sepolia"
-    env_file="$HEPTAD_ENV_DIR/sepolia-$suffix.env"
+    env_file="$OP_BRIDGE_ENV_DIR/sepolia-$suffix.env"
   else
-    pid_file="$PID_DIR/heptad-opnet-burn-$suffix.pid"
-    log_file="$LOG_DIR/heptad-opnet-burn-$suffix.log"
-    output_file="$HEPTAD_HOME/services/relayer/.data/release-attestations/relayer-$suffix.json"
+    pid_file="$PID_DIR/opbridge-opnet-burn-$suffix.pid"
+    log_file="$LOG_DIR/opbridge-opnet-burn-$suffix.log"
+    output_file="$OP_BRIDGE_HOME/services/relayer/.data/release-attestations/relayer-$suffix.json"
     run_script="run:opnet-burn"
-    env_file="$HEPTAD_ENV_DIR/opnet-burn-$suffix.env"
+    env_file="$OP_BRIDGE_ENV_DIR/opnet-burn-$suffix.env"
   fi
 
   if [[ -f "$pid_file" ]]; then
@@ -50,7 +50,7 @@ start_one() {
   fi
 
   (
-    cd "$HEPTAD_HOME"
+    cd "$OP_BRIDGE_HOME"
     if ! command -v npm >/dev/null 2>&1; then
       if [[ -s "$NVM_DIR/nvm.sh" ]]; then
         # shellcheck disable=SC1090
@@ -61,14 +61,14 @@ start_one() {
     command -v npm >/dev/null 2>&1 || { echo "npm not found (tried NVM_DIR=$NVM_DIR)"; exit 1; }
 
     set -a
-    . "$HEPTAD_ENV_DIR/relayer-common.env"
+    . "$OP_BRIDGE_ENV_DIR/relayer-common.env"
     . "$env_file"
     RELAYER_ID="${RELAYER_ID:-relayer-$suffix}"
     RELAYER_INDEX="$index"
     RELAYER_OUTPUT_FILE="$output_file"
     set +a
 
-    nohup npm run "$run_script" --workspace @heptad/relayer > "$log_file" 2>&1 &
+    nohup npm run "$run_script" --workspace @opbridge/relayer > "$log_file" 2>&1 &
     echo "$!" > "$pid_file"
   )
 
@@ -84,7 +84,7 @@ main() {
 
   echo
   echo "Startup log tails:"
-  for file in "$LOG_DIR"/heptad-sepolia-*.log "$LOG_DIR"/heptad-opnet-burn-*.log; do
+  for file in "$LOG_DIR"/opbridge-sepolia-*.log "$LOG_DIR"/opbridge-opnet-burn-*.log; do
     [[ -e "$file" ]] || continue
     echo "== $file =="
     tail -n 3 "$file" || true

@@ -112,7 +112,7 @@ export async function kmsGetPublicKey(keyId) {
 }
 
 export async function kmsSign({ keyId, signingAlgorithm, messageBytes, messageType }) {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'heptad-kms-sign-'));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'opbridge-kms-sign-'));
   const messagePath = path.join(tempDir, 'message.bin');
   return runAwsCliJson([
     ...(await (async () => {
@@ -138,7 +138,7 @@ export async function kmsSign({ keyId, signingAlgorithm, messageBytes, messageTy
 }
 
 export async function kmsVerify({ keyId, signingAlgorithm, messageBytes, messageType, signatureBytes }) {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'heptad-kms-verify-'));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'opbridge-kms-verify-'));
   const messagePath = path.join(tempDir, 'message.bin');
   const signaturePath = path.join(tempDir, 'signature.bin');
   return runAwsCliJson([

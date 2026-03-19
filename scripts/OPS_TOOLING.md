@@ -1,14 +1,14 @@
 # Ops Tooling (Deploy + Env Helpers)
 
-These scripts wrap the existing deploy/config flows and keep a reusable `heptad-env/` folder populated.
+These scripts wrap the existing deploy/config flows and keep a reusable `opbridge-env/` folder populated.
 
 ## Initialize local env templates
 
 ```bash
-bash scripts/heptad-env-init.sh
+bash scripts/opbridge-env-init.sh
 ```
 
-Creates `./heptad-env/` with template files:
+Creates `./opbridge-env/` with template files:
 - `relayer-common.env`
 - `relayer-api.env`
 - `aggregator.env`
@@ -38,7 +38,7 @@ Notes:
 - You can use `SEPOLIA_DEPLOYER_PRIVATE_KEY=0x...` instead of `MNEMONIC`.
 - If `ETH_VAULT_OWNER != deployer`, vault asset configuration is skipped by the underlying deploy script.
 
-## Sync generated addresses into `heptad-env/` and `apps/site/.env.local`
+## Sync generated addresses into `opbridge-env/` and `apps/site/.env.local`
 
 ```bash
 OPNET_BRIDGE_ADDRESS=op... \
@@ -47,35 +47,47 @@ OPNET_HUSDT_ADDRESS=op... \
 OPNET_HWBTC_ADDRESS=op... \
 OPNET_HETH_ADDRESS=op... \
 OPNET_HPAXG_ADDRESS=op... \
-VITE_STATUS_API_URL=https://api.heptad.app \
-bash scripts/heptad-env-sync.sh
+VITE_STATUS_API_URL=https://api.testnet.opbridge.app \
+bash scripts/opbridge-env-sync.sh
 ```
 
 This reads `contracts/ethereum/deployments/sepolia-latest.json` and writes:
-- `heptad-env/contracts.env`
-- updates `heptad-env/relayer-common.env`
-- updates DB path defaults in `heptad-env/relayer-api.env` and `heptad-env/aggregator.env`
+- `opbridge-env/contracts.env`
+- updates `opbridge-env/relayer-common.env`
+- updates DB path defaults in `opbridge-env/relayer-api.env` and `opbridge-env/aggregator.env`
 - `apps/site/.env.local`
 
 ## Configure Sepolia vault release relays (Ethereum ECDSA keys)
 
 ```bash
-MNEMONIC="word1 ... word12" \
 SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \
-RELAYER_EVM_KEYS_FILE=services/relayer/.data/relay-keys.json \
+RELAYER_EVM_KMS_KEY_IDS=arn:aws:kms:...a,arn:aws:kms:...b,arn:aws:kms:...c \
 OPNET_BRIDGE_HEX=0x<64-hex> \
 RELAYER_THRESHOLD=2 \
 bash scripts/configure-ethereum-release-relays.sh
 ```
 
-## OPNet relay pubkeys -> bridge (`setRelaysConfigPacked`)
-
-First generate relay public config if you do not already have it:
+## Generate OPNet relay public config from KMS
 
 ```bash
-RELAYER_KEYS_MNEMONIC="word1 ... word12" \
-RELAYER_KEYS_OPNET_NETWORK=testnet \
-node services/relayer/src/generate-relay-keys.mjs
+RELAYER_KMS_KEY_IDS=arn:aws:kms:...mldsa-a,arn:aws:kms:...mldsa-b,arn:aws:kms:...mldsa-c \
+RELAYER_EVM_KMS_KEY_IDS=arn:aws:kms:...ecdsa-a,arn:aws:kms:...ecdsa-b,arn:aws:kms:...ecdsa-c \
+OPNET_NETWORK=testnet \
+npm run relay-config:kms --workspace @opbridge/relayer
+```
+
+## OPNet relay pubkeys -> bridge (`setRelaysConfigPacked`)
+
+Use the generated `services/relayer/.data/relay-public-config.json`:
+
+```bash
+OPNET_NETWORK=testnet \
+OPNET_RPC_URL=https://testnet.opnet.org \
+OPNET_BRIDGE_ADDRESS=opr1... \
+RELAYER_PUBLIC_CONFIG_FILE=services/relayer/.data/relay-public-config.json \
+RELAYER_THRESHOLD=2 \
+SEND=1 \
+bash scripts/addpubkeystobridge.sh
 ```
 
 Then configure bridge relays:
@@ -99,7 +111,7 @@ The repository does not currently contain a canonical OPNet deploy CLI command.
 These wrappers:
 - build the relevant artifacts
 - optionally run your custom command
-- persist addresses into `heptad-env/contracts.env`
+- persist addresses into `opbridge-env/contracts.env`
 
 Bridge:
 ```bash

@@ -5,10 +5,10 @@ import { ethers } from "ethers";
 import { compileContracts, getCompiledContract } from "./lib/compile.mjs";
 
 const DEFAULT_TOKENS = [
-  { assetId: 0, symbol: "USDT", name: "Heptad Test USDT", decimals: 6 },
-  { assetId: 1, symbol: "WBTC", name: "Heptad Test WBTC", decimals: 8 },
-  { assetId: 2, symbol: "WETH", name: "Heptad Test Wrapped ETH", decimals: 18 },
-  { assetId: 3, symbol: "PAXG", name: "Heptad Test PAXG", decimals: 18 },
+  { assetId: 0, symbol: "USDT", name: "OP_BRIDGE Test USDT", decimals: 6 },
+  { assetId: 1, symbol: "WBTC", name: "OP_BRIDGE Test WBTC", decimals: 8 },
+  { assetId: 2, symbol: "WETH", name: "OP_BRIDGE Test Wrapped ETH", decimals: 18 },
+  { assetId: 3, symbol: "PAXG", name: "OP_BRIDGE Test PAXG", decimals: 18 },
 ];
 
 function requireEnv(name) {
@@ -64,8 +64,8 @@ async function main() {
     throw new Error(`Compilation failed with ${fatal.length} error(s).`);
   }
 
-  const tokenCompiled = getCompiledContract(output, "HeptadTestToken.sol", "HeptadTestToken");
-  const vaultCompiled = getCompiledContract(output, "HeptadVault.sol", "HeptadVault");
+  const tokenCompiled = getCompiledContract(output, "OpBridgeTestToken.sol", "OpBridgeTestToken");
+  const vaultCompiled = getCompiledContract(output, "OpBridgeVault.sol", "OpBridgeVault");
 
   const tokenFactory = new ethers.ContractFactory(
     tokenCompiled.abi,

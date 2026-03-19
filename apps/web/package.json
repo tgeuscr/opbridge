@@ -1,5 +1,5 @@
 {
-  "name": "@heptad/web",
+  "name": "@opbridge/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,7 +17,7 @@
     "@btc-vision/ecpair": "^4.0.5",
     "@btc-vision/transaction": "^1.8.0-rc.7",
     "@btc-vision/walletconnect": "1.10.3",
-    "@heptad/shared": "0.1.0",
+    "@opbridge/shared": "0.1.0",
     "opnet": "^1.8.1-rc.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

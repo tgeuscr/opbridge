@@ -40,7 +40,7 @@ export class HUSDT extends OP20 {
     public override onDeployment(_: Calldata): void {
         const maxSupply: u256 = u256.Max;
         const decimals: u8 = 6;
-        const name = 'heptad-bridged USDT';
+        const name = 'opbridge-bridged USDT';
         const symbol = 'hUSDT';
 
         this.instantiate(new OP20InitParameters(maxSupply, decimals, name, symbol));

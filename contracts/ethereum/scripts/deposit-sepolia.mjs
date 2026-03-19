@@ -65,7 +65,7 @@ Example:
   SEPOLIA_DEPOSIT_ASSET=USDT \\
   SEPOLIA_DEPOSIT_AMOUNT=25 \\
   SEPOLIA_DEPOSIT_RECIPIENT=0x<64-hex> \\
-  npm run deposit:sepolia --workspace @heptad/ethereum-contracts
+  npm run deposit:sepolia --workspace @opbridge/ethereum-contracts
 `);
     return;
   }

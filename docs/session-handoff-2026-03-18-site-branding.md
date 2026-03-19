@@ -17,7 +17,7 @@ Updated files:
 
 ## Hero branding
 
-The hero was changed from the old Heptad wordmark treatment to an `OPbridge` lockup:
+The hero was changed from the old OP_BRIDGE wordmark treatment to an `OPbridge` lockup:
 
 - OP logo (`/branding/op.svg`) plus `bridge` text
 - eyebrow now reads: `OP_BRIDGE TESTNET LIVE`
@@ -58,8 +58,8 @@ Hero brand meta:
 Footer attribution:
 
 - text now reads: `built with ❤️ by`
-- only the Heptad wordmark is shown
-- footer wordmark links to `https://x.com/heptadbtc`
+- only the OP_BRIDGE wordmark is shown
+- footer wordmark links to `https://x.com/opbridgebtc`
 
 ## Important repo state
 
@@ -83,4 +83,4 @@ If continuing this branding direction:
    - dark/light asset contrast
    - footer attribution spacing
 2. Decide whether `OPbridge` remains an experiment or becomes the actual rename path.
-3. If kept, update any remaining Heptad references in user-facing site copy intentionally rather than globally.
+3. If kept, update any remaining OP_BRIDGE references in user-facing site copy intentionally rather than globally.

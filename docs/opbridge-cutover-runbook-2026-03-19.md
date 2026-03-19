@@ -3,7 +3,7 @@
 Date intended for execution: 2026-03-19
 
 Primary goal:
-- move the current Heptad testnet bridge into the new `OP_BRIDGE` identity
+- move the current OP_BRIDGE testnet bridge into the new `OP_BRIDGE` identity
 - deploy the live testnet bridge to `testnet.opbridge.app`
 - reserve `opbridge.app` for the future mainnet public bridge
 
@@ -13,7 +13,7 @@ This document is written to be executed tomorrow with minimal guesswork.
 
 In scope:
 - create or adopt a new GitHub repo for `op_bridge`
-- rename user-facing branding from `heptad` to `OP_BRIDGE`
+- rename user-facing branding from `opbridge` to `OP_BRIDGE`
 - deploy testnet public site to `testnet.opbridge.app`
 - deploy testnet relayer API to `api.testnet.opbridge.app`
 - optionally deploy the operator console to `dev.testnet.opbridge.app`
@@ -45,43 +45,43 @@ Do not point the root domain at testnet after the cutover.
 ## Architecture surfaces that must be updated
 
 Repo and code identity:
-- root workspace name in [`package.json`](/home/m/projects/heptad/package.json)
+- root workspace name in [`package.json`](/home/m/projects/opbridge/package.json)
 - workspace package names under `apps/`, `services/`, `packages/`, and `contracts/`
 - user-facing copy and docs
-- browser local storage keys in [`apps/site/src/App.tsx`](/home/m/projects/heptad/apps/site/src/App.tsx)
+- browser local storage keys in [`apps/site/src/App.tsx`](/home/m/projects/opbridge/apps/site/src/App.tsx)
 
 Public frontend:
-- [`apps/site`](/home/m/projects/heptad/apps/site)
+- [`apps/site`](/home/m/projects/opbridge/apps/site)
 - env vars for addresses and API URL
 - Vercel project or equivalent host
 
 Operator frontend:
-- [`apps/web`](/home/m/projects/heptad/apps/web)
+- [`apps/web`](/home/m/projects/opbridge/apps/web)
 - old hostnames and old branding references
 
 Relayer API:
-- [`services/api`](/home/m/projects/heptad/services/api)
+- [`services/api`](/home/m/projects/opbridge/services/api)
 - CORS allowlist
 - hostname and reverse proxy
 - database path
 
 Relayers:
-- [`services/relayer`](/home/m/projects/heptad/services/relayer)
+- [`services/relayer`](/home/m/projects/opbridge/services/relayer)
 - `RELAYER_ID`
 - deploy mapping file
 - API URL
 - signer secrets
 
 Ethereum contracts:
-- [`contracts/ethereum`](/home/m/projects/heptad/contracts/ethereum)
+- [`contracts/ethereum`](/home/m/projects/opbridge/contracts/ethereum)
 - Sepolia vault deployment
 - release relay config
 
 OPNet contracts:
-- [`contracts/opnet`](/home/m/projects/heptad/contracts/opnet)
+- [`contracts/opnet`](/home/m/projects/opbridge/contracts/opnet)
 - bridge deployment
 - wrapped token deployments
-- token metadata if you want on-chain naming to change from `heptad-bridged ...`
+- token metadata if you want on-chain naming to change from `opbridge-bridged ...`
 
 ## Hard recommendation
 
@@ -98,7 +98,7 @@ Answer these before the first command:
 
 - Are you creating a brand new repo or transferring/renaming the current GitHub repo?
 - Are you keeping the current testnet contracts temporarily, or are you redeploying fresh testnet contracts tomorrow?
-- Are you hosting the public site on Vercel, as assumed by [`apps/site/README.md`](/home/m/projects/heptad/apps/site/README.md)?
+- Are you hosting the public site on Vercel, as assumed by [`apps/site/README.md`](/home/m/projects/opbridge/apps/site/README.md)?
 - Are API and relayers running on EC2 or another VM where you can control Nginx/systemd?
 - Do you want `apps/web` exposed tomorrow at `dev.testnet.opbridge.app`, or is that optional?
 
@@ -134,10 +134,10 @@ npm run typecheck
 If that is too broad for tomorrow morning, at minimum run:
 
 ```bash
-npm run build --workspace @heptad/site
-npm run build --workspace @heptad/web
-npm run build --workspace @heptad/ethereum-contracts
-npm run build --workspace @heptad/opnet-contracts
+npm run build --workspace @opbridge/site
+npm run build --workspace @opbridge/web
+npm run build --workspace @opbridge/ethereum-contracts
+npm run build --workspace @opbridge/opnet-contracts
 ```
 
 ## Phase 1: New repo and rename prep
@@ -163,7 +163,7 @@ git push opbridge --tags
 Then make the new repo the primary remote locally:
 
 ```bash
-git remote rename origin heptad-origin
+git remote rename origin opbridge-origin
 git remote rename opbridge origin
 ```
 
@@ -188,32 +188,32 @@ Do not continue developing testnet in two repos after tomorrow.
 
 Tomorrow’s coding pass should prioritize these surfaces:
 
-- root package/workspace names in [`package.json`](/home/m/projects/heptad/package.json)
+- root package/workspace names in [`package.json`](/home/m/projects/opbridge/package.json)
 - workspace package names in:
-  - [`apps/site/package.json`](/home/m/projects/heptad/apps/site/package.json)
-  - [`apps/web/package.json`](/home/m/projects/heptad/apps/web/package.json)
-  - [`services/api/package.json`](/home/m/projects/heptad/services/api/package.json)
-  - [`services/relayer/package.json`](/home/m/projects/heptad/services/relayer/package.json)
-  - [`packages/shared/package.json`](/home/m/projects/heptad/packages/shared/package.json)
-  - [`contracts/ethereum/package.json`](/home/m/projects/heptad/contracts/ethereum/package.json)
-  - [`contracts/opnet/package.json`](/home/m/projects/heptad/contracts/opnet/package.json)
+  - [`apps/site/package.json`](/home/m/projects/opbridge/apps/site/package.json)
+  - [`apps/web/package.json`](/home/m/projects/opbridge/apps/web/package.json)
+  - [`services/api/package.json`](/home/m/projects/opbridge/services/api/package.json)
+  - [`services/relayer/package.json`](/home/m/projects/opbridge/services/relayer/package.json)
+  - [`packages/shared/package.json`](/home/m/projects/opbridge/packages/shared/package.json)
+  - [`contracts/ethereum/package.json`](/home/m/projects/opbridge/contracts/ethereum/package.json)
+  - [`contracts/opnet/package.json`](/home/m/projects/opbridge/contracts/opnet/package.json)
 - docs in:
-  - [`README.md`](/home/m/projects/heptad/README.md)
-  - [`RUNBOOK.md`](/home/m/projects/heptad/RUNBOOK.md)
-  - [`docs/mainnet-production-plan.md`](/home/m/projects/heptad/docs/mainnet-production-plan.md)
-- site local storage keys in [`apps/site/src/App.tsx`](/home/m/projects/heptad/apps/site/src/App.tsx)
-- operator console copy in [`apps/web/src/App.tsx`](/home/m/projects/heptad/apps/web/src/App.tsx)
+  - [`README.md`](/home/m/projects/opbridge/README.md)
+  - [`RUNBOOK.md`](/home/m/projects/opbridge/RUNBOOK.md)
+  - [`docs/mainnet-production-plan.md`](/home/m/projects/opbridge/docs/mainnet-production-plan.md)
+- site local storage keys in [`apps/site/src/App.tsx`](/home/m/projects/opbridge/apps/site/src/App.tsx)
+- operator console copy in [`apps/web/src/App.tsx`](/home/m/projects/opbridge/apps/web/src/App.tsx)
 
 ### 5. Decide what to do with contract names
 
 If you are redeploying fresh testnet contracts tomorrow, also rename:
-- bridge contract naming from `HeptadBridge` if desired
-- wrapped token names like `heptad-bridged ETH`, `heptad-bridged PAXG`, etc.
+- bridge contract naming from `OpBridgeBridge` if desired
+- wrapped token names like `opbridge-bridged ETH`, `opbridge-bridged PAXG`, etc.
 
 Relevant files include:
-- [`contracts/opnet/src/wrapped/heth/HETH.ts`](/home/m/projects/heptad/contracts/opnet/src/wrapped/heth/HETH.ts)
+- [`contracts/opnet/src/wrapped/heth/HETH.ts`](/home/m/projects/opbridge/contracts/opnet/src/wrapped/heth/HETH.ts)
 - analogous wrapped token files for `husdt`, `hwbtc`, `hpaxg`
-- bridge source in [`contracts/opnet/src/bridge/HeptadBridge.ts`](/home/m/projects/heptad/contracts/opnet/src/bridge/HeptadBridge.ts)
+- bridge source in [`contracts/opnet/src/bridge/OpBridgeBridge.ts`](/home/m/projects/opbridge/contracts/opnet/src/bridge/OpBridgeBridge.ts)
 
 Recommendation:
 - yes, rename those for the new testnet deployment
@@ -223,7 +223,7 @@ Recommendation:
 
 ### 6. Separate testnet and mainnet envs
 
-The public site uses browser-safe env vars documented in [`apps/site/README.md`](/home/m/projects/heptad/apps/site/README.md).
+The public site uses browser-safe env vars documented in [`apps/site/README.md`](/home/m/projects/opbridge/apps/site/README.md).
 
 Create two clear env sets:
 
@@ -263,7 +263,7 @@ Mainnet API:
 - separate write token
 - separate relayer fleet
 
-From [`services/api/README.md`](/home/m/projects/heptad/services/api/README.md), relevant env vars:
+From [`services/api/README.md`](/home/m/projects/opbridge/services/api/README.md), relevant env vars:
 - `RELAYER_API_PORT`
 - `RELAYER_API_HOST`
 - `RELAYER_API_DB_PATH`
@@ -322,10 +322,10 @@ Do not reuse one Vercel project for both testnet and mainnet.
 ### 10. Rebuild contracts before redeploy
 
 ```bash
-npm run build --workspace @heptad/opnet-contracts
-npm run test --workspace @heptad/opnet-contracts
-npm run build --workspace @heptad/ethereum-contracts
-npm run test --workspace @heptad/ethereum-contracts
+npm run build --workspace @opbridge/opnet-contracts
+npm run test --workspace @opbridge/opnet-contracts
+npm run build --workspace @opbridge/ethereum-contracts
+npm run test --workspace @opbridge/ethereum-contracts
 ```
 
 If package names are renamed tomorrow, use the new workspace names instead.
@@ -352,7 +352,7 @@ Store those in:
 
 ### 12. Deploy fresh Sepolia vault and test assets
 
-Use the scripts already present in [`contracts/ethereum/package.json`](/home/m/projects/heptad/contracts/ethereum/package.json).
+Use the scripts already present in [`contracts/ethereum/package.json`](/home/m/projects/opbridge/contracts/ethereum/package.json).
 
 Base deploy:
 
@@ -367,7 +367,7 @@ OPNET_HUSDT_ADDRESS=op... \
 OPNET_HWBTC_ADDRESS=op... \
 OPNET_HETH_ADDRESS=op... \
 OPNET_HPAXG_ADDRESS=op... \
-npm run deploy:sepolia --workspace @heptad/ethereum-contracts
+npm run deploy:sepolia --workspace @opbridge/ethereum-contracts
 ```
 
 Then configure:
@@ -376,7 +376,7 @@ Then configure:
 SEPOLIA_RPC_URL=... \
 SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
 ETH_VAULT_FEE_RECIPIENT=0x<fee-recipient> \
-npm run configure:sepolia --workspace @heptad/ethereum-contracts
+npm run configure:sepolia --workspace @opbridge/ethereum-contracts
 ```
 
 Release relay config:
@@ -386,9 +386,9 @@ SEPOLIA_RPC_URL=... \
 SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
 SEPOLIA_DEPLOYMENT_FILE=contracts/ethereum/deployments/sepolia-latest.json \
 OPNET_BRIDGE_HEX=0x<64-hex> \
-RELAYER_EVM_KEYS_FILE=services/relayer/.data/relay-keys.json \
+RELAYER_EVM_KMS_KEY_IDS=arn:aws:kms:...a,arn:aws:kms:...b,arn:aws:kms:...c \
 RELAYER_THRESHOLD=2 \
-npm run configure:release-relays:sepolia --workspace @heptad/ethereum-contracts
+npm run configure:release-relays:sepolia --workspace @opbridge/ethereum-contracts
 ```
 
 Unpause only after all wiring is complete.
@@ -403,6 +403,15 @@ On the OPNet side, confirm:
 - relay public keys
 - accepted attestation version
 - bridge unpaused
+
+Before calling `setRelaysConfigPacked(...)`, generate the packed relay blob from the ML-DSA KMS keys:
+
+```bash
+RELAYER_KMS_KEY_IDS=arn:aws:kms:...mldsa-a,arn:aws:kms:...mldsa-b,arn:aws:kms:...mldsa-c \
+RELAYER_EVM_KMS_KEY_IDS=arn:aws:kms:...ecdsa-a,arn:aws:kms:...ecdsa-b,arn:aws:kms:...ecdsa-c \
+OPNET_NETWORK=testnet \
+npm run relay-config:kms --workspace @opbridge/relayer
+```
 
 ## Phase 6: Testnet relayer and API redeploy
 
@@ -420,20 +429,21 @@ Recommended IDs for testnet:
 
 ### 15. Start Sepolia pollers
 
-From [`services/relayer/README.md`](/home/m/projects/heptad/services/relayer/README.md):
+From [`services/relayer/README.md`](/home/m/projects/opbridge/services/relayer/README.md):
 
 ```bash
 SEPOLIA_RPC_URL=... \
 RELAYER_ID=relayer-a \
 RELAYER_INDEX=0 \
-RELAYER_KEYS_FILE=services/relayer/.data/keys/relay-keys-relayer-0.json \
+RELAYER_SIGNER_MODE=kms \
+RELAYER_KMS_KEY_ID=arn:aws:kms:... \
 OPNET_BRIDGE_ADDRESS=op... \
 OPNET_BRIDGE_HEX=0x<64-hex> \
 RELAYER_OUTPUT_FILE=services/relayer/.data/attestations/relayer-a.json \
 RELAYER_START_BLOCK=<recent-sepolia-block> \
 RELAYER_MAX_BLOCK_RANGE=1 \
 RELAYER_POLL_INTERVAL_MS=30000 \
-npm run run:sepolia --workspace @heptad/relayer
+npm run run:sepolia --workspace @opbridge/relayer
 ```
 
 Repeat for relay indexes `1` and `2`.
@@ -446,12 +456,13 @@ Use the same pattern for:
 - `relayer-opnet-c`
 
 Relevant script:
-- `npm run run:opnet-burn --workspace @heptad/relayer`
+- `npm run run:opnet-burn --workspace @opbridge/relayer`
 
 Set:
 - `RELAYER_ID`
 - `RELAYER_INDEX`
-- `RELAYER_KEYS_FILE`
+- `RELAYER_SIGNER_MODE=kms`
+- `RELAYER_KMS_KEY_ID` for Sepolia pollers or `RELAYER_EVM_KMS_KEY_ID` for OPNet burn pollers
 - `RELAYER_API_URL`
 - `OPNET_RPC_URL`
 - `OPNET_NETWORK=testnet`
@@ -459,7 +470,7 @@ Set:
 
 ### 17. Deploy the API
 
-Recommended production exposure model, consistent with [`services/api/README.md`](/home/m/projects/heptad/services/api/README.md):
+Recommended production exposure model, consistent with [`services/api/README.md`](/home/m/projects/opbridge/services/api/README.md):
 - API process bound to `127.0.0.1:8787`
 - Nginx reverse proxy at `api.testnet.opbridge.app`
 
@@ -485,7 +496,7 @@ Critical values:
 Then run a production build locally before pushing:
 
 ```bash
-npm run build --workspace @heptad/site
+npm run build --workspace @opbridge/site
 ```
 
 After deploy, verify:
@@ -502,7 +513,7 @@ This is useful if you need the operator console remotely tomorrow.
 Before exposing it, change:
 - old branding
 - old domains
-- any default placeholder still referencing `heptad.app`
+- any default placeholder still referencing `testnet.opbridge.app`
 
 ## Phase 8: Smoke tests
 
@@ -623,7 +634,7 @@ Realistic full-day estimate:
 
 Expect problems here:
 
-- stale env values still pointing at old `heptad` domains
+- stale env values still pointing at old `opbridge` domains
 - frontend pointing at new contracts while API still indexes old ones
 - CORS allowlist missing `testnet.opbridge.app`
 - OPNet bridge hex mismatch on Sepolia vault config
@@ -659,4 +670,3 @@ After the cutover succeeds, create these immediately:
    - relayer key bundles
    - API write token
    - hosting env vars
-

@@ -1,7 +1,5 @@
 import process from 'node:process';
-import { loadLocalOpnetRelaySigners } from './opnet-local-signer.mjs';
 import { loadKmsOpnetRelaySigners } from './opnet-kms-signer.mjs';
-import { loadLocalEvmRelaySigners } from './evm-local-signer.mjs';
 import { loadKmsEvmRelaySigners } from './evm-kms-signer.mjs';
 
 function parseRelayIndexFromEnv() {
@@ -9,20 +7,21 @@ function parseRelayIndexFromEnv() {
   return relayIndexFromEnvRaw && /^\d+$/.test(relayIndexFromEnvRaw) ? Number(relayIndexFromEnvRaw) : null;
 }
 
-export async function loadOpnetRelaySigners({ relayerId, opnetNetwork, defaultKeysFile }) {
-  const relayIndexFromEnv = parseRelayIndexFromEnv();
-  const mode = (process.env.RELAYER_SIGNER_MODE?.trim() || '').toLowerCase();
-  if (mode === 'kms') {
-    return loadKmsOpnetRelaySigners({ relayerId, relayIndexFromEnv, opnetNetwork });
+function normalizeMode(rawMode, envName) {
+  const mode = (rawMode?.trim() || 'kms').toLowerCase();
+  if (mode !== 'kms') {
+    throw new Error(`Only KMS signer mode is supported. Set ${envName}=kms.`);
   }
-  return loadLocalOpnetRelaySigners({ relayerId, relayIndexFromEnv, opnetNetwork, defaultKeysFile });
 }
 
-export async function loadEvmRelaySigners({ relayerId, defaultKeysFile }) {
+export async function loadOpnetRelaySigners({ relayerId, opnetNetwork }) {
   const relayIndexFromEnv = parseRelayIndexFromEnv();
-  const mode = (process.env.RELAYER_EVM_SIGNER_MODE?.trim() || '').toLowerCase();
-  if (mode === 'kms') {
-    return loadKmsEvmRelaySigners({ relayerId, relayIndexFromEnv });
-  }
-  return loadLocalEvmRelaySigners({ relayerId, relayIndexFromEnv, defaultKeysFile });
+  normalizeMode(process.env.RELAYER_SIGNER_MODE, 'RELAYER_SIGNER_MODE');
+  return loadKmsOpnetRelaySigners({ relayerId, relayIndexFromEnv, opnetNetwork });
+}
+
+export async function loadEvmRelaySigners({ relayerId }) {
+  const relayIndexFromEnv = parseRelayIndexFromEnv();
+  normalizeMode(process.env.RELAYER_EVM_SIGNER_MODE, 'RELAYER_EVM_SIGNER_MODE');
+  return loadKmsEvmRelaySigners({ relayerId, relayIndexFromEnv });
 }

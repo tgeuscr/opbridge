@@ -1,15 +1,15 @@
-# heptad
+# opbridge
 
-Heptad is a bi-directional bridge between Ethereum and OP_NET that moves assets between Sepolia and OP_NET testnet.
+OP_BRIDGE is a bi-directional bridge between Ethereum and OP_NET that moves assets between Sepolia and OP_NET testnet.
 
 ## Current Status
 
-Heptad is already live and operational on testnet.
+OP_BRIDGE is already live and operational on testnet.
 
 - Ethereum side: Sepolia
 - Bitcoin side: OP_NET testnet
-- Public bridge site: `https://heptad.app`
-- Public status API: `https://api.heptad.app`
+- Public bridge site: `https://testnet.opbridge.app`
+- Public status API: `https://api.testnet.opbridge.app`
 - Supported assets: `USDT`, `WBTC`, `WETH`, `PAXG`
 
 The current system supports:
@@ -59,12 +59,12 @@ The current deployment uses:
 
 ## Repository Layout
 
-- `apps/site`: hosted public bridge frontend for `heptad.app`
+- `apps/site`: hosted public bridge frontend for `testnet.opbridge.app`
 - `apps/web`: internal bridge/dev console used for admin and operator flows
 - `contracts/ethereum`: Sepolia vault and test asset contracts
 - `contracts/opnet`: OP_NET bridge and wrapped OP_20 contracts
 - `services/relayer`: deposit pollers, burn pollers, aggregation, signing, and submission CLIs
-- `services/api`: SQLite-backed bridge status API exposed through `api.heptad.app`
+- `services/api`: SQLite-backed bridge status API exposed through `api.testnet.opbridge.app`
 - `packages/shared`: shared TypeScript types and helpers
 - `scripts`: deployment, admin, EC2, and environment bootstrap tooling
 - `docs`: handoffs, protocol notes, and production planning documents
@@ -92,7 +92,7 @@ npm run dev:web
 Run the public site locally:
 
 ```bash
-npm run dev --workspace @heptad/site
+npm run dev --workspace @opbridge/site
 ```
 
 Run workspace checks:

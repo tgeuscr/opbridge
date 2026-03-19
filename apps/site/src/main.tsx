@@ -4,7 +4,7 @@ import { WalletConnectProvider } from '@btc-vision/walletconnect';
 import { App } from './App';
 import './styles.css';
 
-const THEME_MODE_KEY = 'heptad.site.themeMode.v1';
+const THEME_MODE_KEY = 'opbridge.site.themeMode.v1';
 const root = document.documentElement;
 
 try {

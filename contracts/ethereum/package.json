@@ -1,5 +1,5 @@
 {
-  "name": "@heptad/ethereum-contracts",
+  "name": "@opbridge/ethereum-contracts",
   "version": "0.1.0",
   "private": true,
   "scripts": {

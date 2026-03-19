@@ -57,8 +57,8 @@ const ETH_ASSET_CONFIG = {
   WETH: { assetId: 2, decimals: 18 },
   PAXG: { assetId: 3, decimals: 18 },
 } as const;
-const UX_GUIDE_DISMISSED_KEY = 'heptad.site.uxGuideDismissed.v1';
-const THEME_MODE_KEY = 'heptad.site.themeMode.v1';
+const UX_GUIDE_DISMISSED_KEY = 'opbridge.site.uxGuideDismissed.v1';
+const THEME_MODE_KEY = 'opbridge.site.themeMode.v1';
 
 type AssetSymbol = keyof typeof ETH_ASSET_CONFIG;
 const ASSET_OPTIONS: Array<{ symbol: AssetSymbol; logo: string; alt: string }> = [
@@ -3053,16 +3053,16 @@ export function App() {
         <span>built with ❤️ by</span>
         <a
           className="site-credit-link"
-          href="https://x.com/heptadbtc"
+          href="https://x.com/opbridgebtc"
           target="_blank"
           rel="noreferrer"
-          aria-label="Follow heptad on X"
-          title="Follow heptad on X"
+          aria-label="Follow opbridge on X"
+          title="Follow opbridge on X"
         >
           <img
             className="site-credit-wordmark"
             src={themeMode === 'dark' ? '/branding/heptad-wordmark-dark.svg' : '/branding/heptad-wordmark.svg'}
-            alt="Heptad"
+            alt="OP_BRIDGE"
           />
         </a>
       </footer>

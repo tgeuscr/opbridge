@@ -141,9 +141,9 @@ Chain-specific policy is handled by relayer configuration:
 ## Important Config Notes
 
 - API service env file in use:
-  - `/home/ssm-user/heptad-env/relayer-api.env`
+  - `/home/ssm-user/opbridge-env/relayer-api.env`
 - Do not confuse it with:
-  - `/home/ssm-user/heptad/heptad-env/relayer-api.env`
+  - `/home/ssm-user/opbridge/opbridge-env/relayer-api.env`
 
 Relayer finality now depends on fresh heartbeat detail being published in JSON form.
 
@@ -159,14 +159,14 @@ Relayer finality now depends on fresh heartbeat detail being published in JSON f
 ## Suggested First Checks Next Session
 
 1. Confirm OPNet relayers are back on the intended threshold:
-   - `journalctl -u heptad-relayer-opnet-burn@a -n 20 --no-pager`
+   - `journalctl -u opbridge-relayer-opnet-burn@a -n 20 --no-pager`
    - same for `@b`, `@c`
 2. Check finality on one fresh withdrawal:
-   - `curl -s https://api.heptad.app/withdrawals/<ID> | jq .`
+   - `curl -s https://api.testnet.opbridge.app/withdrawals/<ID> | jq .`
 3. Check finality on one fresh deposit:
-   - `curl -s https://api.heptad.app/deposits/<ID> | jq .`
+   - `curl -s https://api.testnet.opbridge.app/deposits/<ID> | jq .`
 4. Check relayer heartbeat health:
-   - `curl -s https://api.heptad.app/status | jq .`
+   - `curl -s https://api.testnet.opbridge.app/status | jq .`
 
 ## Key Takeaway
 

@@ -28,7 +28,7 @@ require_env() {
 }
 
 default_env_dir() {
-  echo "$(repo_root)/heptad-env"
+  echo "$(repo_root)/opbridge-env"
 }
 
 mkdir_p() {

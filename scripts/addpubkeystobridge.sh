@@ -15,6 +15,7 @@ echo "OPNet bridge relay pubkey config"
 echo "  bridge: $OPNET_BRIDGE_ADDRESS"
 echo "  public config: $RELAYER_PUBLIC_CONFIG_FILE"
 echo "  mode: ${SEND:-0}"
+echo "  note: generate RELAYER_PUBLIC_CONFIG_FILE via 'npm run relay-config:kms --workspace @opbridge/relayer'"
 
 args=(set-relays)
 if [[ "${SEND:-0}" == "1" || "${SEND:-false}" == "true" ]]; then

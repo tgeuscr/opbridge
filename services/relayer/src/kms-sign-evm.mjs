@@ -33,7 +33,7 @@ Required:
 
 Digest input (one required):
   EVM_MESSAGE_DIGEST_HEX    0x-prefixed 32-byte digest
-  EVM_RELEASE_JSON          JSON message object to hash with Heptad release attestation format
+  EVM_RELEASE_JSON          JSON message object to hash with OP_BRIDGE release attestation format
 
 Optional:
   KMS_EVM_SIGNING_ALGORITHM default: ECDSA_SHA_256

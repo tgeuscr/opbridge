@@ -12,7 +12,7 @@ Branch: `feat/mainnet-relayer-ops`
 - Bridge state was manually checked in the dev UI and appears correct.
 - Three new relayer EC2 instances are up.
 - New API EC2 instance is up.
-- On the new API EC2, I already created `~/heptad-env/relayer-api.env`, but I intentionally stopped before starting the API because I want to migrate the existing SQLite DB first.
+- On the new API EC2, I already created `~/opbridge-env/relayer-api.env`, but I intentionally stopped before starting the API because I want to migrate the existing SQLite DB first.
 
 ## Important Values
 
@@ -92,10 +92,10 @@ There was no mismatch; this was just representation confusion.
 
 ### Instances
 
-- `heptad-testnet-a` launched
-- `heptad-testnet-b` launched
-- `heptad-testnet-c` launched
-- `heptad-testnet-api` launched
+- `opbridge-testnet-a` launched
+- `opbridge-testnet-b` launched
+- `opbridge-testnet-c` launched
+- `opbridge-testnet-api` launched
 
 ### Roles
 
@@ -117,7 +117,7 @@ On the relayer instances:
 
 I stopped at the new API instance after creating:
 
-- `~/heptad-env/relayer-api.env`
+- `~/opbridge-env/relayer-api.env`
 
 I did **not** start the new API yet because I want to migrate the old SQLite DB first.
 
@@ -134,26 +134,26 @@ Preferred safe flow:
 
 Files to copy if present:
 
-- `/home/ssm-user/heptad/services/api/.data/relayer-api.sqlite`
-- `/home/ssm-user/heptad/services/api/.data/relayer-api.sqlite-wal`
-- `/home/ssm-user/heptad/services/api/.data/relayer-api.sqlite-shm`
+- `/home/ssm-user/opbridge/services/api/.data/relayer-api.sqlite`
+- `/home/ssm-user/opbridge/services/api/.data/relayer-api.sqlite-wal`
+- `/home/ssm-user/opbridge/services/api/.data/relayer-api.sqlite-shm`
 
 Destination:
 
-- `/home/ssm-user/heptad/services/api/.data/`
+- `/home/ssm-user/opbridge/services/api/.data/`
 
 ### 2. Start API on new API instance
 
 Commands:
 
 ```bash
-cd ~/heptad
-bash scripts/ec2/systemd/install-heptad-systemd.sh
+cd ~/opbridge
+bash scripts/ec2/systemd/install-opbridge-systemd.sh
 mkdir -p services/api/.data
-sudo systemctl enable --now heptad-relayer-api
-sudo systemctl enable --now heptad-relayer-aggregate-mint.timer
-sudo systemctl enable --now heptad-relayer-aggregate-release.timer
-systemctl status heptad-relayer-api --no-pager
+sudo systemctl enable --now opbridge-relayer-api
+sudo systemctl enable --now opbridge-relayer-aggregate-mint.timer
+sudo systemctl enable --now opbridge-relayer-aggregate-release.timer
+systemctl status opbridge-relayer-api --no-pager
 curl http://127.0.0.1:8787/health
 ```
 
@@ -168,9 +168,9 @@ curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta
 
 On each relayer box, use:
 
-- `~/heptad-env/relayer-common.env`
-- `~/heptad-env/sepolia-a.env` / `b` / `c`
-- `~/heptad-env/opnet-burn-a.env` / `b` / `c`
+- `~/opbridge-env/relayer-common.env`
+- `~/opbridge-env/sepolia-a.env` / `b` / `c`
+- `~/opbridge-env/opnet-burn-a.env` / `b` / `c`
 
 Important env names:
 
@@ -179,7 +179,7 @@ Important env names:
 - `RELAYER_EVM_SIGNER_MODE=kms`
 - `RELAYER_EVM_KMS_KEY_ID=<ECC key>`
 - `RELAYER_API_URL=http://<API_PRIVATE_IP>:8787`
-- `RELAYER_API_WRITE_TOKEN=heptad-testnet-write-token`
+- `RELAYER_API_WRITE_TOKEN=opbridge-testnet-write-token`
 
 Note:
 
@@ -194,8 +194,8 @@ Note:
 Systemd units:
 
 ```bash
-sudo systemctl enable --now heptad-relayer-sepolia@a
-sudo systemctl enable --now heptad-relayer-opnet-burn@a
+sudo systemctl enable --now opbridge-relayer-sepolia@a
+sudo systemctl enable --now opbridge-relayer-opnet-burn@a
 ```
 
 Then later `@b`, then `@c`.
@@ -206,16 +206,16 @@ Check API:
 
 ```bash
 curl http://127.0.0.1:8787/status
-journalctl -u heptad-relayer-api -n 100 --no-pager
-journalctl -u heptad-relayer-aggregate-mint.service -n 100 --no-pager
-journalctl -u heptad-relayer-aggregate-release.service -n 100 --no-pager
+journalctl -u opbridge-relayer-api -n 100 --no-pager
+journalctl -u opbridge-relayer-aggregate-mint.service -n 100 --no-pager
+journalctl -u opbridge-relayer-aggregate-release.service -n 100 --no-pager
 ```
 
 Check relayer logs:
 
 ```bash
-journalctl -u heptad-relayer-sepolia@a -f
-journalctl -u heptad-relayer-opnet-burn@a -f
+journalctl -u opbridge-relayer-sepolia@a -f
+journalctl -u opbridge-relayer-opnet-burn@a -f
 ```
 
 Look for:
@@ -229,7 +229,7 @@ Look for:
 First unpause vault:
 
 ```bash
-cd /home/ssm-user/heptad/contracts/ethereum
+cd /home/ssm-user/opbridge/contracts/ethereum
 
 SEPOLIA_RPC_URL='https://eth-sepolia.g.alchemy.com/v2/<ALCHEMY_KEY>' \
 SEPOLIA_DEPLOYER_PRIVATE_KEY='0x<SEPOLIA_VAULT_OWNER_KEY>' \

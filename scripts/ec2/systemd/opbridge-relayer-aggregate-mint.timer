@@ -1,0 +1,12 @@
+[Unit]
+Description=Run OP_BRIDGE Relayer Mint Aggregator periodically
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=10s
+AccuracySec=1s
+Persistent=true
+Unit=opbridge-relayer-aggregate-mint.service
+
+[Install]
+WantedBy=timers.target

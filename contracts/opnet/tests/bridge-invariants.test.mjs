@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const bridgeSource = readFileSync(
-  join(process.cwd(), 'src/bridge/HeptadBridge.ts'),
+  join(process.cwd(), 'src/bridge/OpBridgeBridge.ts'),
   'utf8',
 );
 

@@ -1,0 +1,21 @@
+[Unit]
+Description=OP_BRIDGE OPNet Burn Relayer (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ssm-user
+WorkingDirectory=/home/ssm-user/opbridge
+Environment=HOME=/home/ssm-user
+Environment=NODE_VERSION=24
+EnvironmentFile=/home/ssm-user/opbridge-env/relayer-common.env
+EnvironmentFile=-/home/ssm-user/opbridge-env/opnet-burn-%i.env
+ExecStart=/bin/bash -lc '. "$HOME/.nvm/nvm.sh" && nvm use "$NODE_VERSION" >/dev/null && npm run --workspace @opbridge/relayer run:opnet-burn'
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
