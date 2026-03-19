@@ -29,12 +29,12 @@ print_status() {
 
 main() {
   for suffix in a b c; do
-    print_status "sepolia-$suffix" "$PID_DIR/opbridge-sepolia-$suffix.pid"
+    print_status "ethereum-$suffix" "$PID_DIR/opbridge-ethereum-$suffix.pid"
     print_status "opnet-burn-$suffix" "$PID_DIR/opbridge-opnet-burn-$suffix.pid"
   done
 
   echo
-  for file in "$LOG_DIR"/opbridge-sepolia-*.log "$LOG_DIR"/opbridge-opnet-burn-*.log; do
+  for file in "$LOG_DIR"/opbridge-ethereum-*.log "$LOG_DIR"/opbridge-opnet-burn-*.log; do
     [[ -e "$file" ]] || continue
     echo "== $file =="
     tail -n 2 "$file" || true

@@ -19,7 +19,7 @@ write_if_missing() {
 }
 
 write_if_missing "$ENV_DIR/relayer-common.env" '# Shared relayer config
-SEPOLIA_RPC_URL=
+ETHEREUM_RPC_URL=
 OPNET_NETWORK=testnet
 OPNET_RPC_URL=https://testnet.opnet.org
 RELAYER_MAPPING_FILE=
@@ -48,10 +48,10 @@ RELAYER_THRESHOLD=2
 # RELAYER_API_WRITE_TOKEN=
 '
 
-for name in sepolia-a sepolia-b sepolia-c; do
+for name in ethereum-a ethereum-b ethereum-c; do
   idx=0
-  [[ "$name" == "sepolia-b" ]] && idx=1
-  [[ "$name" == "sepolia-c" ]] && idx=2
+  [[ "$name" == "ethereum-b" ]] && idx=1
+  [[ "$name" == "ethereum-c" ]] && idx=2
   write_if_missing "$ENV_DIR/${name}.env" "RELAYER_ID=relayer-${name##*-}
 RELAYER_INDEX=${idx}
 RELAYER_SIGNER_MODE=kms

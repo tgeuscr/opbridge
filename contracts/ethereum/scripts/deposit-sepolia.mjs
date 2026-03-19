@@ -11,11 +11,19 @@ function requireEnv(name) {
   return value.trim();
 }
 
+function getEnv(...names) {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value && value.trim()) return value.trim();
+  }
+  return "";
+}
+
 function parseBytes32Recipient(raw) {
   const value = raw.trim();
   const normalized = value.startsWith("0x") ? value : `0x${value}`;
   if (!/^0x[0-9a-fA-F]{64}$/.test(normalized)) {
-    throw new Error("SEPOLIA_DEPOSIT_RECIPIENT must be a bytes32 hex value (0x + 64 hex chars).");
+    throw new Error("ETHEREUM_DEPOSIT_RECIPIENT must be a bytes32 hex value (0x + 64 hex chars).");
   }
   return normalized.toLowerCase();
 }
@@ -23,7 +31,7 @@ function parseBytes32Recipient(raw) {
 function parseAssetSelector(raw) {
   const value = raw.trim().toUpperCase();
   if (!value) {
-    throw new Error("SEPOLIA_DEPOSIT_ASSET is required (assetId or symbol).");
+    throw new Error("ETHEREUM_DEPOSIT_ASSET is required (assetId or symbol).");
   }
   return value;
 }
@@ -50,40 +58,40 @@ async function main() {
     console.log(`Sepolia Approve + Deposit Script
 
 Required:
-  SEPOLIA_RPC_URL
-  SEPOLIA_DEPOSITOR_PRIVATE_KEY (or fallback: SEPOLIA_DEPLOYER_PRIVATE_KEY)
-  SEPOLIA_DEPOSIT_ASSET (symbol or assetId, e.g. USDT or 0)
-  SEPOLIA_DEPOSIT_AMOUNT (human units, e.g. 10.5)
-  SEPOLIA_DEPOSIT_RECIPIENT (bytes32, OPNet recipient / hashed MLDSA key)
+  ETHEREUM_RPC_URL (or SEPOLIA_RPC_URL fallback)
+  ETHEREUM_DEPOSITOR_PRIVATE_KEY (or fallback: ETHEREUM_DEPLOYER_PRIVATE_KEY)
+  ETHEREUM_DEPOSIT_ASSET (symbol or assetId, e.g. USDT or 0)
+  ETHEREUM_DEPOSIT_AMOUNT (human units, e.g. 10.5)
+  ETHEREUM_DEPOSIT_RECIPIENT (bytes32, OPNet recipient / hashed MLDSA key)
 
 Optional:
-  SEPOLIA_DEPLOYMENT_FILE (default: contracts/ethereum/deployments/sepolia-latest.json)
+  ETHEREUM_DEPLOYMENT_FILE (default: contracts/ethereum/deployments/sepolia-latest.json)
 
 Example:
-  SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \\
-  SEPOLIA_DEPOSITOR_PRIVATE_KEY=0x... \\
-  SEPOLIA_DEPOSIT_ASSET=USDT \\
-  SEPOLIA_DEPOSIT_AMOUNT=25 \\
-  SEPOLIA_DEPOSIT_RECIPIENT=0x<64-hex> \\
-  npm run deposit:sepolia --workspace @opbridge/ethereum-contracts
+  ETHEREUM_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \\
+  ETHEREUM_DEPOSITOR_PRIVATE_KEY=0x... \\
+  ETHEREUM_DEPOSIT_ASSET=USDT \\
+  ETHEREUM_DEPOSIT_AMOUNT=25 \\
+  ETHEREUM_DEPOSIT_RECIPIENT=0x<64-hex> \\
+  npm run deposit:ethereum --workspace @opbridge/ethereum-contracts
 `);
     return;
   }
 
   const projectRoot = process.cwd();
   const deploymentPath =
-    process.env.SEPOLIA_DEPLOYMENT_FILE?.trim() ||
+    getEnv("ETHEREUM_DEPLOYMENT_FILE", "SEPOLIA_DEPLOYMENT_FILE") ||
     path.join(projectRoot, "deployments", "sepolia-latest.json");
-  const rpcUrl = requireEnv("SEPOLIA_RPC_URL");
+  const rpcUrl = getEnv("ETHEREUM_RPC_URL", "SEPOLIA_RPC_URL") || requireEnv("SEPOLIA_RPC_URL");
   const privateKey =
-    process.env.SEPOLIA_DEPOSITOR_PRIVATE_KEY?.trim() ||
-    process.env.SEPOLIA_DEPLOYER_PRIVATE_KEY?.trim();
+    getEnv("ETHEREUM_DEPOSITOR_PRIVATE_KEY", "SEPOLIA_DEPOSITOR_PRIVATE_KEY") ||
+    getEnv("ETHEREUM_DEPLOYER_PRIVATE_KEY", "SEPOLIA_DEPLOYER_PRIVATE_KEY");
   if (!privateKey) {
-    throw new Error("Missing required env var: SEPOLIA_DEPOSITOR_PRIVATE_KEY (or SEPOLIA_DEPLOYER_PRIVATE_KEY)");
+    throw new Error("Missing required env var: ETHEREUM_DEPOSITOR_PRIVATE_KEY (or ETHEREUM_DEPLOYER_PRIVATE_KEY)");
   }
-  const assetSelector = parseAssetSelector(requireEnv("SEPOLIA_DEPOSIT_ASSET"));
-  const amountHuman = requireEnv("SEPOLIA_DEPOSIT_AMOUNT");
-  const recipient = parseBytes32Recipient(requireEnv("SEPOLIA_DEPOSIT_RECIPIENT"));
+  const assetSelector = parseAssetSelector(getEnv("ETHEREUM_DEPOSIT_ASSET", "SEPOLIA_DEPOSIT_ASSET") || requireEnv("SEPOLIA_DEPOSIT_ASSET"));
+  const amountHuman = getEnv("ETHEREUM_DEPOSIT_AMOUNT", "SEPOLIA_DEPOSIT_AMOUNT") || requireEnv("SEPOLIA_DEPOSIT_AMOUNT");
+  const recipient = parseBytes32Recipient(getEnv("ETHEREUM_DEPOSIT_RECIPIENT", "SEPOLIA_DEPOSIT_RECIPIENT") || requireEnv("SEPOLIA_DEPOSIT_RECIPIENT"));
 
   if (!fs.existsSync(deploymentPath)) {
     throw new Error(`Deployment file not found: ${deploymentPath}`);

@@ -7,7 +7,7 @@ UNIT_DST_DIR="/etc/systemd/system"
 
 echo "Installing OP_BRIDGE systemd unit templates from: $UNIT_SRC_DIR"
 
-sudo install -m 0644 "$UNIT_SRC_DIR/opbridge-relayer-sepolia@.service" "$UNIT_DST_DIR/"
+sudo install -m 0644 "$UNIT_SRC_DIR/opbridge-relayer-ethereum@.service" "$UNIT_DST_DIR/"
 sudo install -m 0644 "$UNIT_SRC_DIR/opbridge-relayer-opnet-burn@.service" "$UNIT_DST_DIR/"
 sudo install -m 0644 "$UNIT_SRC_DIR/opbridge-relayer-api.service" "$UNIT_DST_DIR/"
 sudo install -m 0644 "$UNIT_SRC_DIR/opbridge-relayer-aggregate-mint.service" "$UNIT_DST_DIR/"
@@ -19,7 +19,7 @@ sudo systemctl daemon-reload
 
 cat <<'EOF'
 Installed units:
-  opbridge-relayer-sepolia@.service
+  opbridge-relayer-ethereum@.service
   opbridge-relayer-opnet-burn@.service
   opbridge-relayer-api.service
   opbridge-relayer-aggregate-mint.service
@@ -28,9 +28,9 @@ Installed units:
   opbridge-relayer-aggregate-release.timer
 
 Example enable/start:
-  sudo systemctl enable --now opbridge-relayer-sepolia@a
-  sudo systemctl enable --now opbridge-relayer-sepolia@b
-  sudo systemctl enable --now opbridge-relayer-sepolia@c
+  sudo systemctl enable --now opbridge-relayer-ethereum@a
+  sudo systemctl enable --now opbridge-relayer-ethereum@b
+  sudo systemctl enable --now opbridge-relayer-ethereum@c
   sudo systemctl enable --now opbridge-relayer-opnet-burn@a
   sudo systemctl enable --now opbridge-relayer-opnet-burn@b
   sudo systemctl enable --now opbridge-relayer-opnet-burn@c
@@ -43,7 +43,7 @@ Manual run (debug):
   sudo systemctl start opbridge-relayer-aggregate-release.service
 
 View logs:
-  journalctl -u opbridge-relayer-sepolia@a -f
+  journalctl -u opbridge-relayer-ethereum@a -f
   journalctl -u opbridge-relayer-opnet-burn@a -f
   journalctl -u opbridge-relayer-api -f
   journalctl -u opbridge-relayer-aggregate-mint.service -f

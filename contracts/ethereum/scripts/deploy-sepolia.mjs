@@ -19,6 +19,14 @@ function requireEnv(name) {
   return value.trim();
 }
 
+function getEnv(...names) {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value && value.trim()) return value.trim();
+  }
+  return "";
+}
+
 function parseMintAmount(raw, decimals) {
   return ethers.parseUnits(raw, decimals);
 }
@@ -32,20 +40,49 @@ function parseBool(raw, fallback) {
 }
 
 async function main() {
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    console.log(`Deploy Ethereum test contracts
+
+Required:
+  ETHEREUM_RPC_URL (or SEPOLIA_RPC_URL fallback)
+  ETHEREUM_DEPLOYER_PRIVATE_KEY (or SEPOLIA_DEPLOYER_PRIVATE_KEY fallback)
+
+Optional:
+  ETH_VAULT_OWNER
+  ETH_VAULT_FEE_RECIPIENT
+  ETHEREUM_TEST_MINT_PER_TOKEN (or SEPOLIA_TEST_MINT_PER_TOKEN fallback)
+  ETHEREUM_TEST_FAUCET_ENABLED
+  ETHEREUM_TEST_FAUCET_COOLDOWN_SECONDS
+  ETHEREUM_TEST_FAUCET_CLAIM_AMOUNT
+  ETHEREUM_TEST_FAUCET_<SYMBOL>_CLAIM_AMOUNT
+  OPNET_BRIDGE_ADDRESS
+  OPNET_HUSDT_ADDRESS
+  OPNET_HWBTC_ADDRESS
+  OPNET_HETH_ADDRESS
+  OPNET_HPAXG_ADDRESS
+`);
+    return;
+  }
+
   const projectRoot = process.cwd();
-  const rpcUrl = requireEnv("SEPOLIA_RPC_URL");
-  const privateKey = requireEnv("SEPOLIA_DEPLOYER_PRIVATE_KEY");
+  const rpcUrl = getEnv("ETHEREUM_RPC_URL", "SEPOLIA_RPC_URL") || requireEnv("SEPOLIA_RPC_URL");
+  const privateKey =
+    getEnv("ETHEREUM_DEPLOYER_PRIVATE_KEY", "SEPOLIA_DEPLOYER_PRIVATE_KEY") ||
+    requireEnv("SEPOLIA_DEPLOYER_PRIVATE_KEY");
   const initialOwner = process.env.ETH_VAULT_OWNER?.trim() || "";
   const ownerAddress = initialOwner || new ethers.Wallet(privateKey).address;
   const feeRecipientRaw = process.env.ETH_VAULT_FEE_RECIPIENT?.trim() || "";
   const feeRecipientAddress = feeRecipientRaw || ownerAddress;
-  const mintPerTokenRaw = process.env.SEPOLIA_TEST_MINT_PER_TOKEN || "1000000";
-  const faucetEnabled = parseBool(process.env.SEPOLIA_TEST_FAUCET_ENABLED, true);
-  const faucetCooldownSeconds = Number(process.env.SEPOLIA_TEST_FAUCET_COOLDOWN_SECONDS?.trim() || "86400");
+  const mintPerTokenRaw = getEnv("ETHEREUM_TEST_MINT_PER_TOKEN", "SEPOLIA_TEST_MINT_PER_TOKEN") || "1000000";
+  const faucetEnabled = parseBool(getEnv("ETHEREUM_TEST_FAUCET_ENABLED", "SEPOLIA_TEST_FAUCET_ENABLED"), true);
+  const faucetCooldownSeconds = Number(
+    getEnv("ETHEREUM_TEST_FAUCET_COOLDOWN_SECONDS", "SEPOLIA_TEST_FAUCET_COOLDOWN_SECONDS") || "86400",
+  );
   if (!Number.isInteger(faucetCooldownSeconds) || faucetCooldownSeconds < 0) {
-    throw new Error("SEPOLIA_TEST_FAUCET_COOLDOWN_SECONDS must be an integer >= 0.");
+    throw new Error("ETHEREUM_TEST_FAUCET_COOLDOWN_SECONDS must be an integer >= 0.");
   }
-  const defaultFaucetClaimAmountRaw = process.env.SEPOLIA_TEST_FAUCET_CLAIM_AMOUNT?.trim() || "1000";
+  const defaultFaucetClaimAmountRaw =
+    getEnv("ETHEREUM_TEST_FAUCET_CLAIM_AMOUNT", "SEPOLIA_TEST_FAUCET_CLAIM_AMOUNT") || "1000";
   const outputDir = path.join(projectRoot, "deployments");
 
   const provider = new ethers.JsonRpcProvider(rpcUrl);
@@ -82,7 +119,8 @@ async function main() {
 
   const deployedTokens = [];
   for (const token of DEFAULT_TOKENS) {
-    const symbolClaimRaw = process.env[`SEPOLIA_TEST_FAUCET_${token.symbol}_CLAIM_AMOUNT`]?.trim();
+    const symbolClaimRaw =
+      getEnv(`ETHEREUM_TEST_FAUCET_${token.symbol}_CLAIM_AMOUNT`, `SEPOLIA_TEST_FAUCET_${token.symbol}_CLAIM_AMOUNT`);
     const faucetClaimAmountRaw = symbolClaimRaw || defaultFaucetClaimAmountRaw;
     const faucetClaimAmount = parseMintAmount(faucetClaimAmountRaw, token.decimals);
     const instance = await tokenFactory.deploy(

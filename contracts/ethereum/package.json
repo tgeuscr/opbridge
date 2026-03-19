@@ -6,10 +6,15 @@
     "build": "node scripts/compile-local.mjs",
     "test": "HOME=/tmp hardhat test --no-compile",
     "clean": "hardhat clean",
+    "deploy:ethereum": "node scripts/deploy-sepolia.mjs",
     "deploy:sepolia": "node scripts/deploy-sepolia.mjs",
+    "configure:ethereum": "node scripts/configure-vault-sepolia.mjs",
     "configure:sepolia": "node scripts/configure-vault-sepolia.mjs",
+    "configure:release-relays:ethereum": "node scripts/configure-release-relays-sepolia.mjs",
     "configure:release-relays:sepolia": "node scripts/configure-release-relays-sepolia.mjs",
+    "deposit:ethereum": "node scripts/deposit-sepolia.mjs",
     "deposit:sepolia": "node scripts/deposit-sepolia.mjs",
+    "admin:ethereum": "node scripts/admin-vault-sepolia.mjs",
     "admin:sepolia": "node scripts/admin-vault-sepolia.mjs"
   },
   "devDependencies": {

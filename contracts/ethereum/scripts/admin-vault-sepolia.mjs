@@ -11,6 +11,14 @@ function requireEnv(name) {
   return value.trim();
 }
 
+function getEnv(...names) {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value && value.trim()) return value.trim();
+  }
+  return "";
+}
+
 function parseOptionalBool(raw, fieldName) {
   if (raw == null || String(raw).trim() === "") return undefined;
   const value = String(raw).trim().toLowerCase();
@@ -30,7 +38,7 @@ function parseOptionalFeeBps(raw) {
 
 function parseDeployment(projectRoot) {
   const deploymentPath =
-    process.env.SEPOLIA_DEPLOYMENT_FILE?.trim() ||
+    getEnv("ETHEREUM_DEPLOYMENT_FILE", "SEPOLIA_DEPLOYMENT_FILE") ||
     path.join(projectRoot, "deployments", "sepolia-latest.json");
   if (!fs.existsSync(deploymentPath)) {
     throw new Error(`Deployment file not found: ${deploymentPath}`);
@@ -47,15 +55,15 @@ async function main() {
     console.log(`Vault Admin (Sepolia)
 
 Required:
-  SEPOLIA_RPC_URL
-  SEPOLIA_DEPLOYER_PRIVATE_KEY
+  ETHEREUM_RPC_URL (or SEPOLIA_RPC_URL fallback)
+  ETHEREUM_DEPLOYER_PRIVATE_KEY (or SEPOLIA_DEPLOYER_PRIVATE_KEY fallback)
 
 Vault selection (one required):
-  SEPOLIA_VAULT_ADDRESS
-  OR deployment file with vaultAddress (SEPOLIA_DEPLOYMENT_FILE or deployments/sepolia-latest.json)
+  ETHEREUM_VAULT_ADDRESS
+  OR deployment file with vaultAddress (ETHEREUM_DEPLOYMENT_FILE or deployments/sepolia-latest.json)
 
 Optional actions (any combination):
-  SEPOLIA_VAULT_PAUSED=true|false
+  ETHEREUM_VAULT_PAUSED=true|false
   ETH_VAULT_FEE_BPS=<0..10000>           # pause-guarded in contract
   ETH_VAULT_FEE_RECIPIENT=0x...
 
@@ -67,20 +75,23 @@ Notes:
   }
 
   const projectRoot = process.cwd();
-  const rpcUrl = requireEnv("SEPOLIA_RPC_URL");
-  const privateKey = requireEnv("SEPOLIA_DEPLOYER_PRIVATE_KEY");
-  const pausedTarget = parseOptionalBool(process.env.SEPOLIA_VAULT_PAUSED, "SEPOLIA_VAULT_PAUSED");
+  const rpcUrl = getEnv("ETHEREUM_RPC_URL", "SEPOLIA_RPC_URL") || requireEnv("SEPOLIA_RPC_URL");
+  const privateKey = getEnv("ETHEREUM_DEPLOYER_PRIVATE_KEY", "SEPOLIA_DEPLOYER_PRIVATE_KEY") || requireEnv("SEPOLIA_DEPLOYER_PRIVATE_KEY");
+  const pausedTarget = parseOptionalBool(
+    getEnv("ETHEREUM_VAULT_PAUSED", "SEPOLIA_VAULT_PAUSED"),
+    "ETHEREUM_VAULT_PAUSED",
+  );
   const feeBpsTarget = parseOptionalFeeBps(process.env.ETH_VAULT_FEE_BPS);
   const feeRecipientTarget = process.env.ETH_VAULT_FEE_RECIPIENT?.trim() || "";
 
   if (pausedTarget === undefined && feeBpsTarget === undefined && !feeRecipientTarget) {
     throw new Error(
-      "No actions requested. Set at least one of SEPOLIA_VAULT_PAUSED, ETH_VAULT_FEE_BPS, ETH_VAULT_FEE_RECIPIENT.",
+      "No actions requested. Set at least one of ETHEREUM_VAULT_PAUSED, ETH_VAULT_FEE_BPS, ETH_VAULT_FEE_RECIPIENT.",
     );
   }
 
   let deploymentPath = "";
-  let vaultAddress = process.env.SEPOLIA_VAULT_ADDRESS?.trim() || "";
+  let vaultAddress = getEnv("ETHEREUM_VAULT_ADDRESS", "SEPOLIA_VAULT_ADDRESS");
   if (!vaultAddress) {
     const parsed = parseDeployment(projectRoot);
     deploymentPath = parsed.deploymentPath;
@@ -159,4 +170,3 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
-

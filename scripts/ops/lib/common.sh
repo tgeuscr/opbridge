@@ -49,11 +49,11 @@ upsert_env_line() {
   fi
 }
 
-derive_sepolia_pk_from_mnemonic() {
+derive_ethereum_pk_from_mnemonic() {
   local mnemonic="$1"
   local account="${2:-0}"
   local index="${3:-0}"
   local passphrase="${4:-}"
-  node "$(repo_root)/scripts/ops/lib/derive-sepolia-key-from-mnemonic.mjs" \
+  node "$(repo_root)/scripts/ops/lib/derive-ethereum-key-from-mnemonic.mjs" \
     "$mnemonic" "$account" "$index" "$passphrase"
 }

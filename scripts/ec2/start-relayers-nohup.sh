@@ -25,12 +25,12 @@ start_one() {
   local kind="$1" suffix="$2" index="$3"
   local pid_file log_file output_file run_script env_file
 
-  if [[ "$kind" == "sepolia" ]]; then
-    pid_file="$PID_DIR/opbridge-sepolia-$suffix.pid"
-    log_file="$LOG_DIR/opbridge-sepolia-$suffix.log"
+  if [[ "$kind" == "ethereum" ]]; then
+    pid_file="$PID_DIR/opbridge-ethereum-$suffix.pid"
+    log_file="$LOG_DIR/opbridge-ethereum-$suffix.log"
     output_file="$OP_BRIDGE_HOME/services/relayer/.data/mint-attestations/relayer-$suffix.json"
-    run_script="run:sepolia"
-    env_file="$OP_BRIDGE_ENV_DIR/sepolia-$suffix.env"
+    run_script="run:ethereum"
+    env_file="$OP_BRIDGE_ENV_DIR/ethereum-$suffix.env"
   else
     pid_file="$PID_DIR/opbridge-opnet-burn-$suffix.pid"
     log_file="$LOG_DIR/opbridge-opnet-burn-$suffix.log"
@@ -78,13 +78,13 @@ start_one() {
 main() {
   for suffix in a b c; do
     index="$(idx_for "$suffix")"
-    start_one "sepolia" "$suffix" "$index"
+    start_one "ethereum" "$suffix" "$index"
     start_one "opnet-burn" "$suffix" "$index"
   done
 
   echo
   echo "Startup log tails:"
-  for file in "$LOG_DIR"/opbridge-sepolia-*.log "$LOG_DIR"/opbridge-opnet-burn-*.log; do
+  for file in "$LOG_DIR"/opbridge-ethereum-*.log "$LOG_DIR"/opbridge-opnet-burn-*.log; do
     [[ -e "$file" ]] || continue
     echo "== $file =="
     tail -n 3 "$file" || true

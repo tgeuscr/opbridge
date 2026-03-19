@@ -443,7 +443,7 @@ RELAYER_OUTPUT_FILE=services/relayer/.data/attestations/relayer-a.json \
 RELAYER_START_BLOCK=<recent-sepolia-block> \
 RELAYER_MAX_BLOCK_RANGE=1 \
 RELAYER_POLL_INTERVAL_MS=30000 \
-npm run run:sepolia --workspace @opbridge/relayer
+npm run run:ethereum --workspace @opbridge/relayer
 ```
 
 Repeat for relay indexes `1` and `2`.

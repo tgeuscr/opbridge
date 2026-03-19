@@ -15,19 +15,19 @@
     "opnet": "^1.8.1-rc.9"
   },
   "scripts": {
-    "run:sepolia": "node src/sepolia-poller.mjs",
+    "run:ethereum": "node src/ethereum-poller.mjs",
     "run:opnet-burn": "node src/opnet-burn-poller.mjs",
     "relay-config:kms": "node src/generate-kms-relay-public-config.mjs",
     "diag:opnet-rpc": "node src/opnet-rpc-diagnose.mjs",
     "sdk:opnet-testnet-smoke": "node src/opnet-sdk-testnet-smoke.mjs",
     "kms:spike:opnet": "node src/kms-sign-opnet.mjs",
     "kms:spike:evm": "node src/kms-sign-evm.mjs",
-    "aggregate:sepolia": "node src/aggregate-attestations.mjs",
+    "aggregate:ethereum": "node src/aggregate-attestations.mjs",
     "aggregate:release": "node src/aggregate-release-attestations.mjs",
     "submit:opnet": "node src/submit-mint-candidate.mjs",
     "burn:opnet:simulate": "node src/request-opnet-burn.mjs --simulate",
     "burn:opnet": "node src/request-opnet-burn.mjs --send",
-    "submit:sepolia-release": "node src/submit-release-candidate.mjs",
+    "submit:ethereum-release": "node src/submit-release-candidate.mjs",
     "test": "echo 'No relayer tests yet'",
     "build": "echo 'No relayer build step yet'"
   }

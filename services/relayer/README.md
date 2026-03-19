@@ -17,8 +17,8 @@ Current scaffolding:
   - `listPendingAttestations`
   - `snapshot`
 - Sepolia poller CLI for `DepositInitiated` event ingestion:
-  - `src/sepolia-poller.mjs`
-  - `npm run run:sepolia --workspace @opbridge/relayer`
+  - `src/ethereum-poller.mjs`
+  - `npm run run:ethereum --workspace @opbridge/relayer`
   - mapping loader + log polling + canonical payload + pending attestation output
 
 Still pending:
@@ -31,7 +31,7 @@ Still pending:
 
 Required env vars:
 
-- `SEPOLIA_RPC_URL` (Alchemy/other Sepolia RPC)
+- `ETHEREUM_RPC_URL` (Alchemy/other Ethereum RPC; Sepolia on testnet)
 
 Optional env vars:
 
@@ -51,7 +51,7 @@ Optional env vars:
 Run:
 
 ```bash
-npm run run:sepolia --workspace @opbridge/relayer
+npm run run:ethereum --workspace @opbridge/relayer
 ```
 
 KMS signer example:
@@ -99,23 +99,23 @@ See `docs/kms-spike.md` for required env vars and success criteria.
 Run each relayer in its own process with one key and one relay index:
 
 ```bash
-SEPOLIA_RPC_URL=... OPNET_BRIDGE_ADDRESS=... OPNET_BRIDGE_HEX=0x... \
+ETHEREUM_RPC_URL=... OPNET_BRIDGE_ADDRESS=... OPNET_BRIDGE_HEX=0x... \
 RELAYER_ID=relayer-a RELAYER_INDEX=0 \
 RELAYER_SIGNER_MODE=kms RELAYER_KMS_KEY_ID=arn:aws:kms:... \
 RELAYER_OUTPUT_FILE=services/relayer/.data/attestations/relayer-a.json \
-npm run run:sepolia --workspace @opbridge/relayer
+npm run run:ethereum --workspace @opbridge/relayer
 
-SEPOLIA_RPC_URL=... OPNET_BRIDGE_ADDRESS=... OPNET_BRIDGE_HEX=0x... \
+ETHEREUM_RPC_URL=... OPNET_BRIDGE_ADDRESS=... OPNET_BRIDGE_HEX=0x... \
 RELAYER_ID=relayer-b RELAYER_INDEX=1 \
 RELAYER_SIGNER_MODE=kms RELAYER_KMS_KEY_ID=arn:aws:kms:... \
 RELAYER_OUTPUT_FILE=services/relayer/.data/attestations/relayer-b.json \
-npm run run:sepolia --workspace @opbridge/relayer
+npm run run:ethereum --workspace @opbridge/relayer
 
-SEPOLIA_RPC_URL=... OPNET_BRIDGE_ADDRESS=... OPNET_BRIDGE_HEX=0x... \
+ETHEREUM_RPC_URL=... OPNET_BRIDGE_ADDRESS=... OPNET_BRIDGE_HEX=0x... \
 RELAYER_ID=relayer-c RELAYER_INDEX=2 \
 RELAYER_SIGNER_MODE=kms RELAYER_KMS_KEY_ID=arn:aws:kms:... \
 RELAYER_OUTPUT_FILE=services/relayer/.data/attestations/relayer-c.json \
-npm run run:sepolia --workspace @opbridge/relayer
+npm run run:ethereum --workspace @opbridge/relayer
 ```
 
 ## Aggregate threshold attestations
@@ -123,7 +123,7 @@ npm run run:sepolia --workspace @opbridge/relayer
 CLI:
 
 ```bash
-npm run aggregate:sepolia --workspace @opbridge/relayer
+npm run aggregate:ethereum --workspace @opbridge/relayer
 ```
 
 Optional env vars:

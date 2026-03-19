@@ -49,19 +49,22 @@ function selectCandidate(parsed) {
 }
 
 function loadVaultAddress(candidateMessage) {
-  const fromEnv = process.env.SEPOLIA_VAULT_ADDRESS?.trim();
+  const fromEnv = process.env.ETHEREUM_VAULT_ADDRESS?.trim() || process.env.SEPOLIA_VAULT_ADDRESS?.trim();
   if (fromEnv) return fromEnv;
   const fromCandidate = String(candidateMessage?.ethereumVault ?? "").trim();
   if (/^0x[0-9a-fA-F]{40}$/.test(fromCandidate)) return fromCandidate;
   if (/^0x[0-9a-fA-F]{64}$/.test(fromCandidate)) {
     return `0x${fromCandidate.slice(-40)}`;
   }
-  const deploymentFile = process.env.SEPOLIA_DEPLOYMENT_FILE?.trim() || DEFAULT_DEPLOYMENT_FILE;
+  const deploymentFile =
+    process.env.ETHEREUM_DEPLOYMENT_FILE?.trim() ||
+    process.env.SEPOLIA_DEPLOYMENT_FILE?.trim() ||
+    DEFAULT_DEPLOYMENT_FILE;
   if (fs.existsSync(deploymentFile)) {
     const parsed = JSON.parse(fs.readFileSync(deploymentFile, "utf8"));
     if (parsed?.vaultAddress) return String(parsed.vaultAddress);
   }
-  throw new Error("Vault address not found. Set SEPOLIA_VAULT_ADDRESS or provide a deployment file.");
+  throw new Error("Vault address not found. Set ETHEREUM_VAULT_ADDRESS or provide a deployment file.");
 }
 
 async function main() {
@@ -69,27 +72,30 @@ async function main() {
     console.log(`Submit Ethereum Release Candidate
 
 Required:
-  SEPOLIA_RPC_URL
-  SEPOLIA_SUBMITTER_PRIVATE_KEY (or SEPOLIA_DEPLOYER_PRIVATE_KEY fallback)
+  ETHEREUM_RPC_URL (or SEPOLIA_RPC_URL fallback)
+  ETHEREUM_SUBMITTER_PRIVATE_KEY (or ETHEREUM_DEPLOYER_PRIVATE_KEY fallback)
 
 Optional:
   RELEASE_CANDIDATES_FILE (default: ${DEFAULT_CANDIDATES_FILE})
   RELEASE_CANDIDATE_PAYLOAD_HASH
   RELEASE_CANDIDATE_WITHDRAWAL_ID
-  SEPOLIA_VAULT_ADDRESS (fallback if candidate/deployment file unavailable)
-  SEPOLIA_DEPLOYMENT_FILE (default: ${DEFAULT_DEPLOYMENT_FILE})
+  ETHEREUM_VAULT_ADDRESS (fallback if candidate/deployment file unavailable)
+  ETHEREUM_DEPLOYMENT_FILE (default: ${DEFAULT_DEPLOYMENT_FILE})
 `);
     return;
   }
 
-  const rpcUrl = requireEnv("SEPOLIA_RPC_URL");
+  const rpcUrl = process.env.ETHEREUM_RPC_URL?.trim() || requireEnv("SEPOLIA_RPC_URL");
   const privateKey =
+    process.env.ETHEREUM_SUBMITTER_PRIVATE_KEY?.trim() ||
+    process.env.ETHEREUM_DEPOSITOR_PRIVATE_KEY?.trim() ||
+    process.env.ETHEREUM_DEPLOYER_PRIVATE_KEY?.trim() ||
     process.env.SEPOLIA_SUBMITTER_PRIVATE_KEY?.trim() ||
     process.env.SEPOLIA_DEPOSITOR_PRIVATE_KEY?.trim() ||
     process.env.SEPOLIA_DEPLOYER_PRIVATE_KEY?.trim();
   if (!privateKey) {
     throw new Error(
-      "Missing required env var: SEPOLIA_SUBMITTER_PRIVATE_KEY (or SEPOLIA_DEPOSITOR_PRIVATE_KEY / SEPOLIA_DEPLOYER_PRIVATE_KEY)",
+      "Missing required env var: ETHEREUM_SUBMITTER_PRIVATE_KEY (or ETHEREUM_DEPOSITOR_PRIVATE_KEY / ETHEREUM_DEPLOYER_PRIVATE_KEY)",
     );
   }
 

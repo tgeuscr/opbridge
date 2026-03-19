@@ -14,7 +14,7 @@ Environment=RELAYER_DISABLE_FILE_OUTPUT=1
 EnvironmentFile=/home/ssm-user/opbridge-env/relayer-common.env
 EnvironmentFile=-/home/ssm-user/opbridge-env/relayer-api.env
 EnvironmentFile=-/home/ssm-user/opbridge-env/aggregator.env
-ExecStart=/bin/bash -lc '. "$HOME/.nvm/nvm.sh" && nvm use "$NODE_VERSION" >/dev/null && npm run --workspace @opbridge/relayer aggregate:sepolia'
+ExecStart=/bin/bash -lc '. "$HOME/.nvm/nvm.sh" && nvm use "$NODE_VERSION" >/dev/null && npm run --workspace @opbridge/relayer aggregate:ethereum'
 
 [Install]
 WantedBy=multi-user.target

@@ -11,13 +11,21 @@ function requireEnv(name) {
   return value.trim();
 }
 
+function getEnv(...names) {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value && value.trim()) return value.trim();
+  }
+  return "";
+}
+
 async function main() {
   const projectRoot = process.cwd();
   const deploymentPath =
-    process.env.SEPOLIA_DEPLOYMENT_FILE?.trim() ||
+    getEnv("ETHEREUM_DEPLOYMENT_FILE", "SEPOLIA_DEPLOYMENT_FILE") ||
     path.join(projectRoot, "deployments", "sepolia-latest.json");
-  const rpcUrl = requireEnv("SEPOLIA_RPC_URL");
-  const privateKey = requireEnv("SEPOLIA_DEPLOYER_PRIVATE_KEY");
+  const rpcUrl = getEnv("ETHEREUM_RPC_URL", "SEPOLIA_RPC_URL") || requireEnv("SEPOLIA_RPC_URL");
+  const privateKey = getEnv("ETHEREUM_DEPLOYER_PRIVATE_KEY", "SEPOLIA_DEPLOYER_PRIVATE_KEY") || requireEnv("SEPOLIA_DEPLOYER_PRIVATE_KEY");
   const feeRecipientRaw = process.env.ETH_VAULT_FEE_RECIPIENT?.trim() || "";
 
   if (!fs.existsSync(deploymentPath)) {

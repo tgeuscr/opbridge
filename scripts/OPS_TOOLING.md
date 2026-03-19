@@ -12,7 +12,7 @@ Creates `./opbridge-env/` with template files:
 - `relayer-common.env`
 - `relayer-api.env`
 - `aggregator.env`
-- `sepolia-{a,b,c}.env`
+- `ethereum-{a,b,c}.env`
 - `opnet-burn-{a,b,c}.env`
 - `contracts.env`
 
@@ -22,7 +22,7 @@ Requires OPNet bridge + wrapped token addresses because the deploy script stores
 
 ```bash
 MNEMONIC="word1 ... word12" \
-SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \
+ETHEREUM_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \
 ETH_VAULT_OWNER=0x... \
 ETH_VAULT_FEE_RECIPIENT=0x... \
 OPNET_BRIDGE_ADDRESS=op... \
@@ -35,7 +35,7 @@ bash scripts/deploy-ethereum-sepolia.sh
 ```
 
 Notes:
-- You can use `SEPOLIA_DEPLOYER_PRIVATE_KEY=0x...` instead of `MNEMONIC`.
+- You can use `ETHEREUM_DEPLOYER_PRIVATE_KEY=0x...` instead of `MNEMONIC`.
 - If `ETH_VAULT_OWNER != deployer`, vault asset configuration is skipped by the underlying deploy script.
 
 ## Sync generated addresses into `opbridge-env/` and `apps/site/.env.local`
@@ -60,7 +60,7 @@ This reads `contracts/ethereum/deployments/sepolia-latest.json` and writes:
 ## Configure Sepolia vault release relays (Ethereum ECDSA keys)
 
 ```bash
-SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \
+ETHEREUM_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \
 RELAYER_EVM_KMS_KEY_IDS=arn:aws:kms:...a,arn:aws:kms:...b,arn:aws:kms:...c \
 OPNET_BRIDGE_HEX=0x<64-hex> \
 RELAYER_THRESHOLD=2 \

@@ -16,6 +16,14 @@ function requireEnv(name) {
   return value.trim();
 }
 
+function getEnv(...names) {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value && value.trim()) return value.trim();
+  }
+  return "";
+}
+
 function normalizeBytes32Hex(raw, fieldName) {
   const value = String(raw ?? "").trim();
   if (!value) throw new Error(`${fieldName} is required.`);
@@ -28,7 +36,7 @@ function normalizeBytes32Hex(raw, fieldName) {
 
 function parseDeployment(projectRoot) {
   const deploymentPath =
-    process.env.SEPOLIA_DEPLOYMENT_FILE?.trim() ||
+    getEnv("ETHEREUM_DEPLOYMENT_FILE", "SEPOLIA_DEPLOYMENT_FILE") ||
     path.join(projectRoot, "deployments", "sepolia-latest.json");
   if (!fs.existsSync(deploymentPath)) {
     throw new Error(`Deployment file not found: ${deploymentPath}`);
@@ -87,8 +95,8 @@ async function main() {
     console.log(`Configure Vault Release Relays (Sepolia)
 
 Required:
-  SEPOLIA_RPC_URL
-  SEPOLIA_DEPLOYER_PRIVATE_KEY
+  ETHEREUM_RPC_URL (or SEPOLIA_RPC_URL fallback)
+  ETHEREUM_DEPLOYER_PRIVATE_KEY (or SEPOLIA_DEPLOYER_PRIVATE_KEY fallback)
 
 Relay signer input (required):
   RELAYER_EVM_KMS_KEY_IDS (comma-separated KMS key IDs/ARNs in relay index order)
@@ -98,15 +106,17 @@ OP_NET bridge binding (one required):
   OR deployment file containing opnet.bridgeHex
 
 Optional:
-  SEPOLIA_DEPLOYMENT_FILE (default: deployments/sepolia-latest.json)
+  ETHEREUM_DEPLOYMENT_FILE (default: deployments/sepolia-latest.json)
   RELAYER_THRESHOLD (default: 2)
 `);
     return;
   }
 
   const projectRoot = process.cwd();
-  const rpcUrl = requireEnv("SEPOLIA_RPC_URL");
-  const privateKey = requireEnv("SEPOLIA_DEPLOYER_PRIVATE_KEY");
+  const rpcUrl = getEnv("ETHEREUM_RPC_URL", "SEPOLIA_RPC_URL") || requireEnv("SEPOLIA_RPC_URL");
+  const privateKey =
+    getEnv("ETHEREUM_DEPLOYER_PRIVATE_KEY", "SEPOLIA_DEPLOYER_PRIVATE_KEY") ||
+    requireEnv("SEPOLIA_DEPLOYER_PRIVATE_KEY");
   const { deploymentPath, deployment } = parseDeployment(projectRoot);
   const bridgeHex = resolveBridgeHex(deployment);
   const relaySigners = await resolveRelaySigners();

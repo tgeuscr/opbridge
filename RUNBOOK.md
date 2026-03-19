@@ -61,8 +61,8 @@ Capture:
 ## 3) Deploy Ethereum Sepolia Vault + Test Tokens
 
 ```bash
-SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \
-SEPOLIA_DEPLOYER_PRIVATE_KEY=0x... \
+ETHEREUM_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \
+ETHEREUM_DEPLOYER_PRIVATE_KEY=0x... \
 ETH_VAULT_OWNER=0x<owner> \
 ETH_VAULT_FEE_RECIPIENT=0x<fee-recipient> \
 OPNET_BRIDGE_ADDRESS=op... \
@@ -71,7 +71,7 @@ OPNET_HUSDT_ADDRESS=op... \
 OPNET_HWBTC_ADDRESS=op... \
 OPNET_HETH_ADDRESS=op... \
 OPNET_HPAXG_ADDRESS=op... \
-npm run deploy:sepolia --workspace @opbridge/ethereum-contracts
+npm run deploy:ethereum --workspace @opbridge/ethereum-contracts
 ```
 
 Notes:
@@ -85,7 +85,7 @@ Optional/required (if owner != deployer) rerun asset config + fee recipient:
 SEPOLIA_RPC_URL=... \
 SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
 ETH_VAULT_FEE_RECIPIENT=0x<fee-recipient> \
-npm run configure:sepolia --workspace @opbridge/ethereum-contracts
+npm run configure:ethereum --workspace @opbridge/ethereum-contracts
 ```
 
 ## 4) Configure Ethereum Vault Release Relays (ECDSA, OP->ETH path, Terminal)
@@ -99,13 +99,13 @@ This wires the Sepolia vault to:
 ```bash
 cd /home/m/projects/opbridge/contracts/ethereum
 
-SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \
-SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
-SEPOLIA_DEPLOYMENT_FILE=deployments/sepolia-latest.json \
+ETHEREUM_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \
+ETHEREUM_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
+ETHEREUM_DEPLOYMENT_FILE=deployments/sepolia-latest.json \
 OPNET_BRIDGE_HEX=0x<64-hex> \
 RELAYER_EVM_KMS_KEY_IDS=arn:aws:kms:...a,arn:aws:kms:...b,arn:aws:kms:...c \
 RELAYER_THRESHOLD=2 \
-npm run configure:release-relays:sepolia
+npm run configure:release-relays:ethereum
 
 cd /home/m/projects/opbridge
 ```
@@ -117,21 +117,21 @@ All Ethereum admin steps should be terminal-driven.
 Set/confirm fee recipient and keep paused (owner key):
 
 ```bash
-SEPOLIA_RPC_URL=... \
-SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
+ETHEREUM_RPC_URL=... \
+ETHEREUM_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
 ETH_VAULT_FEE_RECIPIENT=0x<fee-recipient> \
-SEPOLIA_VAULT_PAUSED=true \
-npm run admin:sepolia --workspace @opbridge/ethereum-contracts
+ETHEREUM_VAULT_PAUSED=true \
+npm run admin:ethereum --workspace @opbridge/ethereum-contracts
 ```
 
 Optional: set fee bps (must be paused). `100 = 1%`.
 
 ```bash
-SEPOLIA_RPC_URL=... \
-SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
+ETHEREUM_RPC_URL=... \
+ETHEREUM_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
 ETH_VAULT_FEE_BPS=100 \
-SEPOLIA_VAULT_PAUSED=true \
-npm run admin:sepolia --workspace @opbridge/ethereum-contracts
+ETHEREUM_VAULT_PAUSED=true \
+npm run admin:ethereum --workspace @opbridge/ethereum-contracts
 ```
 
 Do **not** unpause yet until OP_NET bridge wiring is complete.
@@ -154,10 +154,10 @@ On the OP_NET bridge (wallet/UI admin flow), confirm:
 After all wiring is complete, unpause the Sepolia vault:
 
 ```bash
-SEPOLIA_RPC_URL=... \
-SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
-SEPOLIA_VAULT_PAUSED=false \
-npm run admin:sepolia --workspace @opbridge/ethereum-contracts
+ETHEREUM_RPC_URL=... \
+ETHEREUM_DEPLOYER_PRIVATE_KEY=0x<owner-private-key> \
+ETHEREUM_VAULT_PAUSED=false \
+npm run admin:ethereum --workspace @opbridge/ethereum-contracts
 ```
 
 `depositERC20(...)` and `releaseWithRelaySignatures(...)` will revert while paused.
@@ -167,7 +167,7 @@ npm run admin:sepolia --workspace @opbridge/ethereum-contracts
 Run one process per relay index (examples use 3 relayers):
 
 ```bash
-SEPOLIA_RPC_URL=... \
+ETHEREUM_RPC_URL=... \
 RELAYER_ID=relayer-a \
 RELAYER_INDEX=0 \
 RELAYER_SIGNER_MODE=kms \
@@ -178,7 +178,7 @@ RELAYER_OUTPUT_FILE=services/relayer/.data/attestations/relayer-a.json \
 RELAYER_START_BLOCK=<recent-sepolia-block> \
 RELAYER_MAX_BLOCK_RANGE=1 \
 RELAYER_POLL_INTERVAL_MS=30000 \
-npm run run:sepolia --workspace @opbridge/relayer
+npm run run:ethereum --workspace @opbridge/relayer
 ```
 
 Repeat with:
@@ -187,7 +187,7 @@ Repeat with:
 
 ## 9) Deposit on Sepolia (Vault)
 
-`SEPOLIA_DEPOSIT_RECIPIENT` must be OP_NET recipient as `bytes32` hex (usually hashed MLDSA key).
+`ETHEREUM_DEPOSIT_RECIPIENT` must be OP_NET recipient as `bytes32` hex (usually hashed MLDSA key).
 
 At the default `1%` vault fee:
 - User deposits `X`
@@ -196,12 +196,12 @@ At the default `1%` vault fee:
 - OP_NET mint relayers will mint the emitted net amount
 
 ```bash
-SEPOLIA_RPC_URL=... \
-SEPOLIA_DEPOSITOR_PRIVATE_KEY=0x... \
-SEPOLIA_DEPOSIT_ASSET=USDT \
-SEPOLIA_DEPOSIT_AMOUNT=25 \
-SEPOLIA_DEPOSIT_RECIPIENT=0x<64-hex> \
-npm run deposit:sepolia --workspace @opbridge/ethereum-contracts
+ETHEREUM_RPC_URL=... \
+ETHEREUM_DEPOSITOR_PRIVATE_KEY=0x... \
+ETHEREUM_DEPOSIT_ASSET=USDT \
+ETHEREUM_DEPOSIT_AMOUNT=25 \
+ETHEREUM_DEPOSIT_RECIPIENT=0x<64-hex> \
+npm run deposit:ethereum --workspace @opbridge/ethereum-contracts
 ```
 
 ## 10) Aggregate Mint Candidate (ETH->OP)
@@ -209,7 +209,7 @@ npm run deposit:sepolia --workspace @opbridge/ethereum-contracts
 ```bash
 RELAYER_THRESHOLD=2 \
 AGGREGATOR_OUTPUT_FILE=services/relayer/.data/mint-submission-candidates.json \
-npm run aggregate:sepolia --workspace @opbridge/relayer
+npm run aggregate:ethereum --workspace @opbridge/relayer
 ```
 
 ## 11) Submit Mint on OP_NET
@@ -277,9 +277,9 @@ Output:
 ## 15) Submit Release on Sepolia Vault
 
 ```bash
-SEPOLIA_RPC_URL=... \
-SEPOLIA_SUBMITTER_PRIVATE_KEY=0x... \
-npm run submit:sepolia-release --workspace @opbridge/relayer
+ETHEREUM_RPC_URL=... \
+ETHEREUM_SUBMITTER_PRIVATE_KEY=0x... \
+npm run submit:ethereum-release --workspace @opbridge/relayer
 ```
 
 This calls:

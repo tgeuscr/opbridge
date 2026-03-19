@@ -340,10 +340,10 @@ function buildProcessedRelease(log) {
 
 async function main() {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
-    console.log(`Sepolia Deposit Poller
+    console.log(`Ethereum Deposit Poller
 
 Required:
-  SEPOLIA_RPC_URL
+  ETHEREUM_RPC_URL (or SEPOLIA_RPC_URL fallback)
 
 Optional:
   RELAYER_ID (default: relayer-0)
@@ -360,8 +360,8 @@ Optional:
   RELAYER_POLL_INTERVAL_MS (default: 30000)
 
 Example:
-  SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \\
-  npm run run:sepolia --workspace @opbridge/relayer
+  ETHEREUM_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \\
+  npm run run:ethereum --workspace @opbridge/relayer
 `);
     return;
   }
@@ -371,14 +371,14 @@ Example:
   const relayerId = process.env.RELAYER_ID?.trim() || "relayer-0";
   const pollIntervalMs = Number(process.env.RELAYER_POLL_INTERVAL_MS || 30000);
   const startBlockEnv = process.env.RELAYER_START_BLOCK;
-  const rpcUrl = process.env.SEPOLIA_RPC_URL;
+  const rpcUrl = process.env.ETHEREUM_RPC_URL?.trim() || process.env.SEPOLIA_RPC_URL;
   const opnetBridgeAddress = process.env.OPNET_BRIDGE_ADDRESS;
   const opnetBridgeHex = process.env.OPNET_BRIDGE_HEX;
   const maxBlockRange = Number(process.env.RELAYER_MAX_BLOCK_RANGE || 10);
   const minConfirmations = Number(process.env.RELAYER_MIN_CONFIRMATIONS?.trim() || "10");
 
   if (!rpcUrl) {
-    throw new Error("SEPOLIA_RPC_URL is required.");
+    throw new Error("ETHEREUM_RPC_URL is required.");
   }
   if (!Number.isInteger(minConfirmations) || minConfirmations < 0) {
     throw new Error("RELAYER_MIN_CONFIRMATIONS must be >= 0.");
@@ -541,7 +541,7 @@ Example:
         heartbeatHead >= BigInt(minConfirmations) ? heartbeatHead - BigInt(minConfirmations) : -1n;
       await publishRelayerHeartbeat({
         relayerName: relayerId,
-        role: "sepolia-poller",
+        role: "ethereum-poller",
         status: "ok",
         detail: JSON.stringify({
           sourceChain: "sepolia",
