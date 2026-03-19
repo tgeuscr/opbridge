@@ -116,9 +116,9 @@ export type Owner = CallResult<
 export type TransferOwnership = CallResult<{}, OPNetEvent<OwnershipTransferredEvent>[]>;
 
 // ------------------------------------------------------------------
-// IHWBTC
+// IopUSDT
 // ------------------------------------------------------------------
-export interface IHWBTC extends IOP_NETContract {
+export interface IopUSDT extends IOP_NETContract {
     mint(to: Address, amount: bigint): Promise<Mint>;
     burnFrom(from: Address, amount: bigint): Promise<BurnFrom>;
     setBridgeAuthority(newBridge: Address): Promise<SetBridgeAuthority>;

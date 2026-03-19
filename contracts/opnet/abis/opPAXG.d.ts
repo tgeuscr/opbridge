@@ -116,9 +116,9 @@ export type Owner = CallResult<
 export type TransferOwnership = CallResult<{}, OPNetEvent<OwnershipTransferredEvent>[]>;
 
 // ------------------------------------------------------------------
-// IHUSDT
+// IopPAXG
 // ------------------------------------------------------------------
-export interface IHUSDT extends IOP_NETContract {
+export interface IopPAXG extends IOP_NETContract {
     mint(to: Address, amount: bigint): Promise<Mint>;
     burnFrom(from: Address, amount: bigint): Promise<BurnFrom>;
     setBridgeAuthority(newBridge: Address): Promise<SetBridgeAuthority>;

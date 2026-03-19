@@ -1,6 +1,6 @@
 import { ABIDataTypes, BitcoinAbiTypes, OP_NET_ABI } from 'opnet';
 
-export const HETHEvents = [
+export const opWBTCEvents = [
     {
         name: 'BridgeMinted',
         values: [
@@ -56,7 +56,7 @@ export const HETHEvents = [
     },
 ];
 
-export const HETHAbi = [
+export const opWBTCAbi = [
     {
         name: 'mint',
         inputs: [
@@ -151,8 +151,8 @@ export const HETHAbi = [
         outputs: [],
         type: BitcoinAbiTypes.Function,
     },
-    ...HETHEvents,
+    ...opWBTCEvents,
     ...OP_NET_ABI,
 ];
 
-export default HETHAbi;
+export default opWBTCAbi;

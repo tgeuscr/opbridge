@@ -1,6 +1,6 @@
 import { ABIDataTypes, BitcoinAbiTypes, OP_NET_ABI } from 'opnet';
 
-export const HPAXGEvents = [
+export const opUSDTEvents = [
     {
         name: 'BridgeMinted',
         values: [
@@ -56,7 +56,7 @@ export const HPAXGEvents = [
     },
 ];
 
-export const HPAXGAbi = [
+export const opUSDTAbi = [
     {
         name: 'mint',
         inputs: [
@@ -151,8 +151,8 @@ export const HPAXGAbi = [
         outputs: [],
         type: BitcoinAbiTypes.Function,
     },
-    ...HPAXGEvents,
+    ...opUSDTEvents,
     ...OP_NET_ABI,
 ];
 
-export default HPAXGAbi;
+export default opUSDTAbi;
