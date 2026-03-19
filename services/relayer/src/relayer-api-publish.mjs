@@ -1,4 +1,5 @@
 import process from 'node:process';
+import { resolveSecretBackedValue } from './secret-provider.mjs';
 
 function normalizeBaseUrl() {
   const raw = process.env.RELAYER_API_URL?.trim();
@@ -9,7 +10,10 @@ function normalizeBaseUrl() {
 async function postJson(pathname, body) {
   const baseUrl = normalizeBaseUrl();
   if (!baseUrl) return { skipped: true, reason: 'RELAYER_API_URL not set' };
-  const token = process.env.RELAYER_API_WRITE_TOKEN?.trim();
+  const token = await resolveSecretBackedValue({
+    directValue: process.env.RELAYER_API_WRITE_TOKEN,
+    secretRef: process.env.RELAYER_API_WRITE_TOKEN_SECRET_REF,
+  });
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: 'POST',
     headers: {

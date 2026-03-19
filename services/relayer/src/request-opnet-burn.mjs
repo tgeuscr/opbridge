@@ -3,6 +3,7 @@ import { networks } from "@btc-vision/bitcoin";
 import { Address, Mnemonic, Wallet } from "@btc-vision/transaction";
 import { ABIDataTypes, BitcoinAbiTypes, getContract } from "opnet";
 import { createOpnetJsonRpcProvider, describeOpnetRpcTransport } from "./opnet-rpc-provider.mjs";
+import { resolveSecretBackedValue } from "./secret-provider.mjs";
 
 const DEFAULT_OPNET_RPC_URL = "https://regtest.opnet.org";
 const TESTNET_OPNET_RPC_URL = "https://testnet.opnet.org";
@@ -119,7 +120,10 @@ Flags:
 
   const opnetNetworkName = process.env.OPNET_NETWORK;
   const opnetNetwork = resolveNetwork(opnetNetworkName);
-  const opnetRpcUrl = process.env.OPNET_RPC_URL?.trim() || defaultOpnetRpcUrlForNetwork(opnetNetworkName);
+  const opnetRpcUrl = await resolveSecretBackedValue({
+    directValue: process.env.OPNET_RPC_URL?.trim() || defaultOpnetRpcUrlForNetwork(opnetNetworkName),
+    secretRef: process.env.OPNET_RPC_URL_SECRET_REF,
+  });
   const bridgeAddress = requireEnv("OPNET_BRIDGE_ADDRESS");
   const assetId = parseU8Env("OPNET_BURN_ASSET_ID");
   const amount = parseUintEnv("OPNET_BURN_AMOUNT");

@@ -20,14 +20,17 @@ write_if_missing() {
 
 write_if_missing "$ENV_DIR/relayer-common.env" '# Shared relayer config
 ETHEREUM_RPC_URL=
+# ETHEREUM_RPC_URL_SECRET_REF=aws-sm://opbridge/testnet/relayer-common#ethereumRpcUrl
 OPNET_NETWORK=testnet
 OPNET_RPC_URL=https://testnet.opnet.org
+# OPNET_RPC_URL_SECRET_REF=aws-sm://opbridge/testnet/relayer-common#opnetRpcUrl
 RELAYER_MAPPING_FILE=
 ATTESTATION_VERSION=1
 RELAYER_POLL_INTERVAL_MS=30000
 RELAYER_API_URL=http://127.0.0.1:8787
 RELAYER_API_DB_PATH=
 # RELAYER_API_WRITE_TOKEN=
+# RELAYER_API_WRITE_TOKEN_SECRET_REF=aws-sm://opbridge/testnet/relayer-common#relayerApiWriteToken
 # RELAYER_DISABLE_FILE_OUTPUT=1
 '
 
@@ -37,6 +40,7 @@ RELAYER_API_PORT=8787
 RELAYER_API_DB_PATH=
 # RELAYER_API_CORS_ALLOWED_ORIGINS=https://testnet.opbridge.app,https://testnet.opbridge.app,https://*.vercel.app,http://localhost:5173,http://127.0.0.1:5173
 # RELAYER_API_WRITE_TOKEN=
+# RELAYER_API_WRITE_TOKEN_SECRET_REF=aws-sm://opbridge/testnet/api#relayerApiWriteToken
 '
 
 write_if_missing "$ENV_DIR/aggregator.env" '# Aggregator DB/API-first mode
@@ -46,6 +50,7 @@ RELAYER_API_URL=http://127.0.0.1:8787
 RELAYER_DISABLE_FILE_OUTPUT=1
 RELAYER_THRESHOLD=2
 # RELAYER_API_WRITE_TOKEN=
+# RELAYER_API_WRITE_TOKEN_SECRET_REF=aws-sm://opbridge/testnet/aggregator#relayerApiWriteToken
 '
 
 for name in ethereum-a ethereum-b ethereum-c; do

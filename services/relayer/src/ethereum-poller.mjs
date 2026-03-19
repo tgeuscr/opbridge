@@ -10,6 +10,7 @@ import {
   publishRelayerHeartbeat,
 } from "./relayer-api-publish.mjs";
 import { loadOpnetRelaySigners } from "./signers/index.mjs";
+import { resolveSecretBackedValue } from "./secret-provider.mjs";
 
 const DEPOSIT_INITIATED_TOPIC0 =
   "0x3fb1c794079291b42d6d8707ba973ad40ab31522db5ff4280e7606823b71be73";
@@ -371,7 +372,10 @@ Example:
   const relayerId = process.env.RELAYER_ID?.trim() || "relayer-0";
   const pollIntervalMs = Number(process.env.RELAYER_POLL_INTERVAL_MS || 30000);
   const startBlockEnv = process.env.RELAYER_START_BLOCK;
-  const rpcUrl = process.env.ETHEREUM_RPC_URL?.trim() || process.env.SEPOLIA_RPC_URL;
+  const rpcUrl = await resolveSecretBackedValue({
+    directValue: process.env.ETHEREUM_RPC_URL?.trim() || process.env.SEPOLIA_RPC_URL,
+    secretRef: process.env.ETHEREUM_RPC_URL_SECRET_REF?.trim() || process.env.SEPOLIA_RPC_URL_SECRET_REF,
+  });
   const opnetBridgeAddress = process.env.OPNET_BRIDGE_ADDRESS;
   const opnetBridgeHex = process.env.OPNET_BRIDGE_HEX;
   const maxBlockRange = Number(process.env.RELAYER_MAX_BLOCK_RANGE || 10);

@@ -15,6 +15,7 @@ import {
   publishRelayerHeartbeat,
 } from "./relayer-api-publish.mjs";
 import { loadEvmRelaySigners } from "./signers/index.mjs";
+import { resolveSecretBackedValue } from "./secret-provider.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
@@ -599,7 +600,10 @@ ECDSA relay signer configuration:
   const mapping = parseMapping(fs.readFileSync(mappingFile, "utf8"));
   const opnetNetworkName = process.env.OPNET_NETWORK || mapping.opnet.network;
   const opnetNetwork = resolveOPNetNetwork(opnetNetworkName);
-  const rpcUrl = process.env.OPNET_RPC_URL?.trim() || defaultOpnetRpcUrlForNetwork(opnetNetworkName);
+  const rpcUrl = await resolveSecretBackedValue({
+    directValue: process.env.OPNET_RPC_URL?.trim() || defaultOpnetRpcUrlForNetwork(opnetNetworkName),
+    secretRef: process.env.OPNET_RPC_URL_SECRET_REF,
+  });
   const relayerId = process.env.RELAYER_ID?.trim() || "relayer-opnet";
   const outputFile = process.env.RELAYER_OUTPUT_FILE?.trim() || DEFAULT_OUTPUT_FILE;
   const attestationVersion = Number(process.env.ATTESTATION_VERSION?.trim() || `${DEFAULT_ATTESTATION_VERSION}`);

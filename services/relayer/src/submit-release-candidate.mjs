@@ -3,6 +3,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { ethers } from "ethers";
+import { resolveSecretBackedValue } from "./secret-provider.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
@@ -85,7 +86,11 @@ Optional:
     return;
   }
 
-  const rpcUrl = process.env.ETHEREUM_RPC_URL?.trim() || requireEnv("SEPOLIA_RPC_URL");
+  const rpcUrl =
+    (await resolveSecretBackedValue({
+      directValue: process.env.ETHEREUM_RPC_URL?.trim() || process.env.SEPOLIA_RPC_URL,
+      secretRef: process.env.ETHEREUM_RPC_URL_SECRET_REF?.trim() || process.env.SEPOLIA_RPC_URL_SECRET_REF,
+    })) || requireEnv("SEPOLIA_RPC_URL");
   const privateKey =
     process.env.ETHEREUM_SUBMITTER_PRIVATE_KEY?.trim() ||
     process.env.ETHEREUM_DEPOSITOR_PRIVATE_KEY?.trim() ||

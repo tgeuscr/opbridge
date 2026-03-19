@@ -138,3 +138,20 @@ export async function loadJsonSecretPayload({
 
   return null;
 }
+
+export async function resolveSecretBackedValue({
+  directValue,
+  secretRef,
+  trim = true,
+}) {
+  if (typeof directValue === 'string' && directValue.trim()) {
+    return trim ? directValue.trim() : directValue;
+  }
+
+  if (typeof secretRef === 'string' && secretRef.trim()) {
+    const loaded = await loadSecretString(secretRef.trim());
+    return trim ? loaded.trim() : loaded;
+  }
+
+  return '';
+}

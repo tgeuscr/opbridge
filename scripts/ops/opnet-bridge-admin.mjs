@@ -6,6 +6,7 @@ import { networks } from "@btc-vision/bitcoin";
 import { Mnemonic, Wallet } from "@btc-vision/transaction";
 import { ABIDataTypes, BitcoinAbiTypes, getContract } from "opnet";
 import { createOpnetJsonRpcProvider, describeOpnetRpcTransport } from "../../services/relayer/src/opnet-rpc-provider.mjs";
+import { resolveSecretBackedValue } from "../../services/relayer/src/secret-provider.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../..");
@@ -121,7 +122,10 @@ Flags:
   const bridgeAddress = requireEnv("OPNET_BRIDGE_ADDRESS");
   const netName = process.env.OPNET_NETWORK;
   const network = resolveNetwork(netName);
-  const rpcUrl = process.env.OPNET_RPC_URL?.trim() || defaultRpcUrl(netName);
+  const rpcUrl = await resolveSecretBackedValue({
+    directValue: process.env.OPNET_RPC_URL?.trim() || defaultRpcUrl(netName),
+    secretRef: process.env.OPNET_RPC_URL_SECRET_REF,
+  });
   const provider = createOpnetJsonRpcProvider({ url: rpcUrl, network });
   const wallet = buildWalletFromEnv(network);
 

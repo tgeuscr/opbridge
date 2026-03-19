@@ -35,6 +35,7 @@ Required env vars:
 
 Optional env vars:
 
+- `ETHEREUM_RPC_URL_SECRET_REF` (optional secret ref; used when `ETHEREUM_RPC_URL` is unset)
 - `RELAYER_ID` (default: `relayer-0`)
 - `RELAYER_SIGNER_MODE` (default: `kms`; only `kms` is supported)
 - `RELAYER_KMS_KEY_ID` or `KMS_OPNET_KEY_ID`
@@ -44,6 +45,7 @@ Optional env vars:
 - `OPNET_BRIDGE_HEX` (32-byte hex bridge address used in attestation hash; required when bridge address is `op...`)
 - `ATTESTATION_VERSION` (default: `1`; must match an accepted bridge attestation version)
 - `RELAYER_OUTPUT_FILE` (default: `services/relayer/.data/pending-attestations.json`)
+- `RELAYER_API_WRITE_TOKEN_SECRET_REF` (optional secret ref for relayer API auth token)
 - `RELAYER_START_BLOCK` (default: latest-20)
 - `RELAYER_MAX_BLOCK_RANGE` (default: `10`, Alchemy free-tier safe)
 - `RELAYER_POLL_INTERVAL_MS` (default: `30000`)
@@ -72,6 +74,14 @@ npm run relay-config:kms --workspace @opbridge/relayer
 ```
 
 This writes `services/relayer/.data/relay-public-config.json`, which is consumed by `scripts/addpubkeystobridge.sh`.
+
+For deployment environments, prefer secret refs over plaintext values:
+
+```bash
+ETHEREUM_RPC_URL_SECRET_REF=aws-sm://opbridge/testnet/relayer-common#ethereumRpcUrl
+OPNET_RPC_URL_SECRET_REF=aws-sm://opbridge/testnet/relayer-common#opnetRpcUrl
+RELAYER_API_WRITE_TOKEN_SECRET_REF=aws-sm://opbridge/testnet/relayer-common#relayerApiWriteToken
+```
 
 Current pending attestation output now includes per-signer signatures:
 

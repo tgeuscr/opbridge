@@ -1,6 +1,7 @@
 import process from "node:process";
 import { networks } from "@btc-vision/bitcoin";
 import { createOpnetJsonRpcProvider, describeOpnetRpcTransport } from "./opnet-rpc-provider.mjs";
+import { resolveSecretBackedValue } from "./secret-provider.mjs";
 
 const DEFAULT_REGTEST_RPC_URL = "https://regtest.opnet.org";
 const DEFAULT_TESTNET_RPC_URL = "https://testnet.opnet.org";
@@ -42,7 +43,10 @@ Prints:
 
   const networkName = process.env.OPNET_NETWORK;
   const opnetNetwork = resolveNetwork(networkName);
-  const rpcUrl = process.env.OPNET_RPC_URL?.trim() || defaultRpcUrlForNetwork(networkName);
+  const rpcUrl = await resolveSecretBackedValue({
+    directValue: process.env.OPNET_RPC_URL?.trim() || defaultRpcUrlForNetwork(networkName),
+    secretRef: process.env.OPNET_RPC_URL_SECRET_REF,
+  });
   const timeout = Number(process.env.OPNET_RPC_TIMEOUT_MS?.trim() || "10000");
   if (!Number.isFinite(timeout) || timeout <= 0) {
     throw new Error("OPNET_RPC_TIMEOUT_MS must be a positive number.");

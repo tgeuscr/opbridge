@@ -6,6 +6,7 @@ import { networks } from "@btc-vision/bitcoin";
 import { Address, Mnemonic, Wallet } from "@btc-vision/transaction";
 import { ABIDataTypes, BitcoinAbiTypes, getContract } from "opnet";
 import { createOpnetJsonRpcProvider, describeOpnetRpcTransport } from "./opnet-rpc-provider.mjs";
+import { resolveSecretBackedValue } from "./secret-provider.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
@@ -444,7 +445,10 @@ Optional:
   const candidatesFile = process.env.MINT_CANDIDATES_FILE?.trim() || DEFAULT_CANDIDATES_FILE;
   const opnetNetworkName = process.env.OPNET_NETWORK;
   const opnetNetwork = resolveNetwork(opnetNetworkName);
-  const opnetRpcUrl = process.env.OPNET_RPC_URL?.trim() || defaultOpnetRpcUrlForNetwork(opnetNetworkName);
+  const opnetRpcUrl = await resolveSecretBackedValue({
+    directValue: process.env.OPNET_RPC_URL?.trim() || defaultOpnetRpcUrlForNetwork(opnetNetworkName),
+    secretRef: process.env.OPNET_RPC_URL_SECRET_REF,
+  });
   const maxSatSpend = BigInt(process.env.OPNET_MAX_SAT_SPEND?.trim() || "20000");
   const feeRate = Number(process.env.OPNET_FEE_RATE?.trim() || "2");
   if (!Number.isFinite(feeRate) || feeRate <= 0) {

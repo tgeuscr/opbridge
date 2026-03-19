@@ -2,6 +2,7 @@ import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { resolveSecretBackedValue } from '../../relayer/src/secret-provider.mjs';
 import {
   openApiDb,
   getApiSummary,
@@ -110,8 +111,8 @@ function readJsonBody(req) {
   });
 }
 
-function isAuthorized(req) {
-  const token = process.env.RELAYER_API_WRITE_TOKEN?.trim();
+function isAuthorized(req, expectedToken) {
+  const token = expectedToken?.trim();
   if (!token) return true;
   const provided = String(req.headers['x-relayer-token'] || '').trim();
   return Boolean(provided) && provided === token;
@@ -302,7 +303,7 @@ function summarizeRelayers(rows) {
   };
 }
 
-export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
+export function startHttpServer({ dbPath = DEFAULT_DB_PATH, writeToken = '' } = {}) {
   const db = openApiDb(dbPath);
 
   const server = http.createServer((req, res) => {
@@ -323,7 +324,7 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
     }
 
     if (method === 'POST' && pathname === '/ingest/mint-candidates') {
-      if (!isAuthorized(req)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
+      if (!isAuthorized(req, writeToken)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
       return void readJsonBody(req)
         .then((body) => {
           const candidates = Array.isArray(body?.candidates) ? body.candidates : [];
@@ -343,7 +344,7 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
     }
 
     if (method === 'POST' && pathname === '/ingest/release-candidates') {
-      if (!isAuthorized(req)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
+      if (!isAuthorized(req, writeToken)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
       return void readJsonBody(req)
         .then((body) => {
           const candidates = Array.isArray(body?.candidates) ? body.candidates : [];
@@ -363,7 +364,7 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
     }
 
     if (method === 'POST' && pathname === '/ingest/heartbeat') {
-      if (!isAuthorized(req)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
+      if (!isAuthorized(req, writeToken)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
       return void readJsonBody(req)
         .then((body) => {
           const relayerName = String(body?.relayerName ?? '').trim();
@@ -390,7 +391,7 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
     }
 
     if (method === 'POST' && pathname === '/ingest/mint-attestations') {
-      if (!isAuthorized(req)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
+      if (!isAuthorized(req, writeToken)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
       return void readJsonBody(req)
         .then((body) => {
           const pending = Array.isArray(body?.pending) ? body.pending : [];
@@ -409,7 +410,7 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
     }
 
     if (method === 'POST' && pathname === '/ingest/release-attestations') {
-      if (!isAuthorized(req)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
+      if (!isAuthorized(req, writeToken)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
       return void readJsonBody(req)
         .then((body) => {
           const pending = Array.isArray(body?.pending) ? body.pending : [];
@@ -428,7 +429,7 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
     }
 
     if (method === 'POST' && pathname === '/ingest/processed-mints') {
-      if (!isAuthorized(req)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
+      if (!isAuthorized(req, writeToken)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
       return void readJsonBody(req)
         .then((body) => {
           const processed = Array.isArray(body?.processed) ? body.processed : [];
@@ -443,7 +444,7 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
     }
 
     if (method === 'POST' && pathname === '/ingest/processed-releases') {
-      if (!isAuthorized(req)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
+      if (!isAuthorized(req, writeToken)) return json(req, res, 401, { ok: false, error: 'Unauthorized' });
       return void readJsonBody(req)
         .then((body) => {
           const processed = Array.isArray(body?.processed) ? body.processed : [];
@@ -800,5 +801,16 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH } = {}) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  startHttpServer({ dbPath: process.env.RELAYER_API_DB_PATH?.trim() || DEFAULT_DB_PATH }).listen();
+  const dbPath = process.env.RELAYER_API_DB_PATH?.trim() || DEFAULT_DB_PATH;
+  resolveSecretBackedValue({
+    directValue: process.env.RELAYER_API_WRITE_TOKEN,
+    secretRef: process.env.RELAYER_API_WRITE_TOKEN_SECRET_REF,
+  })
+    .then((writeToken) => {
+      startHttpServer({ dbPath, writeToken }).listen();
+    })
+    .catch((error) => {
+      console.error(error);
+      process.exit(1);
+    });
 }
