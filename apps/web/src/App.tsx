@@ -223,6 +223,27 @@ function formatAgeMs(ageMs: number | null | undefined): string {
   return `${hours}h`;
 }
 
+function readHeartbeatHeads(detail: string | null | undefined): { lastBlock: string; claimFromBlock: string } {
+  if (!detail) {
+    return { lastBlock: '-', claimFromBlock: '-' };
+  }
+
+  try {
+    const parsed = JSON.parse(detail) as { currentHead?: unknown; finalizedHead?: unknown };
+    const currentHead =
+      typeof parsed.currentHead === 'number' || typeof parsed.currentHead === 'string'
+        ? String(parsed.currentHead)
+        : '-';
+    const finalizedHead =
+      typeof parsed.finalizedHead === 'number' || typeof parsed.finalizedHead === 'string'
+        ? String(parsed.finalizedHead)
+        : '-';
+    return { lastBlock: currentHead, claimFromBlock: finalizedHead };
+  } catch {
+    return { lastBlock: '-', claimFromBlock: '-' };
+  }
+}
+
 function parseHexAddress(raw: string, fieldName: string): Address {
   const value = raw.trim();
   if (!value) {
@@ -2634,18 +2655,20 @@ updatedAt: ${opsStatusUpdatedAt || '-'}`}
               <h2>Relayer Health</h2>
               <div className="stack">
                 {opsRelayers.length > 0 ? (
-                  opsRelayers.map((relayer) => (
+                  opsRelayers.map((relayer) => {
+                    const heads = readHeartbeatHeads(relayer.detail);
+                    return (
                     <pre key={`${relayer.relayerName}:${relayer.role}`} className="status">
 {`name: ${relayer.relayerName}
-role: ${relayer.role}
 status: ${relayer.status}
 derivedStatus: ${relayer.derivedStatus ?? '-'}
 stale: ${typeof relayer.isStale === 'boolean' ? String(relayer.isStale) : '-'}
 age: ${formatAgeMs(relayer.ageMs)}
 updatedAt: ${relayer.updatedAt ?? '-'}
-detail: ${relayer.detail ?? '-'}`}
+last block: ${heads.lastBlock}
+claim from block: ${heads.claimFromBlock}`}
                     </pre>
-                  ))
+                  )})
                 ) : (
                   <pre className="status">No relayer heartbeats loaded.</pre>
                 )}
