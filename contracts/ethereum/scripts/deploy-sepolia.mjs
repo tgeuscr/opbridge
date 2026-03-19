@@ -73,7 +73,7 @@ Optional:
   const ownerAddress = initialOwner || new ethers.Wallet(privateKey).address;
   const feeRecipientRaw = process.env.ETH_VAULT_FEE_RECIPIENT?.trim() || "";
   const feeRecipientAddress = feeRecipientRaw || ownerAddress;
-  const mintPerTokenRaw = getEnv("ETHEREUM_TEST_MINT_PER_TOKEN", "SEPOLIA_TEST_MINT_PER_TOKEN") || "1000000";
+  const mintPerTokenRaw = getEnv("ETHEREUM_TEST_MINT_PER_TOKEN", "SEPOLIA_TEST_MINT_PER_TOKEN") || "50000000";
   const faucetEnabled = parseBool(getEnv("ETHEREUM_TEST_FAUCET_ENABLED", "SEPOLIA_TEST_FAUCET_ENABLED"), true);
   const faucetCooldownSeconds = Number(
     getEnv("ETHEREUM_TEST_FAUCET_COOLDOWN_SECONDS", "SEPOLIA_TEST_FAUCET_COOLDOWN_SECONDS") || "86400",

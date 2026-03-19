@@ -11,7 +11,7 @@ Current scaffolding:
   - threshold relay signer verification (ECDSA)
   - replay protection (`processedWithdrawals`)
   - fee model on both deposit and release:
-    - `feeBps` (default `100` = 1%)
+    - `feeBps` (default `50` = 0.5%)
     - `feeRecipient` (default = owner, configurable)
   - monotonic `depositId` generation
   - canonical `DepositInitiated` event for relayers
@@ -25,7 +25,7 @@ Environment variables:
 - `SEPOLIA_DEPLOYER_PRIVATE_KEY` (required)
 - `ETH_VAULT_OWNER` (optional; defaults to deployer)
 - `ETH_VAULT_FEE_RECIPIENT` (optional; defaults to owner)
-- `SEPOLIA_TEST_MINT_PER_TOKEN` (optional; defaults to `1000000`)
+- `SEPOLIA_TEST_MINT_PER_TOKEN` (optional; defaults to `50000000`)
 - `SEPOLIA_TEST_FAUCET_ENABLED` (optional; defaults to `true`)
 - `SEPOLIA_TEST_FAUCET_CLAIM_AMOUNT` (optional; defaults to `1000`, human units)
 - `SEPOLIA_TEST_FAUCET_COOLDOWN_SECONDS` (optional; defaults to `86400`)
@@ -90,12 +90,12 @@ SEPOLIA_VAULT_PAUSED=true \
 npm run admin:sepolia --workspace @opbridge/ethereum-contracts
 ```
 
-Set fee bps (1%) and unpause:
+Set fee bps (0.5%) and unpause:
 
 ```bash
 SEPOLIA_RPC_URL=... \
 SEPOLIA_DEPLOYER_PRIVATE_KEY=0x<owner-key> \
-ETH_VAULT_FEE_BPS=100 \
+ETH_VAULT_FEE_BPS=50 \
 SEPOLIA_VAULT_PAUSED=false \
 npm run admin:sepolia --workspace @opbridge/ethereum-contracts
 ```
@@ -114,7 +114,7 @@ Environment variables:
 Behavior:
 
 - Deposit fee is taken in-vault before relaying/minting
-- At default `1%` fee, depositing `X` emits `DepositInitiated.amount = 0.99 * X`
+- At default `0.5%` fee, depositing `X` emits `DepositInitiated.amount = 0.995 * X`
 - Relayers mint the emitted net amount on OP_NET
 
 Example:

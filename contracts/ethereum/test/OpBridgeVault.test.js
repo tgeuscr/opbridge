@@ -23,7 +23,7 @@ describe("OpBridgeVault", function () {
   it("deploys paused by default", async function () {
     const { vault, owner } = await deployFixture();
     expect(await vault.paused()).to.equal(true);
-    expect(await vault.feeBps()).to.equal(100);
+    expect(await vault.feeBps()).to.equal(50);
     expect(await vault.feeRecipient()).to.equal(owner.address);
   });
 
@@ -32,8 +32,8 @@ describe("OpBridgeVault", function () {
     const assetId = 0;
     const recipient = ethers.zeroPadValue("0xabcd", 32);
     const amount = ethers.parseUnits("100", 18);
-    const feeAmount = ethers.parseUnits("1", 18);
-    const netAmount = ethers.parseUnits("99", 18);
+    const feeAmount = ethers.parseUnits("0.5", 18);
+    const netAmount = ethers.parseUnits("99.5", 18);
 
     const tokenFactory = factoryFor("MockERC20", compiled, user);
     const token = await tokenFactory.deploy(ethers.parseUnits("1000000", 18));
@@ -116,7 +116,7 @@ describe("OpBridgeVault", function () {
     await vault.setPaused(true);
     await expect(vault.setFeeBps(150))
       .to.emit(vault, "FeeBpsUpdated")
-      .withArgs(100, 150);
+      .withArgs(50, 150);
   });
 
   it("manages fee whitelist without pause guard and enforces owner-only access", async function () {
@@ -175,8 +175,8 @@ describe("OpBridgeVault", function () {
 
     const assetId = 0;
     const amount = ethers.parseUnits("25", 18);
-    const feeAmount = ethers.parseUnits("0.25", 18);
-    const netAmount = ethers.parseUnits("24.75", 18);
+    const feeAmount = ethers.parseUnits("0.125", 18);
+    const netAmount = ethers.parseUnits("24.875", 18);
     const withdrawalId = 42n;
     const opnetUser = ethers.zeroPadValue("0x1234", 32);
     const attestationVersion = 1;

@@ -112,14 +112,14 @@ contract OpBridgeVault {
         owner = initialOwner;
         paused = true;
         activeAttestationVersion = 1;
-        feeBps = 100;
+        feeBps = 50;
         feeRecipient = initialOwner;
         isAttestationVersionAccepted[1] = true;
         emit OwnershipTransferred(address(0), initialOwner);
         emit VaultPausedUpdated(true);
         emit ActiveAttestationVersionUpdated(0, 1);
         emit AttestationVersionAcceptanceUpdated(1, true);
-        emit FeeBpsUpdated(0, 100);
+        emit FeeBpsUpdated(0, 50);
         emit FeeRecipientUpdated(address(0), initialOwner);
     }
 
