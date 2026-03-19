@@ -200,7 +200,7 @@ function inferSourceChain(detail, role) {
   if (explicit) return explicit;
   const normalizedRole = String(role ?? '').trim().toLowerCase();
   if (normalizedRole === 'ethereum-poller') return 'ethereum';
-  if (normalizedRole === 'opnet-burn-poller') return 'testnet';
+  if (normalizedRole === 'opnet-poller') return 'testnet';
   return null;
 }
 

@@ -67,10 +67,10 @@ RELAYER_OUTPUT_FILE=/home/ssm-user/opbridge/services/relayer/.data/attestations/
 "
 done
 
-for name in opnet-burn-a opnet-burn-b opnet-burn-c; do
+for name in opnet-a opnet-b opnet-c; do
   idx=0
-  [[ "$name" == "opnet-burn-b" ]] && idx=1
-  [[ "$name" == "opnet-burn-c" ]] && idx=2
+  [[ "$name" == "opnet-b" ]] && idx=1
+  [[ "$name" == "opnet-c" ]] && idx=2
   suffix="${name##*-}"
   write_if_missing "$ENV_DIR/${name}.env" "RELAYER_ID=relayer-opnet-${suffix}
 RELAYER_INDEX=${idx}

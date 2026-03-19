@@ -32,11 +32,11 @@ start_one() {
     run_script="run:ethereum"
     env_file="$OP_BRIDGE_ENV_DIR/ethereum-$suffix.env"
   else
-    pid_file="$PID_DIR/opbridge-opnet-burn-$suffix.pid"
-    log_file="$LOG_DIR/opbridge-opnet-burn-$suffix.log"
+    pid_file="$PID_DIR/opbridge-opnet-$suffix.pid"
+    log_file="$LOG_DIR/opbridge-opnet-$suffix.log"
     output_file="$OP_BRIDGE_HOME/services/relayer/.data/release-attestations/relayer-$suffix.json"
-    run_script="run:opnet-burn"
-    env_file="$OP_BRIDGE_ENV_DIR/opnet-burn-$suffix.env"
+    run_script="run:opnet"
+    env_file="$OP_BRIDGE_ENV_DIR/opnet-$suffix.env"
   fi
 
   if [[ -f "$pid_file" ]]; then
@@ -79,12 +79,12 @@ main() {
   for suffix in a b c; do
     index="$(idx_for "$suffix")"
     start_one "ethereum" "$suffix" "$index"
-    start_one "opnet-burn" "$suffix" "$index"
+    start_one "opnet" "$suffix" "$index"
   done
 
   echo
   echo "Startup log tails:"
-  for file in "$LOG_DIR"/opbridge-ethereum-*.log "$LOG_DIR"/opbridge-opnet-burn-*.log; do
+  for file in "$LOG_DIR"/opbridge-ethereum-*.log "$LOG_DIR"/opbridge-opnet-*.log; do
     [[ -e "$file" ]] || continue
     echo "== $file =="
     tail -n 3 "$file" || true

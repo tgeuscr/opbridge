@@ -26,7 +26,7 @@ stop_pid_file() {
 
 main() {
   shopt -s nullglob
-  local files=("$PID_DIR"/opbridge-ethereum-*.pid "$PID_DIR"/opbridge-opnet-burn-*.pid)
+  local files=("$PID_DIR"/opbridge-ethereum-*.pid "$PID_DIR"/opbridge-opnet-*.pid)
   if [[ ${#files[@]} -eq 0 ]]; then
     echo "no pid files found in $PID_DIR"
     return 0

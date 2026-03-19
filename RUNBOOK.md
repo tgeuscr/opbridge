@@ -257,7 +257,7 @@ RELAYER_EVM_KMS_KEY_ID=arn:aws:kms:... \
 RELAYER_MAPPING_FILE=contracts/ethereum/deployments/sepolia-latest.json \
 RELAYER_OUTPUT_FILE=services/relayer/.data/release-attestations/relayer-a.json \
 RELAYER_POLL_INTERVAL_MS=30000 \
-npm run run:opnet-burn --workspace @opbridge/relayer
+npm run run:opnet --workspace @opbridge/relayer
 ```
 
 Repeat with:

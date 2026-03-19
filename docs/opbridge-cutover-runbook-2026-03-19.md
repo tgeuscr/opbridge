@@ -448,7 +448,7 @@ npm run run:ethereum --workspace @opbridge/relayer
 
 Repeat for relay indexes `1` and `2`.
 
-### 16. Start OPNet burn pollers
+### 16. Start OPNet pollers
 
 Use the same pattern for:
 - `relayer-opnet-a`
@@ -456,13 +456,13 @@ Use the same pattern for:
 - `relayer-opnet-c`
 
 Relevant script:
-- `npm run run:opnet-burn --workspace @opbridge/relayer`
+- `npm run run:opnet --workspace @opbridge/relayer`
 
 Set:
 - `RELAYER_ID`
 - `RELAYER_INDEX`
 - `RELAYER_SIGNER_MODE=kms`
-- `RELAYER_KMS_KEY_ID` for Sepolia pollers or `RELAYER_EVM_KMS_KEY_ID` for OPNet burn pollers
+- `RELAYER_KMS_KEY_ID` for Ethereum pollers or `RELAYER_EVM_KMS_KEY_ID` for OPNet pollers
 - `RELAYER_API_URL`
 - `OPNET_RPC_URL`
 - `OPNET_NETWORK=testnet`

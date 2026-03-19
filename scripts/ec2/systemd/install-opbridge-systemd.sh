@@ -8,7 +8,7 @@ UNIT_DST_DIR="/etc/systemd/system"
 echo "Installing OP_BRIDGE systemd unit templates from: $UNIT_SRC_DIR"
 
 sudo install -m 0644 "$UNIT_SRC_DIR/opbridge-relayer-ethereum@.service" "$UNIT_DST_DIR/"
-sudo install -m 0644 "$UNIT_SRC_DIR/opbridge-relayer-opnet-burn@.service" "$UNIT_DST_DIR/"
+sudo install -m 0644 "$UNIT_SRC_DIR/opbridge-relayer-opnet@.service" "$UNIT_DST_DIR/"
 sudo install -m 0644 "$UNIT_SRC_DIR/opbridge-relayer-api.service" "$UNIT_DST_DIR/"
 sudo install -m 0644 "$UNIT_SRC_DIR/opbridge-relayer-aggregate-mint.service" "$UNIT_DST_DIR/"
 sudo install -m 0644 "$UNIT_SRC_DIR/opbridge-relayer-aggregate-mint.timer" "$UNIT_DST_DIR/"
@@ -20,7 +20,7 @@ sudo systemctl daemon-reload
 cat <<'EOF'
 Installed units:
   opbridge-relayer-ethereum@.service
-  opbridge-relayer-opnet-burn@.service
+  opbridge-relayer-opnet@.service
   opbridge-relayer-api.service
   opbridge-relayer-aggregate-mint.service
   opbridge-relayer-aggregate-mint.timer
@@ -31,9 +31,9 @@ Example enable/start:
   sudo systemctl enable --now opbridge-relayer-ethereum@a
   sudo systemctl enable --now opbridge-relayer-ethereum@b
   sudo systemctl enable --now opbridge-relayer-ethereum@c
-  sudo systemctl enable --now opbridge-relayer-opnet-burn@a
-  sudo systemctl enable --now opbridge-relayer-opnet-burn@b
-  sudo systemctl enable --now opbridge-relayer-opnet-burn@c
+  sudo systemctl enable --now opbridge-relayer-opnet@a
+  sudo systemctl enable --now opbridge-relayer-opnet@b
+  sudo systemctl enable --now opbridge-relayer-opnet@c
   sudo systemctl enable --now opbridge-relayer-api
   sudo systemctl enable --now opbridge-relayer-aggregate-mint.timer
   sudo systemctl enable --now opbridge-relayer-aggregate-release.timer
@@ -44,7 +44,7 @@ Manual run (debug):
 
 View logs:
   journalctl -u opbridge-relayer-ethereum@a -f
-  journalctl -u opbridge-relayer-opnet-burn@a -f
+  journalctl -u opbridge-relayer-opnet@a -f
   journalctl -u opbridge-relayer-api -f
   journalctl -u opbridge-relayer-aggregate-mint.service -f
   journalctl -u opbridge-relayer-aggregate-release.service -f

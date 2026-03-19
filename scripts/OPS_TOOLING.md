@@ -13,7 +13,7 @@ Creates `./opbridge-env/` with template files:
 - `relayer-api.env`
 - `aggregator.env`
 - `ethereum-{a,b,c}.env`
-- `opnet-burn-{a,b,c}.env`
+- `opnet-{a,b,c}.env`
 - `contracts.env`
 
 ## Deploy Ethereum Sepolia vault + test tokens (mnemonic or private key)

@@ -481,7 +481,7 @@ function decodeBridgeEventsSafely(bridge, bridgeEventsRaw, txHash, blockHeight) 
       }
     } catch (error) {
       console.warn(
-        `[opnet-burn-poller] skipping malformed bridge event payload tx=${txHash} block=${blockHeight.toString()} index=${eventIndex}: ${
+        `[opnet-poller] skipping malformed bridge event payload tx=${txHash} block=${blockHeight.toString()} index=${eventIndex}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -649,7 +649,7 @@ ECDSA relay signer configuration:
   console.log(`Output file: ${outputFile}`);
   console.log(`OP_NET RPC transport: ${describeOpnetRpcTransport()} -> ${rpcUrl}`);
   if (relaySigners.length === 0) {
-    console.log("[opnet-burn-poller] no ECDSA relay signer keys configured; pending release attestations will be unsigned.");
+    console.log("[opnet-poller] no ECDSA relay signer keys configured; pending release attestations will be unsigned.");
   }
 
   while (true) {
@@ -672,7 +672,7 @@ ECDSA relay signer configuration:
               block = await provider.getBlock(height, true);
             } catch (error) {
               console.warn(
-                `[opnet-burn-poller] block=${height.toString()} fetch/parse error; will retry from this block: ${
+                `[opnet-poller] block=${height.toString()} fetch/parse error; will retry from this block: ${
                   error instanceof Error ? error.message : String(error)
                 }`,
               );
@@ -691,7 +691,7 @@ ECDSA relay signer configuration:
                 }
               } catch (error) {
                 logDiscovery(
-                  `[opnet-burn-poller] block=${height.toString()} parsed tx list error: ${
+                  `[opnet-poller] block=${height.toString()} parsed tx list error: ${
                     error instanceof Error ? error.message : String(error)
                   }; using available rawTransactions only.`,
                 );
@@ -746,7 +746,7 @@ ECDSA relay signer configuration:
                     lastEventError = error;
                     if (candidate.label === "receipt") {
                       logDiscovery(
-                        `[opnet-burn-poller] tx=${txHash} receipt event access failed; falling back to tx object events: ${
+                        `[opnet-poller] tx=${txHash} receipt event access failed; falling back to tx object events: ${
                           error instanceof Error ? error.message : String(error)
                         }`,
                       );
@@ -754,7 +754,7 @@ ECDSA relay signer configuration:
                     }
                     if (candidate.label === "parsed" && rawTxAtIndex) {
                       logDiscovery(
-                        `[opnet-burn-poller] tx=${txHash} parsed tx event access failed; retaining raw tx events: ${
+                        `[opnet-poller] tx=${txHash} parsed tx event access failed; retaining raw tx events: ${
                           error instanceof Error ? error.message : String(error)
                         }`,
                       );
@@ -762,7 +762,7 @@ ECDSA relay signer configuration:
                     }
                     if (candidate.label === "raw" && parsedTx && parsedTx !== rawTxAtIndex) {
                       logDiscovery(
-                        `[opnet-burn-poller] tx=${txHash} raw tx event access failed; trying parsed tx events: ${
+                        `[opnet-poller] tx=${txHash} raw tx event access failed; trying parsed tx events: ${
                           error instanceof Error ? error.message : String(error)
                         }`,
                       );
@@ -835,7 +835,7 @@ ECDSA relay signer configuration:
                         };
                       } catch (error) {
                         console.warn(
-                          `[opnet-burn-poller] tx=${txHash} withdrawalId=${message.nonce} signer=${signer.relayerId} signature generation failed: ${
+                          `[opnet-poller] tx=${txHash} withdrawalId=${message.nonce} signer=${signer.relayerId} signature generation failed: ${
                             error instanceof Error ? error.message : String(error)
                           }`,
                         );
@@ -871,7 +871,7 @@ ECDSA relay signer configuration:
                 }
               } catch (error) {
                 console.warn(
-                  `[opnet-burn-poller] skipping tx=${txHash} at block=${blockHeight.toString()} due to event parse error: ${
+                  `[opnet-poller] skipping tx=${txHash} at block=${blockHeight.toString()} due to event parse error: ${
                     error instanceof Error ? error.message : String(error)
                   }`,
                 );
@@ -902,17 +902,17 @@ ECDSA relay signer configuration:
           try {
             const published = await publishReleaseAttestationsSnapshot(snapshot, disableFileOutput ? null : outputFile);
             if (published?.skipped) {
-              console.log(`[opnet-burn-poller] API publish skipped: ${published.reason}`);
+              console.log(`[opnet-poller] API publish skipped: ${published.reason}`);
             } else {
-              console.log(`[opnet-burn-poller] Published ${pending.length} release attestations to relayer API.`);
+              console.log(`[opnet-poller] Published ${pending.length} release attestations to relayer API.`);
             }
           } catch (error) {
-            console.error(`[opnet-burn-poller] release attestation API publish failed: ${error instanceof Error ? error.message : String(error)}`);
+            console.error(`[opnet-poller] release attestation API publish failed: ${error instanceof Error ? error.message : String(error)}`);
             if (disableFileOutput) throw error;
           }
           for (const entry of pending) {
             console.log(
-              `[opnet-burn-poller] burn tx=${entry.source.txHash} withdrawalId=${entry.message.nonce} asset=${entry.message.assetId} amount=${entry.message.amount} recipient=${entry.message.ethereumUser}`,
+              `[opnet-poller] burn tx=${entry.source.txHash} withdrawalId=${entry.message.nonce} asset=${entry.message.assetId} amount=${entry.message.amount} recipient=${entry.message.ethereumUser}`,
             );
           }
         }
@@ -930,26 +930,26 @@ ECDSA relay signer configuration:
           try {
             const published = await publishProcessedMintsSnapshot(snapshot, disableFileOutput ? null : outputFile);
             if (published?.skipped) {
-              console.log(`[opnet-burn-poller] processed mint publish skipped: ${published.reason}`);
+              console.log(`[opnet-poller] processed mint publish skipped: ${published.reason}`);
             } else {
-              console.log(`[opnet-burn-poller] Published ${processedMints.length} processed mint(s) to relayer API.`);
+              console.log(`[opnet-poller] Published ${processedMints.length} processed mint(s) to relayer API.`);
             }
           } catch (error) {
-            console.error(`[opnet-burn-poller] processed mint API publish failed: ${error instanceof Error ? error.message : String(error)}`);
+            console.error(`[opnet-poller] processed mint API publish failed: ${error instanceof Error ? error.message : String(error)}`);
             if (disableFileOutput) throw error;
           }
         }
         if (retryFromBlock != null) {
           nextFromBlock = retryFromBlock;
           console.log(
-            `[opnet-burn-poller] retaining cursor at block=${nextFromBlock.toString()} for retry after parse failures.`,
+            `[opnet-poller] retaining cursor at block=${nextFromBlock.toString()} for retry after parse failures.`,
           );
         } else {
           nextFromBlock = finalizedHead + 1n;
         }
       }
     } catch (error) {
-      console.error(`[opnet-burn-poller-error] ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`[opnet-poller-error] ${error instanceof Error ? error.message : String(error)}`);
     }
 
     try {
@@ -958,7 +958,7 @@ ECDSA relay signer configuration:
         heartbeatHead >= BigInt(minConfirmations) ? heartbeatHead - BigInt(minConfirmations) : -1n;
       await publishRelayerHeartbeat({
         relayerName: relayerId,
-        role: "opnet-burn-poller",
+        role: "opnet-poller",
         status: "ok",
         detail: JSON.stringify({
           sourceChain: opnetNetworkName,
@@ -969,7 +969,7 @@ ECDSA relay signer configuration:
         }),
       });
     } catch (error) {
-      console.error(`[opnet-burn-heartbeat] ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`[opnet-heartbeat] ${error instanceof Error ? error.message : String(error)}`);
     }
 
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));

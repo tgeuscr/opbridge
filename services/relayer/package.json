@@ -16,7 +16,7 @@
   },
   "scripts": {
     "run:ethereum": "node src/ethereum-poller.mjs",
-    "run:opnet-burn": "node src/opnet-burn-poller.mjs",
+    "run:opnet": "node src/opnet-burn-poller.mjs",
     "relay-config:kms": "node src/generate-kms-relay-public-config.mjs",
     "diag:opnet-rpc": "node src/opnet-rpc-diagnose.mjs",
     "sdk:opnet-testnet-smoke": "node src/opnet-sdk-testnet-smoke.mjs",
@@ -25,8 +25,8 @@
     "aggregate:ethereum": "node src/aggregate-attestations.mjs",
     "aggregate:release": "node src/aggregate-release-attestations.mjs",
     "submit:opnet": "node src/submit-mint-candidate.mjs",
-    "burn:opnet:simulate": "node src/request-opnet-burn.mjs --simulate",
-    "burn:opnet": "node src/request-opnet-burn.mjs --send",
+    "opnet:burn:simulate": "node src/request-opnet-burn.mjs --simulate",
+    "opnet:burn": "node src/request-opnet-burn.mjs --send",
     "submit:ethereum-release": "node src/submit-release-candidate.mjs",
     "test": "echo 'No relayer tests yet'",
     "build": "echo 'No relayer build step yet'"
