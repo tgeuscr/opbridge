@@ -45,6 +45,7 @@ type BridgeState = {
   paused?: boolean;
   threshold?: number;
   relayCount?: number;
+  relayPubKeyHashes?: string[];
   owner?: string;
   ethereumVault?: string;
   activeAttestationVersion?: number;
@@ -93,6 +94,7 @@ type OpBridgeBridgeContract = {
   paused: () => Promise<CallResult<{ paused: boolean }>>;
   relayThreshold: () => Promise<CallResult<{ requiredSignatures: number }>>;
   relayCount: () => Promise<CallResult<{ relayCount: number }>>;
+  relayPubKeyHashAt: (relayIndex: number) => Promise<CallResult<{ relayPubKeyHash: string }>>;
   supportedAssetCount: () => Promise<CallResult<{ count: number }>>;
   supportedAssetAt: (
     index: number,
@@ -1145,7 +1147,13 @@ export function App() {
       const activeAttestationVersionCall = await readBridge.activeAttestationVersion();
       const activeAttestationVersion = Number(activeAttestationVersionCall.properties.version);
       const activeVersionAcceptedCall = await readBridge.isAttestationVersionAccepted(activeAttestationVersion);
+      const relayCount = Number(relayCountCall.properties.relayCount);
       const assetCount = Number(supportedAssetCountCall.properties.count);
+      const relayPubKeyHashes: string[] = [];
+      for (let i = 0; i < relayCount; i++) {
+        const relayEntry = await readBridge.relayPubKeyHashAt(i);
+        relayPubKeyHashes.push(String(relayEntry.properties.relayPubKeyHash));
+      }
       const nextBridgeAssets: BridgeAssetConfig[] = [];
       for (let i = 0; i < assetCount; i++) {
         const assetEntry = await readBridge.supportedAssetAt(i);
@@ -1160,7 +1168,8 @@ export function App() {
       setBridgeState({
         paused: Boolean(pausedCall.properties.paused),
         threshold: Number(threshold.properties.requiredSignatures),
-        relayCount: Number(relayCountCall.properties.relayCount),
+        relayCount,
+        relayPubKeyHashes,
         owner: String(ownerCall.properties.owner),
         ethereumVault: String(ethereumVaultCall.properties.ethereumVault),
         activeAttestationVersion,
@@ -1199,7 +1208,8 @@ export function App() {
             action: 'refreshBridgeState',
             paused: pausedCall.properties.paused,
             threshold: threshold.properties.requiredSignatures,
-            relayCount: relayCountCall.properties.relayCount,
+            relayCount,
+            relayPubKeyHashes,
             assetCount,
             assets: nextBridgeAssets,
             owner: ownerCall.properties.owner,
@@ -2800,8 +2810,16 @@ resolvedBridgeHex: ${resolvedBridgeAddress || '-'}`}
               <pre className="status">
 {`relayCount (on-chain): ${bridgeState.relayCount ?? '-'}
 relayThreshold (on-chain): ${bridgeState.threshold ?? '-'}
-packedRelayPubKeys (input): ${relayPreview.entries.length > 0 ? relayPreview.entries.length : 0} keys`}
+packedRelayPubKeys (input): ${relayPreview.entries.length > 0 ? relayPreview.entries.length : 0} keys
+relayPubKeyHashes (on-chain): ${bridgeState.relayPubKeyHashes?.length ?? 0}`}
               </pre>
+              {bridgeState.relayPubKeyHashes && bridgeState.relayPubKeyHashes.length > 0 ? (
+                <pre className="status">
+{bridgeState.relayPubKeyHashes.map((value, index) => `r${index}: ${value}`).join('\n')}
+                </pre>
+              ) : (
+                <pre className="status">No relay identities found on bridge state.</pre>
+              )}
               {relayPreview.error ? (
                 <pre className="status">{`relayPreviewError: ${relayPreview.error}`}</pre>
               ) : null}
