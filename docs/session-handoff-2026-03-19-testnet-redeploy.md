@@ -123,16 +123,15 @@ Vault post-deploy status:
 
 ## OPNet Mapping Used During Ethereum Deploy
 
-The deployment JSON currently records these OPNet-side addresses:
+The deployment JSON records these OPNet-side values:
 
 - bridge: `opt1sqzpz43ykxzyjynt3a804fqgqkl2754sv6gpvrqfk`
 - wrapped USDT: `opt1sqzteg2fr9ecjt66wh5fyms4vz8wdzztnaqtgxrqh`
 - wrapped WBTC: `opt1sqz0eecnrxz82d9995l3urnjh7xtzhn53dckfgh93`
 - wrapped WETH: `opt1sqrzm9xgx4tvqgz6cagradhrzfkexx8efn5z9tak4`
 - wrapped PAXG: `opt1sqprt4n67j3pp76menhm3qh8d50jpqrk6gsn2q5kd`
+- OPNet network: `testnet`
 - OPNet bridge hex: `0x28aaa7128a0106ee04bbcc38f82bac582e5840daea9068aa81269ccb34974c0f`
-
-Deployment JSON still labels OPNet network as `regtest`. That should be corrected later if this line is meant to become the durable OP_BRIDGE testnet blueprint.
 
 ## Env Sync Status
 
@@ -192,7 +191,7 @@ So release relay configuration is not finished yet.
 
 ## Fastest Remaining Path
 
-Because the relay addresses are already known, the fastest completion path is to bypass KMS lookup in the script and configure the vault directly with the owner key.
+Because the relay addresses are already known and the deployment JSON now carries the OPNet bridge hex, the fastest completion path is to run the standard Sepolia relay configuration against the updated deployment file. If the AWS CLI is still unavailable on the target relayer box, use a host with `aws` on `PATH` and the same KMS access, or configure the vault directly with the owner key as a fallback.
 
 Needed vault values:
 
@@ -262,7 +261,7 @@ Env files:
 
 ## Immediate Next Steps
 
-1. Configure Sepolia vault release relays using the already-derived signer addresses.
+1. Configure Sepolia vault release relays using the updated deployment JSON and the already-derived signer addresses.
 2. Verify vault state:
    - bridge hex
    - relay count
@@ -286,6 +285,7 @@ As of this handoff, the OP_BRIDGE testnet redeploy is partially complete:
 - secrets/KMS-first runtime model: complete in repo
 - DNS and Vercel testnet domain setup: complete
 - Sepolia contracts redeployed: complete
+- deployment JSON corrected to OPNet `testnet` and now includes `opnet.bridgeHex`: complete
 - env sync from latest deployment: complete
 - EVM relay signer addresses derived from KMS keys: complete
 - Sepolia release relay configuration: not complete
