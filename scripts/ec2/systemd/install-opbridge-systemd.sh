@@ -27,6 +27,16 @@ Installed units:
   opbridge-relayer-aggregate-release.service
   opbridge-relayer-aggregate-release.timer
 
+Before enable/start, sync runtime env files into ~/opbridge-env:
+  RELAYER_API_URL=http://127.0.0.1:8787 \
+    bash scripts/opbridge-host-env-sync.sh --role api
+  RELAYER_API_URL=http://<api-box-private-ip>:8787 \
+    bash scripts/opbridge-host-env-sync.sh --role worker --instance a
+  RELAYER_API_URL=http://<api-box-private-ip>:8787 \
+    bash scripts/opbridge-host-env-sync.sh --role worker --instance b
+  RELAYER_API_URL=http://<api-box-private-ip>:8787 \
+    bash scripts/opbridge-host-env-sync.sh --role worker --instance c
+
 Example enable/start:
   sudo systemctl enable --now opbridge-relayer-ethereum@a
   sudo systemctl enable --now opbridge-relayer-ethereum@b

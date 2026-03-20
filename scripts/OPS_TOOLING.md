@@ -57,6 +57,32 @@ This reads `contracts/ethereum/deployments/sepolia-latest.json` and writes:
 - updates DB path defaults in `opbridge-env/relayer-api.env` and `opbridge-env/aggregator.env`
 - `apps/site/.env.local`
 
+## Sync repo env templates into the host runtime env dir (`~/opbridge-env`)
+
+Systemd units read from `/home/ssm-user/opbridge-env`, not from the repo-local
+`./opbridge-env`. Use this after `opbridge-env-sync.sh` and before starting
+services on EC2 hosts.
+
+API box:
+```bash
+RELAYER_API_URL=http://127.0.0.1:8787 \
+RELAYER_API_WRITE_TOKEN_SECRET_REF=aws-sm://opbridge-testnet#relayerApiWriteToken \
+ETHEREUM_RPC_URL_SECRET_REF=aws-sm://opbridge-testnet#ethereumRpcUrl \
+OPNET_RPC_URL_SECRET_REF=aws-sm://opbridge-testnet#opnetRpcUrl \
+bash scripts/opbridge-host-env-sync.sh --role api
+```
+
+Worker box `a`:
+```bash
+RELAYER_API_URL=http://<api-box-private-ip>:8787 \
+RELAYER_API_WRITE_TOKEN_SECRET_REF=aws-sm://opbridge-testnet#relayerApiWriteToken \
+ETHEREUM_RPC_URL_SECRET_REF=aws-sm://opbridge-testnet#ethereumRpcUrl \
+OPNET_RPC_URL_SECRET_REF=aws-sm://opbridge-testnet#opnetRpcUrl \
+bash scripts/opbridge-host-env-sync.sh --role worker --instance a
+```
+
+Repeat `--instance b` and `--instance c` on the other worker hosts.
+
 ## Configure Sepolia vault release relays (Ethereum ECDSA keys)
 
 ```bash
