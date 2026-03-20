@@ -641,6 +641,7 @@ ECDSA relay signer configuration:
     : latestBlock > 20n
       ? latestBlock - 20n
       : 0n;
+  let nextProcessedMintFromBlock = nextFromBlock;
   const seen = new Set();
 
   console.log(
@@ -946,6 +947,193 @@ ECDSA relay signer configuration:
           );
         } else {
           nextFromBlock = finalizedHead + 1n;
+        }
+      }
+
+      if (head >= nextProcessedMintFromBlock) {
+        const processedMints = [];
+        let processedRetryFromBlock = null;
+        let cursor = nextProcessedMintFromBlock;
+        while (cursor <= head) {
+          const end =
+            cursor + BigInt(maxBlockRange) - 1n <= head
+              ? cursor + BigInt(maxBlockRange) - 1n
+              : head;
+          for (let height = cursor; height <= end; height++) {
+            let block;
+            try {
+              block = await provider.getBlock(height, true);
+            } catch (error) {
+              console.warn(
+                `[opnet-poller] processed-mint block=${height.toString()} fetch/parse error; will retry from this block: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+              if (processedRetryFromBlock == null || height < processedRetryFromBlock) {
+                processedRetryFromBlock = height;
+              }
+              break;
+            }
+            const blockHeight = BigInt(block.height);
+            const rawTransactions = Array.isArray(block.rawTransactions) ? block.rawTransactions : [];
+            let parsedTransactions = [];
+            if (rawTransactions.length === 0) {
+              try {
+                if (Array.isArray(block.transactions)) {
+                  parsedTransactions = block.transactions;
+                }
+              } catch (error) {
+                logDiscovery(
+                  `[opnet-poller] processed-mint block=${height.toString()} parsed tx list error: ${
+                    error instanceof Error ? error.message : String(error)
+                  }; using available rawTransactions only.`,
+                );
+              }
+            }
+            const transactions = rawTransactions.length > 0 ? rawTransactions : parsedTransactions;
+            for (let txIndex = 0; txIndex < transactions.length; txIndex += 1) {
+              const rawTxAtIndex = rawTransactions[txIndex] ?? null;
+              const parsedTx = parsedTransactions[txIndex] ?? null;
+              const tx = rawTxAtIndex ?? parsedTx;
+              const bridgeHintEvents =
+                cautiouslyReadEvents(tx, "events") ??
+                safeOwnValue(tx, "events") ??
+                null;
+              if (!hasBridgeMention(bridgeHintEvents, mapping.opnet.bridgeAddress, mapping.opnet.bridgeHex)) {
+                continue;
+              }
+              const txIds = [...new Set([...txIdentifierCandidates(rawTxAtIndex), ...txIdentifierCandidates(parsedTx)])];
+              const txHash = txIds[0] ?? `${block.hash}:${blockHeight.toString()}:${txIndex.toString()}`;
+              try {
+                let bridgeEventsRaw = [];
+                let structuredMintEvents = [];
+                const eventCandidates = [];
+                if (txIds.length > 0 && typeof provider.getTransactionReceipt === "function") {
+                  for (const candidate of txIds) {
+                    try {
+                      const receipt = await provider.getTransactionReceipt(candidate);
+                      if (!receipt || typeof receipt !== "object") continue;
+                      eventCandidates.push({ tx: receipt, label: "receipt" });
+                      break;
+                    } catch {
+                      // Try next candidate hash/id form.
+                    }
+                  }
+                }
+                if (rawTxAtIndex) eventCandidates.push({ tx: rawTxAtIndex, label: "raw" });
+                if (parsedTx && parsedTx !== rawTxAtIndex) eventCandidates.push({ tx: parsedTx, label: "parsed" });
+                if (eventCandidates.length === 0) eventCandidates.push({ tx, label: "selected" });
+                let lastEventError = null;
+                for (const candidate of eventCandidates) {
+                  try {
+                    ({
+                      bridgeEventsRaw,
+                      structuredMintEvents,
+                    } = collectBridgeEventArtifacts(candidate.tx, mapping.opnet.bridgeAddress, mapping.opnet.bridgeHex));
+                    if (bridgeEventsRaw.length > 0 || structuredMintEvents.length > 0) {
+                      break;
+                    }
+                  } catch (error) {
+                    lastEventError = error;
+                    if (candidate.label === "receipt") {
+                      logDiscovery(
+                        `[opnet-poller] tx=${txHash} processed-mint receipt event access failed; falling back to tx object events: ${
+                          error instanceof Error ? error.message : String(error)
+                        }`,
+                      );
+                      continue;
+                    }
+                    if (candidate.label === "parsed" && rawTxAtIndex) {
+                      logDiscovery(
+                        `[opnet-poller] tx=${txHash} processed-mint parsed tx event access failed; retaining raw tx events: ${
+                          error instanceof Error ? error.message : String(error)
+                        }`,
+                      );
+                      continue;
+                    }
+                    if (candidate.label === "raw" && parsedTx && parsedTx !== rawTxAtIndex) {
+                      logDiscovery(
+                        `[opnet-poller] tx=${txHash} processed-mint raw tx event access failed; trying parsed tx events: ${
+                          error instanceof Error ? error.message : String(error)
+                        }`,
+                      );
+                      continue;
+                    }
+                    throw error;
+                  }
+                }
+                if (bridgeEventsRaw.length === 0 && structuredMintEvents.length === 0 && lastEventError) {
+                  throw lastEventError;
+                }
+                if (bridgeEventsRaw.length === 0 && structuredMintEvents.length === 0) continue;
+                const decodedEvents = [
+                  ...structuredMintEvents,
+                  ...(structuredMintEvents.length === 0
+                    ? decodeBridgeEventsSafely(bridge, bridgeEventsRaw, txHash, blockHeight)
+                    : []),
+                ];
+                if (decodedEvents.length === 0) continue;
+                for (const evt of decodedEvents) {
+                  if (evt.type !== "MintFinalized") continue;
+                  const depositId = String(evt?.properties?.depositId ?? "").trim();
+                  if (!depositId) continue;
+                  const processedId = `mint:${depositId}`;
+                  if (seen.has(processedId)) continue;
+                  seen.add(processedId);
+                  processedMints.push({
+                    depositId,
+                    sourceChain: "opnet-testnet",
+                    txHash: txHash.toLowerCase(),
+                    blockNumber: Number(blockHeight),
+                  });
+                }
+              } catch (error) {
+                console.warn(
+                  `[opnet-poller] skipping processed-mint tx=${txHash} at block=${blockHeight.toString()} due to event parse error: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`,
+                );
+                continue;
+              }
+            }
+          }
+          if (processedRetryFromBlock != null) {
+            break;
+          }
+          cursor = end + 1n;
+        }
+
+        if (processedMints.length > 0) {
+          const snapshot = {
+            generatedAt: new Date().toISOString(),
+            relayerId,
+            mappingSource: mappingFile,
+            count: processedMints.length,
+            processed: processedMints,
+          };
+          const disableFileOutput =
+            process.env.RELAYER_DISABLE_FILE_OUTPUT?.trim() === "1" ||
+            process.env.RELAYER_DISABLE_FILE_OUTPUT?.trim()?.toLowerCase() === "true";
+          try {
+            const published = await publishProcessedMintsSnapshot(snapshot, disableFileOutput ? null : outputFile);
+            if (published?.skipped) {
+              console.log(`[opnet-poller] processed mint publish skipped: ${published.reason}`);
+            } else {
+              console.log(`[opnet-poller] Published ${processedMints.length} observed mint(s) to relayer API.`);
+            }
+          } catch (error) {
+            console.error(`[opnet-poller] processed mint API publish failed: ${error instanceof Error ? error.message : String(error)}`);
+            if (disableFileOutput) throw error;
+          }
+        }
+
+        if (processedRetryFromBlock != null) {
+          nextProcessedMintFromBlock = processedRetryFromBlock;
+          console.log(
+            `[opnet-poller] retaining processed-mint cursor at block=${nextProcessedMintFromBlock.toString()} for retry after parse failures.`,
+          );
+        } else {
+          nextProcessedMintFromBlock = head + 1n;
         }
       }
     } catch (error) {

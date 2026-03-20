@@ -31,10 +31,16 @@ Before enable/start, sync runtime env files into ~/opbridge-env:
   RELAYER_API_URL=http://127.0.0.1:8787 \
     bash scripts/opbridge-host-env-sync.sh --role api
   RELAYER_API_URL=http://<api-box-private-ip>:8787 \
+  RELAYER_KMS_KEY_ID=arn:aws:kms:...mldsa-a \
+  RELAYER_EVM_KMS_KEY_ID=arn:aws:kms:...ecdsa-a \
     bash scripts/opbridge-host-env-sync.sh --role worker --instance a
   RELAYER_API_URL=http://<api-box-private-ip>:8787 \
+  RELAYER_KMS_KEY_ID=arn:aws:kms:...mldsa-b \
+  RELAYER_EVM_KMS_KEY_ID=arn:aws:kms:...ecdsa-b \
     bash scripts/opbridge-host-env-sync.sh --role worker --instance b
   RELAYER_API_URL=http://<api-box-private-ip>:8787 \
+  RELAYER_KMS_KEY_ID=arn:aws:kms:...mldsa-c \
+  RELAYER_EVM_KMS_KEY_ID=arn:aws:kms:...ecdsa-c \
     bash scripts/opbridge-host-env-sync.sh --role worker --instance c
 
 Example enable/start:

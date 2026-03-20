@@ -30,6 +30,8 @@ Optional overrides applied when present in the shell environment:
   ETHEREUM_RPC_URL_SECRET_REF
   OPNET_RPC_URL
   OPNET_RPC_URL_SECRET_REF
+  RELAYER_KMS_KEY_ID
+  RELAYER_EVM_KMS_KEY_ID
   RELAYER_API_HOST
   RELAYER_API_PORT
   RELAYER_API_CORS_ALLOWED_ORIGINS
@@ -180,6 +182,11 @@ do
   apply_override_if_set "$RUNTIME_ENV_DIR/relayer-api.env" "$key"
 done
 
+if [[ "$ROLE" == "worker" ]]; then
+  apply_override_if_set "$RUNTIME_ENV_DIR/ethereum-${INSTANCE}.env" "RELAYER_KMS_KEY_ID"
+  apply_override_if_set "$RUNTIME_ENV_DIR/opnet-${INSTANCE}.env" "RELAYER_EVM_KMS_KEY_ID"
+fi
+
 echo
 echo "Runtime env synced to: $RUNTIME_ENV_DIR"
 case "$ROLE" in
@@ -190,6 +197,7 @@ case "$ROLE" in
   worker)
     echo "Role: worker (${INSTANCE})"
     echo "Expected worker API URL override: RELAYER_API_URL=http://<api-box-private-ip>:8787"
+    echo "Optional worker key overrides: RELAYER_KMS_KEY_ID, RELAYER_EVM_KMS_KEY_ID"
     ;;
   all)
     echo "Role: all"

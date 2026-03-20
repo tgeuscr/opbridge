@@ -126,6 +126,13 @@ function normalizePath(url) {
 function withMintCandidate(row, heartbeatHeads = null) {
   if (!row) return null;
   const observationSource = safeJson(row.observation_source_json);
+  const claimFinality = buildClaimFinality({
+    observed: row.processed === 1,
+    network: row.processed_source_chain,
+    blockNumber: row.processed_block_number,
+    txHash: row.processed_tx_hash,
+    observedAt: row.processed_at,
+  }, heartbeatHeads);
   return {
     payloadHashHex: row.payload_hash_hex,
     depositId: row.deposit_id,
@@ -144,7 +151,9 @@ function withMintCandidate(row, heartbeatHeads = null) {
     processedTxHash: row.processed_tx_hash ?? null,
     processedAt: row.processed_at ?? null,
     observationSource,
-    finality: buildFinality(observationSource, row.ready === 1, row.processed === 1, heartbeatHeads),
+    finality: buildSourceFinality(observationSource, row.ready === 1, heartbeatHeads),
+    claimFinality,
+    processedFinalized: claimFinality?.status === 'finalized',
     sourceFile: row.source_file,
     updatedAt: row.updated_at,
   };
@@ -153,6 +162,13 @@ function withMintCandidate(row, heartbeatHeads = null) {
 function withReleaseCandidate(row, heartbeatHeads = null) {
   if (!row) return null;
   const observationSource = safeJson(row.observation_source_json);
+  const claimFinality = buildClaimFinality({
+    observed: row.processed === 1,
+    network: row.processed_source_chain,
+    blockNumber: row.processed_block_number,
+    txHash: row.processed_tx_hash,
+    observedAt: row.processed_at,
+  }, heartbeatHeads);
   return {
     payloadHashHex: row.payload_hash_hex,
     withdrawalId: row.withdrawal_id,
@@ -171,7 +187,9 @@ function withReleaseCandidate(row, heartbeatHeads = null) {
     processedTxHash: row.processed_tx_hash ?? null,
     processedAt: row.processed_at ?? null,
     observationSource,
-    finality: buildFinality(observationSource, row.ready === 1, row.processed === 1, heartbeatHeads),
+    finality: buildSourceFinality(observationSource, row.ready === 1, heartbeatHeads),
+    claimFinality,
+    processedFinalized: claimFinality?.status === 'finalized',
     sourceFile: row.source_file,
     updatedAt: row.updated_at,
   };
@@ -228,7 +246,15 @@ function deriveHeartbeatHeads(rows) {
   return map;
 }
 
-function buildFinality(source, ready, processed, heartbeatHeads) {
+function normalizeChainKey(raw) {
+  const value = String(raw ?? '').trim().toLowerCase();
+  if (!value) return null;
+  if (value === 'sepolia' || value === 'ethereum' || value === 'ethereum-sepolia') return 'sepolia';
+  if (value === 'testnet' || value === 'opnet' || value === 'opnet-testnet') return 'testnet';
+  return value;
+}
+
+function buildSourceFinality(source, ready, heartbeatHeads) {
   if (!source || typeof source !== 'object') return null;
   const requiredConfirmationsRaw = Number(source.requiredConfirmations);
   const requiredConfirmations = Number.isInteger(requiredConfirmationsRaw) && requiredConfirmationsRaw >= 0
@@ -238,7 +264,7 @@ function buildFinality(source, ready, processed, heartbeatHeads) {
   const sourceBlockNumber = Number.isInteger(sourceBlockNumberRaw) && sourceBlockNumberRaw >= 0
     ? sourceBlockNumberRaw
     : null;
-  const heartbeatHead = heartbeatHeads?.get?.(String(source.network ?? '').trim().toLowerCase()) ?? null;
+  const heartbeatHead = heartbeatHeads?.get?.(normalizeChainKey(source.network)) ?? null;
   const currentHead = heartbeatHead?.currentHead ?? null;
   const finalizedHead = heartbeatHead?.finalizedHead ?? currentHead;
   const currentConfirmations =
@@ -250,8 +276,7 @@ function buildFinality(source, ready, processed, heartbeatHeads) {
       ? Math.max(requiredConfirmations - currentConfirmations, 0)
       : null;
   let status = requiredConfirmations != null ? 'confirming' : 'observed';
-  if (processed) status = 'processed';
-  else if (ready) status = 'ready';
+  if (ready) status = 'ready';
   return {
     status,
     sourceChain: source.network ?? null,
@@ -263,6 +288,35 @@ function buildFinality(source, ready, processed, heartbeatHeads) {
     requiredConfirmations,
     currentConfirmations,
     remainingConfirmations,
+  };
+}
+
+function buildClaimFinality(processed, heartbeatHeads) {
+  if (!processed?.observed) return null;
+  const sourceBlockNumberRaw = Number(processed.blockNumber);
+  const sourceBlockNumber = Number.isInteger(sourceBlockNumberRaw) && sourceBlockNumberRaw >= 0
+    ? sourceBlockNumberRaw
+    : null;
+  const chainKey = normalizeChainKey(processed.network);
+  const heartbeatHead = heartbeatHeads?.get?.(chainKey) ?? null;
+  const currentHead = heartbeatHead?.currentHead ?? null;
+  const finalizedHead = heartbeatHead?.finalizedHead ?? currentHead;
+  const currentConfirmations =
+    sourceBlockNumber != null && Number.isInteger(currentHead) && currentHead >= sourceBlockNumber
+      ? currentHead - sourceBlockNumber + 1
+      : null;
+  const finalizedConfirmations =
+    sourceBlockNumber != null && Number.isInteger(finalizedHead) && finalizedHead >= sourceBlockNumber
+      ? finalizedHead - sourceBlockNumber + 1
+      : null;
+  return {
+    status: finalizedConfirmations != null && finalizedConfirmations > 0 ? 'finalized' : 'observed',
+    sourceChain: chainKey,
+    sourceBlockNumber,
+    sourceTxHash: processed.txHash ?? null,
+    observedAt: processed.observedAt ?? null,
+    currentConfirmations,
+    finalizedConfirmations,
   };
 }
 
@@ -531,6 +585,8 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH, writeToken = '' } = 
             LIMIT 1
           ) AS observation_source_json,
           CASE WHEN pm.deposit_id IS NULL THEN 0 ELSE 1 END AS processed,
+          pm.source_chain AS processed_source_chain,
+          pm.block_number AS processed_block_number,
           pm.tx_hash AS processed_tx_hash,
           pm.updated_at AS processed_at
         FROM mint_candidates mc
@@ -565,6 +621,8 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH, writeToken = '' } = 
             LIMIT 1
           ) AS observation_source_json,
           CASE WHEN pm.deposit_id IS NULL THEN 0 ELSE 1 END AS processed,
+          pm.source_chain AS processed_source_chain,
+          pm.block_number AS processed_block_number,
           pm.tx_hash AS processed_tx_hash,
           pm.updated_at AS processed_at
         FROM mint_candidates mc
@@ -599,6 +657,8 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH, writeToken = '' } = 
             LIMIT 1
           ) AS observation_source_json,
           CASE WHEN pm.deposit_id IS NULL THEN 0 ELSE 1 END AS processed,
+          pm.source_chain AS processed_source_chain,
+          pm.block_number AS processed_block_number,
           pm.tx_hash AS processed_tx_hash,
           pm.updated_at AS processed_at
         FROM mint_candidates mc
@@ -702,6 +762,8 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH, writeToken = '' } = 
             LIMIT 1
           ) AS observation_source_json,
           CASE WHEN pr.withdrawal_id IS NULL THEN 0 ELSE 1 END AS processed,
+          pr.source_chain AS processed_source_chain,
+          pr.block_number AS processed_block_number,
           pr.tx_hash AS processed_tx_hash,
           pr.updated_at AS processed_at
         FROM release_candidates rc
@@ -736,6 +798,8 @@ export function startHttpServer({ dbPath = DEFAULT_DB_PATH, writeToken = '' } = 
             LIMIT 1
           ) AS observation_source_json,
           CASE WHEN pr.withdrawal_id IS NULL THEN 0 ELSE 1 END AS processed,
+          pr.source_chain AS processed_source_chain,
+          pr.block_number AS processed_block_number,
           pr.tx_hash AS processed_tx_hash,
           pr.updated_at AS processed_at
         FROM release_candidates rc

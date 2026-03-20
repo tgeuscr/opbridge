@@ -78,6 +78,8 @@ RELAYER_API_URL=http://<api-box-private-ip>:8787 \
 RELAYER_API_WRITE_TOKEN_SECRET_REF=aws-sm://opbridge-testnet#relayerApiWriteToken \
 ETHEREUM_RPC_URL_SECRET_REF=aws-sm://opbridge-testnet#ethereumRpcUrl \
 OPNET_RPC_URL_SECRET_REF=aws-sm://opbridge-testnet#opnetRpcUrl \
+RELAYER_KMS_KEY_ID=arn:aws:kms:...mldsa-a \
+RELAYER_EVM_KMS_KEY_ID=arn:aws:kms:...ecdsa-a \
 bash scripts/opbridge-host-env-sync.sh --role worker --instance a
 ```
 

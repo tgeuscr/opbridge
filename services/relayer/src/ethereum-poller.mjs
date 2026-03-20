@@ -406,6 +406,7 @@ Example:
     : hexToBigInt(latestBlockHex) > 20n
       ? hexToBigInt(latestBlockHex) - 20n
       : 0n;
+  let nextProcessedReleaseFromBlock = nextFromBlock;
   const seen = new Set();
 
   console.log(
@@ -534,6 +535,78 @@ Example:
         }
 
         nextFromBlock = finalizedHead + 1n;
+      }
+
+      if (latest >= nextProcessedReleaseFromBlock) {
+        const processedReleases = [];
+        let windowStart = nextProcessedReleaseFromBlock;
+        while (windowStart <= latest) {
+          const initialEnd = windowStart + BigInt(maxBlockRange) - 1n;
+          let clampedEnd = initialEnd < latest ? initialEnd : latest;
+          let logs = null;
+          while (logs === null) {
+            const fromHex = `0x${windowStart.toString(16)}`;
+            const toHex = `0x${clampedEnd.toString(16)}`;
+            try {
+              logs = await rpc(rpcUrl, "eth_getLogs", [
+                {
+                  address: mapping.ethereum.vaultAddress,
+                  fromBlock: fromHex,
+                  toBlock: toHex,
+                  topics: [[WITHDRAWAL_RELEASED_TOPIC0]],
+                },
+              ]);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              const range = clampedEnd - windowStart + 1n;
+              if (range <= 1n) {
+                throw error;
+              }
+              const nextRange = range / 2n;
+              const safeRange = nextRange > 0n ? nextRange : 1n;
+              clampedEnd = windowStart + safeRange - 1n;
+              console.warn(
+                `[poller] reducing processed-release log range after error: ${message}. nextRange=${safeRange.toString()} blocks`,
+              );
+            }
+          }
+
+          for (const log of logs) {
+            const release = buildProcessedRelease(log);
+            const id = `release:${release.withdrawalId}`;
+            if (seen.has(id)) continue;
+            seen.add(id);
+            processedReleases.push(release);
+          }
+
+          windowStart = clampedEnd + 1n;
+        }
+
+        if (processedReleases.length > 0) {
+          const snapshot = {
+            generatedAt: new Date().toISOString(),
+            relayerId,
+            mappingSource: mappingFile,
+            count: processedReleases.length,
+            processed: processedReleases,
+          };
+          const disableFileOutput =
+            process.env.RELAYER_DISABLE_FILE_OUTPUT?.trim() === "1" ||
+            process.env.RELAYER_DISABLE_FILE_OUTPUT?.trim()?.toLowerCase() === "true";
+          try {
+            const published = await publishProcessedReleasesSnapshot(snapshot, disableFileOutput ? null : outputFile);
+            if (published?.skipped) {
+              console.log(`[poller] processed release publish skipped: ${published.reason}`);
+            } else {
+              console.log(`[poller] Published ${processedReleases.length} observed release(s) to relayer API.`);
+            }
+          } catch (error) {
+            console.error(`[poller] processed release API publish failed: ${error instanceof Error ? error.message : String(error)}`);
+            if (disableFileOutput) throw error;
+          }
+        }
+
+        nextProcessedReleaseFromBlock = latest + 1n;
       }
     } catch (error) {
       console.error(`[poller-error] ${error instanceof Error ? error.message : String(error)}`);
