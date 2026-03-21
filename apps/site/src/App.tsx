@@ -25,6 +25,8 @@ const DEFAULT_STATUS_API_URL = import.meta.env.VITE_STATUS_API_URL?.trim() || ''
 const OPNET_BRIDGE_ADDRESS = import.meta.env.VITE_OPNET_BRIDGE_ADDRESS?.trim() || '';
 const ETH_GAS_LIMIT_CAP = Number(import.meta.env.VITE_ETHEREUM_GAS_LIMIT_CAP?.trim() || '15000000');
 const ETH_GAS_FALLBACK = BigInt(import.meta.env.VITE_ETHEREUM_GAS_FALLBACK?.trim() || '800000');
+const BRIDGE_FEE_BPS = parseFeePercentToBps(import.meta.env.VITE_BRIDGE_FEE_PERCENT?.trim() || '0.5');
+const BRIDGE_FEE_PERCENT_LABEL = formatFeePercentFromBps(BRIDGE_FEE_BPS);
 const OPNET_FEE_RATE = Number(import.meta.env.VITE_OPNET_FEE_RATE?.trim() || '2');
 const OPNET_MAX_SAT_SPEND = BigInt(import.meta.env.VITE_OPNET_MAX_SAT_SPEND?.trim() || '20000');
 const ERC20_APPROVE_SELECTOR = '0x095ea7b3';
@@ -201,6 +203,30 @@ function short(value?: string | null) {
   if (!value) return '-';
   if (value.length < 14) return value;
   return `${value.slice(0, 8)}...${value.slice(-6)}`;
+}
+
+function parseFeePercentToBps(raw: string): bigint {
+  const normalized = raw.trim();
+  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) {
+    return 50n;
+  }
+
+  const [whole, fraction = ''] = normalized.split('.');
+  const wholePercent = BigInt(whole);
+  const fractionalPercent = BigInt((fraction + '00').slice(0, 2));
+  return (wholePercent * 100n) + fractionalPercent;
+}
+
+function formatFeePercentFromBps(feeBps: bigint): string {
+  const whole = feeBps / 100n;
+  const fraction = feeBps % 100n;
+  if (fraction === 0n) return `${whole}%`;
+  if (fraction % 10n === 0n) return `${whole}.${fraction / 10n}%`;
+  return `${whole}.${fraction.toString().padStart(2, '0')}%`;
+}
+
+function applyBridgeFee(amountRaw: bigint): bigint {
+  return amountRaw - ((amountRaw * BRIDGE_FEE_BPS) / 10_000n);
 }
 
 function formatFinalitySummary(finality?: FinalityInfo | null) {
@@ -479,7 +505,7 @@ function formatTokenAmount(raw: bigint, decimals: number): string {
 }
 
 function formatOpnetTicker(symbol: AssetSymbol): string {
-  return `h${symbol}`;
+  return `op${symbol}`;
 }
 
 function buildOpscanTxUrl(txid: string): string {
@@ -1060,7 +1086,7 @@ export function App() {
         const decimals = ETH_ASSET_CONFIG[depositAsset].decimals;
         const amountRaw = parseHumanAmount(depositAmount, decimals);
         if (amountRaw <= 0n) throw new Error('Amount must be greater than zero.');
-        const receivedRaw = (amountRaw * 99n) / 100n;
+        const receivedRaw = applyBridgeFee(amountRaw);
         setBridgeConfirm({
           direction,
           asset: depositAsset,
@@ -1078,7 +1104,7 @@ export function App() {
       const decimals = ETH_ASSET_CONFIG[burnAsset].decimals;
       const amountRaw = parseHumanAmount(burnAmount, decimals);
       if (amountRaw <= 0n) throw new Error('Amount must be greater than zero.');
-      const receivedRaw = (amountRaw * 99n) / 100n;
+      const receivedRaw = applyBridgeFee(amountRaw);
       setBridgeConfirm({
         direction,
         asset: burnAsset,
@@ -1636,7 +1662,7 @@ export function App() {
           if (!tokenAddress) {
             next[asset] = {
               balanceRaw: null,
-              error: `Missing OPNet token address. Set VITE_OPNET_${asset}_ADDRESS.`,
+              error: `Missing ${formatOpnetTicker(asset)} token address. Set VITE_OPNET_${asset}_ADDRESS.`,
             };
             return;
           }
@@ -1853,7 +1879,7 @@ export function App() {
       if (txId) setBurnOpnetTxId(txId);
 
       setBurnStatus(
-        `Burn request sent. asset=${asset} amount=${burnAmount} recipient=${ethAddress || '-'}`,
+        `Burn request sent. asset=${formatOpnetTicker(asset)} amount=${burnAmount} recipient=${ethAddress || '-'}`,
       );
     } catch (error) {
       setBurnOpnetTxId('');
@@ -3030,7 +3056,7 @@ export function App() {
               <code>{bridgeConfirm.fromAddress}</code> to <code>{bridgeConfirm.toAddress}</code>.
             </p>
             <p className="muted">
-              After bridge fees, you will receive{' '}
+              After the configured {BRIDGE_FEE_PERCENT_LABEL} bridge fee, you will receive{' '}
               <strong>{bridgeConfirm.receivedText} {bridgeConfirm.asset}</strong>{' '}
               on <strong>{bridgeConfirm.direction === 'ethToBtc' ? 'Bitcoin' : 'Ethereum'}</strong>.
             </p>
