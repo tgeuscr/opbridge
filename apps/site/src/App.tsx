@@ -2404,13 +2404,14 @@ export function App() {
             <ol className="ux-guide-list">
               <li>Connect both wallets first: OP_WALLET and an EVM wallet (MetaMask or Rabby).</li>
               <li>Keep your EVM wallet on Sepolia for all Ethereum-side steps.</li>
+              <li>Bridge transfers currently apply a 0.5% fee.</li>
+              <li>Sepolia to OPNet: deposits require 10 Ethereum block confirmations before the mint claim becomes available.</li>
+              <li>OPNet to Sepolia: burns require 4 Bitcoin block confirmations before the release claim becomes available.</li>
               <li>Recipients are locked in this phase for safety.</li>
-              <li>Sepolia to OPNet: deposit from connected EVM wallet, then claim mint to connected OP_WALLET.</li>
-              <li>OPNet to Sepolia: request burn from connected OP_WALLET, then claim release to connected EVM wallet.</li>
-              <li>Use Status API lookups below to monitor deposit and withdrawal IDs.</li>
+              <li>Monitor your deposit and withdrawal progress in the bridge interface while claims are being prepared.</li>
             </ol>
             <p className="muted">
-              Tip: if you are new, use the faucet section first, then run one small deposit and one small withdrawal.
+              Tip: if you are new, use the faucet section first, then run one small deposit and one small withdrawal so you can see the confirmation delays and claim steps end to end.
             </p>
             <div className="actions">
               <button className="primary" onClick={() => closeUxGuide(false)}>
@@ -3076,7 +3077,7 @@ export function App() {
       ) : null}
 
       <footer className="site-credit" aria-label="Site credit">
-        <span>built with ❤️ by</span>
+        <span>Built by the OP_BRIDGE team</span>
         <a
           className="site-credit-link"
           href="https://x.com/opbridgebtc"
@@ -3085,11 +3086,7 @@ export function App() {
           aria-label="Follow opbridge on X"
           title="Follow opbridge on X"
         >
-          <img
-            className="site-credit-wordmark"
-            src={themeMode === 'dark' ? '/branding/heptad-wordmark-dark.svg' : '/branding/heptad-wordmark.svg'}
-            alt="OP_BRIDGE"
-          />
+          OP_BRIDGE
         </a>
       </footer>
 
