@@ -1487,7 +1487,7 @@ export function App() {
         key: `claim-mint-submitted:${claimMintOpnetTxId}`,
         eyebrow: 'Deposit Claim',
         title: 'Claim submitted',
-        message: 'Your deposit claim was submitted. You can track it on OPScan below while the balance update settles.',
+        message: 'Your deposit claim was submitted. You can track it on OPScan below while the balance update settles. Do not try to claim the same deposit again; the transaction will revert and you will lose the gas for the transaction.',
         links: [{ href: buildOpscanTxUrl(claimMintOpnetTxId), label: 'View mint tx on OPScan' }],
       };
     } else if (readyMintCandidates.length > 0) {
@@ -1535,7 +1535,7 @@ export function App() {
         key: `claim-release-submitted:${claimReleaseTxHash}`,
         eyebrow: 'Withdrawal Claim',
         title: 'Claim submitted',
-        message: 'Your withdrawal claim was submitted. You can track it on Etherscan below while finalization settles.',
+        message: 'Your withdrawal claim was submitted. You can track it on Etherscan below while finalization settles. Do not try to claim the same withdrawal again; the transaction will revert and you will lose the gas for the transaction.',
         links: [{ href: `${ETHEREUM_NETWORK.txExplorerBaseUrl}${claimReleaseTxHash}`, label: 'View withdrawal tx on Etherscan' }],
       };
     } else if (readyReleaseCandidates.length > 0) {
