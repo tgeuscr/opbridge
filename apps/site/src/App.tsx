@@ -131,9 +131,11 @@ type MintCandidate = {
   status?: string;
   state?: string;
   processed?: boolean | number | string;
+  processedFinalized?: boolean;
   message?: Record<string, unknown> | null;
   mintSubmission?: MintSubmission;
   finality?: FinalityInfo | null;
+  claimFinality?: FinalityInfo | null;
 };
 
 type ReleaseSubmission = {
@@ -152,9 +154,11 @@ type ReleaseCandidate = {
   status?: string;
   state?: string;
   processed?: boolean | number | string;
+  processedFinalized?: boolean;
   message?: Record<string, unknown> | null;
   releaseSubmission?: ReleaseSubmission;
   finality?: FinalityInfo | null;
+  claimFinality?: FinalityInfo | null;
 };
 
 const BRIDGE_BURN_ABI = [
@@ -240,6 +244,35 @@ function formatFinalitySummary(finality?: FinalityInfo | null) {
   if (finality.remainingConfirmations != null) parts.push(`remainingConfirmations=${String(finality.remainingConfirmations)}`);
   if (finality.observedAt) parts.push(`observedAt=${finality.observedAt}`);
   return parts.length ? parts.join(' ') : null;
+}
+
+function hasProcessedState(value: boolean | number | string | undefined) {
+  return value === true || value === 1 || value === '1' || value === 'true';
+}
+
+function formatLookupSummary(candidate?: {
+  finality?: FinalityInfo | null;
+  claimFinality?: FinalityInfo | null;
+  processed?: boolean | number | string;
+  processedFinalized?: boolean;
+} | null) {
+  if (!candidate) return null;
+  const parts = [];
+  const sourceSummary = formatFinalitySummary(candidate.finality);
+  const claimSummary = formatFinalitySummary(candidate.claimFinality);
+  const claimed = candidate.processedFinalized === true || hasProcessedState(candidate.processed);
+
+  if (claimed && claimSummary) {
+    parts.push(`claimFinality: ${claimSummary}`);
+  }
+  if (sourceSummary) {
+    parts.push(`depositFinality: ${sourceSummary}`);
+  }
+  if (!claimed && claimSummary) {
+    parts.push(`claimFinality: ${claimSummary}`);
+  }
+
+  return parts.length ? parts.join('\n') : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1150,7 +1183,7 @@ export function App() {
       if (!response.ok) {
         throw new Error(typeof body.error === 'string' ? body.error : `HTTP ${response.status}`);
       }
-      const summary = formatFinalitySummary(body.mintCandidate?.finality);
+      const summary = formatLookupSummary(body.mintCandidate);
       setDepositLookupResult(summary ? `${summary}\n\n${JSON.stringify(body, null, 2)}` : JSON.stringify(body, null, 2));
     } catch (error) {
       setDepositLookupResult(`Deposit lookup failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -1176,7 +1209,7 @@ export function App() {
       if (!response.ok) {
         throw new Error(typeof body.error === 'string' ? body.error : `HTTP ${response.status}`);
       }
-      const summary = formatFinalitySummary(body.releaseCandidate?.finality);
+      const summary = formatLookupSummary(body.releaseCandidate);
       setWithdrawalLookupResult(summary ? `${summary}\n\n${JSON.stringify(body, null, 2)}` : JSON.stringify(body, null, 2));
     } catch (error) {
       setWithdrawalLookupResult(`Withdrawal lookup failed: ${error instanceof Error ? error.message : String(error)}`);
