@@ -918,26 +918,21 @@ button.primary:hover {
   margin: 0;
 }
 
+.bridge-status-popup-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .bridge-status-popup-close {
   padding: 0.4rem 0.7rem;
   white-space: nowrap;
-}
-
-.bridge-status-popup-body {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.65rem;
-}
-
-.bridge-status-popup-body .muted {
-  margin: 0;
 }
 
 .bridge-status-spinner {
   flex: 0 0 auto;
   width: 1rem;
   height: 1rem;
-  margin-top: 0.15rem;
   border: 2px solid rgba(17, 17, 17, 0.16);
   border-top-color: #111;
   border-radius: 999px;

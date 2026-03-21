@@ -3159,7 +3159,10 @@ export function App() {
           <div className="bridge-status-popup-head">
             <div>
               <p className="eyebrow">{activeBridgeNotice.eyebrow}</p>
-              <h3>{activeBridgeNotice.title}</h3>
+              <h3 className="bridge-status-popup-title">
+                <span>{activeBridgeNotice.title}</span>
+                {activeBridgeNotice.showSpinner ? <span className="bridge-status-spinner" aria-hidden="true" /> : null}
+              </h3>
             </div>
             <button
               type="button"
@@ -3171,10 +3174,7 @@ export function App() {
               <CloseIcon />
             </button>
           </div>
-          <div className="bridge-status-popup-body">
-            {activeBridgeNotice.showSpinner ? <span className="bridge-status-spinner" aria-hidden="true" /> : null}
-            <p className="muted">{activeBridgeNotice.message}</p>
-          </div>
+          <p className="muted">{activeBridgeNotice.message}</p>
           {activeBridgeNotice.links?.length ? (
             <div className="actions">
               {activeBridgeNotice.links.map((link) => (
