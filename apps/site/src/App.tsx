@@ -3077,7 +3077,7 @@ export function App() {
       ) : null}
 
       <footer className="site-credit" aria-label="Site credit">
-        <span>Built by the OP_BRIDGE team</span>
+        <span>Built by the</span>
         <a
           className="site-credit-link"
           href="https://x.com/opbridgebtc"
@@ -3086,8 +3086,13 @@ export function App() {
           aria-label="Follow opbridge on X"
           title="Follow opbridge on X"
         >
-          OP_BRIDGE
+          <img
+            className="site-credit-wordmark"
+            src={themeMode === 'dark' ? '/branding/opbridge-wordmark-dark.svg' : '/branding/opbridge-wordmark.svg'}
+            alt="OPbridge"
+          />
         </a>
+        <span>team.</span>
       </footer>
 
       </main>
