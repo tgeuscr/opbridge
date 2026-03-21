@@ -141,12 +141,32 @@ body::before {
 
 .hero-actions {
   display: grid;
+  gap: 0.5rem;
+}
+
+.hero-actions--testnet {
   grid-template-columns: auto auto;
   grid-template-areas:
     'api connect'
-    'theme faucet';
+    'faucet theme';
   justify-content: end;
-  gap: 0.5rem;
+}
+
+.hero-actions--mainnet {
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    'api connect'
+    '. theme';
+  align-items: start;
+  justify-content: end;
+}
+
+.hero-api-button {
+  grid-area: api;
+}
+
+.hero-connect-button {
+  grid-area: connect;
 }
 
 .hero-faucet-button {
@@ -1374,9 +1394,20 @@ html[data-theme='dark'] .route-box > div + div {
   .hero-actions {
     width: 100%;
     grid-template-columns: 1fr;
+  }
+
+  .hero-actions--testnet {
     grid-template-areas:
       'connect'
+      'api'
       'faucet'
+      'theme';
+  }
+
+  .hero-actions--mainnet {
+    min-width: 0;
+    grid-template-areas:
+      'connect'
       'api'
       'theme';
   }

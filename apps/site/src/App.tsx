@@ -18,8 +18,6 @@ type EthereumWindow = Window & {
   rabby?: EthereumProvider;
 };
 
-const SEPOLIA_CHAIN_ID_HEX = '0xaa36a7';
-const SEPOLIA_CHAIN_ID_DEC = 11155111;
 const OPSCANN_TX_BASE_URL = 'https://opscan.org/transactions/';
 const DEFAULT_STATUS_API_URL = import.meta.env.VITE_STATUS_API_URL?.trim() || '';
 const OPNET_BRIDGE_ADDRESS = import.meta.env.VITE_OPNET_BRIDGE_ADDRESS?.trim() || '';
@@ -29,6 +27,31 @@ const BRIDGE_FEE_BPS = parseFeePercentToBps(import.meta.env.VITE_BRIDGE_FEE_PERC
 const BRIDGE_FEE_PERCENT_LABEL = formatFeePercentFromBps(BRIDGE_FEE_BPS);
 const OPNET_FEE_RATE = Number(import.meta.env.VITE_OPNET_FEE_RATE?.trim() || '2');
 const OPNET_MAX_SAT_SPEND = BigInt(import.meta.env.VITE_OPNET_MAX_SAT_SPEND?.trim() || '20000');
+const APP_NETWORK_MODE = (import.meta.env.VITE_APP_NETWORK_MODE?.trim().toLowerCase() || 'testnet') as 'testnet' | 'mainnet';
+const ENABLE_TESTNET_FEATURES = APP_NETWORK_MODE === 'testnet';
+const ETHEREUM_NETWORK = APP_NETWORK_MODE === 'mainnet'
+  ? {
+      chainIdHex: '0x1',
+      chainName: 'Ethereum Mainnet',
+      shortName: 'Mainnet',
+      rpcUrls: ['https://ethereum-rpc.publicnode.com'],
+      blockExplorerBaseUrl: 'https://etherscan.io',
+      txExplorerBaseUrl: 'https://etherscan.io/tx/',
+    }
+  : {
+      chainIdHex: '0xaa36a7',
+      chainName: 'Ethereum Sepolia',
+      shortName: 'Sepolia',
+      rpcUrls: ['https://ethereum-sepolia-rpc.publicnode.com', 'https://rpc.sepolia.org'],
+      blockExplorerBaseUrl: 'https://sepolia.etherscan.io',
+      txExplorerBaseUrl: 'https://sepolia.etherscan.io/tx/',
+    };
+const OPNET_NETWORK_LABEL = APP_NETWORK_MODE === 'mainnet' ? 'OPNet mainnet' : 'OPNet testnet';
+const OPNET_NETWORK_QUERY = APP_NETWORK_MODE === 'mainnet' ? 'mainnet' : 'op_testnet';
+const HERO_NETWORK_LABEL = APP_NETWORK_MODE === 'mainnet' ? 'OP_BRIDGE MAINNET LIVE' : 'OP_BRIDGE TESTNET LIVE';
+const DOCUMENT_TITLE = APP_NETWORK_MODE === 'mainnet' ? 'OP_BRIDGE | Mainnet' : 'OP_BRIDGE | Testnet';
+const GUIDE_ETHEREUM_LABEL = APP_NETWORK_MODE === 'mainnet' ? 'Ethereum mainnet' : 'Ethereum Sepolia testnet';
+const GUIDE_OPNET_LABEL = APP_NETWORK_MODE === 'mainnet' ? 'OP_NET mainnet' : 'OP_NET testnet';
 const ERC20_APPROVE_SELECTOR = '0x095ea7b3';
 const ERC20_BALANCE_OF_SELECTOR = '0x70a08231';
 const TEST_TOKEN_CLAIM_SELECTOR = '0x4e71d92d';
@@ -85,6 +108,10 @@ type BridgeNoticeState = {
   eyebrow: string;
   title: string;
   message: string;
+  links?: Array<{
+    href: string;
+    label: string;
+  }>;
 };
 
 type FaucetAssetState = {
@@ -207,6 +234,15 @@ function short(value?: string | null) {
   if (!value) return '-';
   if (value.length < 14) return value;
   return `${value.slice(0, 8)}...${value.slice(-6)}`;
+}
+
+function CloseIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path d="M4.5 4.5L13.5 13.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M13.5 4.5L4.5 13.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 function parseFeePercentToBps(raw: string): bigint {
@@ -543,7 +579,7 @@ function formatOpnetTicker(symbol: AssetSymbol): string {
 
 function buildOpscanTxUrl(txid: string): string {
   const normalized = txid.trim().replace(/^0x/i, '');
-  return `${OPSCANN_TX_BASE_URL}${encodeURIComponent(normalized)}?network=op_testnet`;
+  return `${OPSCANN_TX_BASE_URL}${encodeURIComponent(normalized)}?network=${OPNET_NETWORK_QUERY}`;
 }
 
 function formatWrappedTokenBalance(state: OpnetAssetBalanceState, asset: AssetSymbol): string {
@@ -1219,6 +1255,10 @@ export function App() {
   }
 
   useEffect(() => {
+    document.title = DOCUMENT_TITLE;
+  }, []);
+
+  useEffect(() => {
     const provider = getActiveEthereumProvider();
     if (!provider?.on) return;
 
@@ -1239,8 +1279,8 @@ export function App() {
   }, [evmWalletType]);
 
   useEffect(() => {
-    const isSepolia = ethChainId.toLowerCase() === SEPOLIA_CHAIN_ID_HEX;
-    if (!ethAddress || !isSepolia) return;
+    const isExpectedEthereumNetwork = ethChainId.toLowerCase() === ETHEREUM_NETWORK.chainIdHex;
+    if (!ethAddress || !isExpectedEthereumNetwork) return;
     void refreshFaucetState();
   }, [ethAddress, ethChainId]);
 
@@ -1264,11 +1304,11 @@ export function App() {
       setEthStatus('Connecting...');
       const [address] = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
       let chainId = (await provider.request({ method: 'eth_chainId' })) as string;
-      if (chainId?.toLowerCase() !== SEPOLIA_CHAIN_ID_HEX) {
+      if (chainId?.toLowerCase() !== ETHEREUM_NETWORK.chainIdHex) {
         try {
           await provider.request({
             method: 'wallet_switchEthereumChain',
-            params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }],
+            params: [{ chainId: ETHEREUM_NETWORK.chainIdHex }],
           });
           chainId = (await provider.request({ method: 'eth_chainId' })) as string;
         } catch {
@@ -1279,9 +1319,9 @@ export function App() {
       setEthChainId(chainId ?? '');
       setEvmWalletType(walletType);
       setEthStatus(
-        chainId?.toLowerCase() === SEPOLIA_CHAIN_ID_HEX
-          ? 'Connected (Sepolia)'
-          : 'Connected but wrong network. Switch to Sepolia.',
+        chainId?.toLowerCase() === ETHEREUM_NETWORK.chainIdHex
+          ? `Connected (${ETHEREUM_NETWORK.shortName})`
+          : `Connected but wrong network. Switch to ${ETHEREUM_NETWORK.shortName}.`,
       );
     } catch (error) {
       setEthStatus(`Connection failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -1337,7 +1377,7 @@ export function App() {
     };
   }
 
-  async function switchToSepolia() {
+  async function switchToEthereumNetwork() {
     const resolved = await resolveProviderForSwitch();
     if (!resolved) {
       setEthStatus('No EVM provider found.');
@@ -1347,25 +1387,22 @@ export function App() {
     setEvmWalletType(walletType);
 
     try {
-      setEthStatus(`Switching ${walletName} to Sepolia...`);
+      setEthStatus(`Switching ${walletName} to ${ETHEREUM_NETWORK.shortName}...`);
       try {
         await provider.request({
           method: 'wallet_switchEthereumChain',
-          params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }],
+          params: [{ chainId: ETHEREUM_NETWORK.chainIdHex }],
         });
       } catch (error) {
         if (!isChainMissingError(error)) throw error;
-        const sepoliaRpcUrl = walletType === 'rabby'
-          ? 'https://ethereum-sepolia-rpc.publicnode.com'
-          : 'https://rpc.sepolia.org';
         await provider.request({
           method: 'wallet_addEthereumChain',
           params: [{
-            chainId: SEPOLIA_CHAIN_ID_HEX,
-            chainName: 'Ethereum Sepolia',
+            chainId: ETHEREUM_NETWORK.chainIdHex,
+            chainName: ETHEREUM_NETWORK.chainName,
             nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-            rpcUrls: [sepoliaRpcUrl],
-            blockExplorerUrls: ['https://sepolia.etherscan.io'],
+            rpcUrls: ETHEREUM_NETWORK.rpcUrls,
+            blockExplorerUrls: [ETHEREUM_NETWORK.blockExplorerBaseUrl],
           }],
         });
       }
@@ -1374,9 +1411,9 @@ export function App() {
       setEthAddress(account ?? '');
       setEthChainId(chainId ?? '');
       setEthStatus(
-        (chainId || '').toLowerCase() === SEPOLIA_CHAIN_ID_HEX
-          ? 'Connected (Sepolia)'
-          : 'Connected but wrong network. Switch to Sepolia.',
+        (chainId || '').toLowerCase() === ETHEREUM_NETWORK.chainIdHex
+          ? `Connected (${ETHEREUM_NETWORK.shortName})`
+          : `Connected but wrong network. Switch to ${ETHEREUM_NETWORK.shortName}.`,
       );
     } catch (error) {
       setEthStatus(`Switch failed: ${formatEthereumError(error)}`);
@@ -1395,13 +1432,13 @@ export function App() {
   const opConnected = Boolean(walletAddress);
   const ethConnected = Boolean(ethAddress);
   const evmWalletLabel = evmWalletType === 'rabby' ? 'Rabby' : evmWalletType === 'metamask' ? 'MetaMask' : 'EVM wallet';
-  const onSepolia = ethChainId.toLowerCase() === SEPOLIA_CHAIN_ID_HEX;
-  const opOnTestnet = (network?.network ?? '').toLowerCase().includes('testnet');
-  const opWalletReady = opConnected && opOnTestnet;
-  const ethWalletReady = ethConnected && onSepolia;
+  const onExpectedEthereumNetwork = ethChainId.toLowerCase() === ETHEREUM_NETWORK.chainIdHex;
+  const opOnExpectedNetwork = (network?.network ?? '').toLowerCase().includes(APP_NETWORK_MODE);
+  const opWalletReady = opConnected && opOnExpectedNetwork;
+  const ethWalletReady = ethConnected && onExpectedEthereumNetwork;
   const opRecipientHash = hashedMLDSAKey || '';
   const walletPairReady = opWalletReady && ethWalletReady;
-  const faucetReady = ethWalletReady;
+  const faucetReady = ENABLE_TESTNET_FEATURES && ethWalletReady;
   const faucetConfigReady = Boolean(ETH_TOKEN_ADDRESSES[faucetAsset]);
   const faucetState = faucetStateByAsset[faucetAsset as AssetSymbol];
   const nowSec = BigInt(Math.floor(Date.now() / 1000));
@@ -1420,11 +1457,11 @@ export function App() {
   const depositReady = walletPairReady && Boolean(opRecipientHash);
   const burnReady = walletPairReady;
   const depositConfigReady = Boolean(ETH_VAULT_ADDRESS && ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol]);
-  const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && opnetAddressObject && walletAddress && opOnTestnet);
+  const burnConfigReady = Boolean(OPNET_BRIDGE_ADDRESS && opnetProvider && opnetAddressObject && walletAddress && opOnExpectedNetwork);
   const claimMintReady = Boolean(opWalletReady && statusApiUrl.trim() && burnConfigReady && opRecipientHash);
   const claimMintBlockers = [
     !opConnected ? 'OP_WALLET not connected' : '',
-    opConnected && !opOnTestnet ? 'OP_WALLET must be on OPNet testnet' : '',
+    opConnected && !opOnExpectedNetwork ? `OP_WALLET must be on ${OPNET_NETWORK_LABEL}` : '',
     !statusApiUrl.trim() ? 'Status API URL is empty' : '',
     !OPNET_BRIDGE_ADDRESS ? 'OPNet bridge address is missing (VITE_OPNET_BRIDGE_ADDRESS)' : '',
     !opnetProvider ? 'OPNet provider unavailable' : '',
@@ -1441,6 +1478,7 @@ export function App() {
         eyebrow: 'Deposit Claim',
         title: 'Claim in progress',
         message: 'Your OP_WALLET confirmation is being processed. Once the claim lands, your bridged balance will update below.',
+        links: claimMintOpnetTxId ? [{ href: buildOpscanTxUrl(claimMintOpnetTxId), label: 'View mint tx on OPScan' }] : undefined,
       };
     } else if (readyMintCandidates.length > 0) {
       bridgeNotice = {
@@ -1455,6 +1493,7 @@ export function App() {
         eyebrow: 'Deposit Submitted',
         title: 'Waiting for claim candidate',
         message: 'Your deposit is confirmed. Relayers are preparing the deposit claim candidate now. Keep this tab open or use Refresh Ready Deposits.',
+        links: [{ href: `${ETHEREUM_NETWORK.txExplorerBaseUrl}${depositTxHash}`, label: 'View deposit tx on Etherscan' }],
       };
     } else if (depositBusy || depositApproveTxHash) {
       bridgeNotice = {
@@ -1462,6 +1501,9 @@ export function App() {
         eyebrow: 'Deposit Flow',
         title: 'Deposit in progress',
         message: 'Follow the wallet prompts to approve and submit the deposit. The claim candidate will appear here after the deposit is indexed.',
+        links: depositApproveTxHash
+          ? [{ href: `${ETHEREUM_NETWORK.txExplorerBaseUrl}${depositApproveTxHash}`, label: 'View approve tx on Etherscan' }]
+          : undefined,
       };
     }
   } else if (bridgeDirection === 'btcToEth') {
@@ -1471,6 +1513,9 @@ export function App() {
         eyebrow: 'Withdrawal Claim',
         title: 'Claim in progress',
         message: 'Your EVM wallet confirmation is being processed. Once the claim lands, the withdrawal will finalize on Ethereum.',
+        links: claimReleaseTxHash
+          ? [{ href: `${ETHEREUM_NETWORK.txExplorerBaseUrl}${claimReleaseTxHash}`, label: 'View withdrawal tx on Etherscan' }]
+          : undefined,
       };
     } else if (readyReleaseCandidates.length > 0) {
       bridgeNotice = {
@@ -1485,6 +1530,7 @@ export function App() {
         eyebrow: 'Withdrawal Submitted',
         title: 'Waiting for claim candidate',
         message: 'Your OPNet burn is confirmed. Relayers are preparing the withdrawal claim candidate now. Keep this tab open or use Refresh Ready Withdrawals.',
+        links: [{ href: buildOpscanTxUrl(burnOpnetTxId), label: 'View burn tx on OPScan' }],
       };
     } else if (burnBusy) {
       bridgeNotice = {
@@ -1644,8 +1690,9 @@ export function App() {
   }
 
   async function refreshFaucetState(targetAssets?: AssetSymbol[]) {
+    if (!ENABLE_TESTNET_FEATURES) return;
     const provider = getActiveEthereumProvider();
-    if (!provider || !ethAddress || !onSepolia) {
+    if (!provider || !ethAddress || !onExpectedEthereumNetwork) {
       return;
     }
 
@@ -1720,6 +1767,10 @@ export function App() {
   }
 
   async function runClaimTestTokenFlow() {
+    if (!ENABLE_TESTNET_FEATURES) {
+      setFaucetStatus('Test token minting is disabled for this deployment.');
+      return;
+    }
     const provider = getActiveEthereumProvider();
     if (!provider) {
       setFaucetStatus(`${evmWalletLabel} provider not found.`);
@@ -1736,8 +1787,8 @@ export function App() {
       setEthChainId(chainId ?? '');
 
       if (!account) throw new Error(`No ${evmWalletLabel} account connected.`);
-      if ((chainId || '').toLowerCase() !== SEPOLIA_CHAIN_ID_HEX) {
-        throw new Error(`Wrong network. Expected Sepolia (${SEPOLIA_CHAIN_ID_HEX}), got ${chainId || '-'}.`);
+      if ((chainId || '').toLowerCase() !== ETHEREUM_NETWORK.chainIdHex) {
+        throw new Error(`Wrong network. Expected ${ETHEREUM_NETWORK.shortName} (${ETHEREUM_NETWORK.chainIdHex}), got ${chainId || '-'}.`);
       }
 
       const asset = faucetAsset as AssetSymbol;
@@ -1791,8 +1842,8 @@ export function App() {
       setEthChainId(chainId ?? '');
 
       if (!account) throw new Error(`No ${evmWalletLabel} account connected.`);
-      if ((chainId || '').toLowerCase() !== SEPOLIA_CHAIN_ID_HEX) {
-        throw new Error(`Wrong network. Expected Sepolia (${SEPOLIA_CHAIN_ID_HEX}), got ${chainId || '-'}.`);
+      if ((chainId || '').toLowerCase() !== ETHEREUM_NETWORK.chainIdHex) {
+        throw new Error(`Wrong network. Expected ${ETHEREUM_NETWORK.shortName} (${ETHEREUM_NETWORK.chainIdHex}), got ${chainId || '-'}.`);
       }
 
       const recipient = normalizeBytes32Hex(opRecipientHash, 'Connected OP_WALLET hashed MLDSA key');
@@ -2275,8 +2326,8 @@ export function App() {
       setEthAddress(account ?? '');
       setEthChainId(chainId ?? '');
       if (!account) throw new Error(`No ${evmWalletLabel} account connected.`);
-      if ((chainId || '').toLowerCase() !== SEPOLIA_CHAIN_ID_HEX) {
-        throw new Error(`Wrong network. Expected Sepolia (${SEPOLIA_CHAIN_ID_HEX}), got ${chainId || '-'}.`);
+      if ((chainId || '').toLowerCase() !== ETHEREUM_NETWORK.chainIdHex) {
+        throw new Error(`Wrong network. Expected ${ETHEREUM_NETWORK.shortName} (${ETHEREUM_NETWORK.chainIdHex}), got ${chainId || '-'}.`);
       }
 
       const recipient = normalizeEthereumAddress(account, 'Connected EVM address');
@@ -2436,16 +2487,19 @@ export function App() {
             <h2 id="ux-guide-title">How this bridge works right now</h2>
             <ol className="ux-guide-list">
               <li>Connect both wallets first: OP_WALLET and an EVM wallet (MetaMask or Rabby).</li>
-              <li>Keep your EVM wallet on Sepolia for all Ethereum-side steps.</li>
+              <li>Keep your EVM wallet on {GUIDE_ETHEREUM_LABEL} for all Ethereum-side steps.</li>
+              <li>Keep your OP_WALLET on {GUIDE_OPNET_LABEL} for all OP_NET-side steps.</li>
               <li>Bridge transfers currently apply a 0.5% fee.</li>
-              <li>Sepolia to OPNet: deposits require 10 Ethereum block confirmations before the mint claim becomes available.</li>
-              <li>OPNet to Sepolia: burns require 4 Bitcoin block confirmations before the release claim becomes available.</li>
-              <li>Recipients are locked in this phase for safety.</li>
+              <li>{GUIDE_ETHEREUM_LABEL} to {GUIDE_OPNET_LABEL}: deposits require 10 Ethereum block confirmations before the mint claim becomes available.</li>
+              <li>{GUIDE_OPNET_LABEL} to {GUIDE_ETHEREUM_LABEL}: burns require 4 Bitcoin block confirmations before the release claim becomes available.</li>
+              <li>Recipients are locked to the connected wallets (no custom recipients).</li>
               <li>Monitor your deposit and withdrawal progress in the bridge interface while claims are being prepared.</li>
             </ol>
-            <p className="muted">
-              Tip: if you are new, use the faucet section first, then run one small deposit and one small withdrawal so you can see the confirmation delays and claim steps end to end.
-            </p>
+            {ENABLE_TESTNET_FEATURES ? (
+              <p className="muted">
+                Tip: if you are new, use the faucet section first, then run one small deposit and one small withdrawal so you can see the confirmation delays and claim steps end to end.
+              </p>
+            ) : null}
             <div className="actions">
               <button className="primary" onClick={() => closeUxGuide(false)}>
                 Start Using Bridge
@@ -2467,7 +2521,7 @@ export function App() {
           >
             <div className="wallet-connect-head">
               <p className="eyebrow" id="wallet-connect-title">Wallet Connect</p>
-              <button type="button" onClick={() => setShowWalletModal(false)}>Close</button>
+              <button type="button" aria-label="Close wallet connect" title="Close wallet connect" onClick={() => setShowWalletModal(false)}><CloseIcon /></button>
             </div>
             <article className="wallet-linker wallet-connect-panel">
               <div className="mini-grid wallet-options-grid">
@@ -2477,7 +2531,7 @@ export function App() {
                     onClick={opConnected ? disconnect : connectOpWallet}
                     disabled={connecting && !opConnected}
                     aria-label={opConnected ? 'Disconnect OP Wallet' : 'Connect OP Wallet'}
-                    title={opConnected ? 'Disconnect OP Wallet' : 'Connect OP Wallet (OPNet testnet)'}
+                    title={opConnected ? 'Disconnect OP Wallet' : `Connect OP Wallet (${OPNET_NETWORK_LABEL})`}
                   >
                     <img
                       className="wallet-provider-logo"
@@ -2486,7 +2540,7 @@ export function App() {
                     />
                   </button>
                   <h3>OP Wallet</h3>
-                  <p><strong>Status:</strong> {opWalletReady ? '✓ (OPNet testnet)' : opConnected ? '❌ (Wrong network)' : '❌'}</p>
+                  <p><strong>Status:</strong> {opWalletReady ? `✓ (${OPNET_NETWORK_LABEL})` : opConnected ? '❌ (Wrong network)' : '❌'}</p>
                   <p><strong>Address:</strong> <code>{short(walletAddress)}</code></p>
                 </div>
                 <div>
@@ -2495,7 +2549,7 @@ export function App() {
                       className={`wallet-provider-logo-button ${ethConnected && evmWalletType === 'metamask' ? 'active' : ''}`}
                       onClick={ethConnected && evmWalletType === 'metamask' ? disconnectEvmWallet : connectMetaMask}
                       aria-label={ethConnected && evmWalletType === 'metamask' ? 'Disconnect MetaMask' : 'Connect MetaMask'}
-                      title={ethConnected && evmWalletType === 'metamask' ? 'Disconnect MetaMask' : 'Connect MetaMask (Sepolia)'}
+                      title={ethConnected && evmWalletType === 'metamask' ? 'Disconnect MetaMask' : `Connect MetaMask (${ETHEREUM_NETWORK.shortName})`}
                     >
                       <img className="wallet-provider-logo" src="/branding/metamask.svg" alt="MetaMask" />
                     </button>
@@ -2503,18 +2557,18 @@ export function App() {
                       className={`wallet-provider-logo-button ${ethConnected && evmWalletType === 'rabby' ? 'active' : ''}`}
                       onClick={ethConnected && evmWalletType === 'rabby' ? disconnectEvmWallet : connectRabby}
                       aria-label={ethConnected && evmWalletType === 'rabby' ? 'Disconnect Rabby' : 'Connect Rabby'}
-                      title={ethConnected && evmWalletType === 'rabby' ? 'Disconnect Rabby' : 'Connect Rabby (Sepolia)'}
+                      title={ethConnected && evmWalletType === 'rabby' ? 'Disconnect Rabby' : `Connect Rabby (${ETHEREUM_NETWORK.shortName})`}
                     >
                       <img className="wallet-provider-logo" src="/branding/rabby.svg" alt="Rabby" />
                     </button>
                   </div>
                   <h3>EVM Wallet</h3>
-                  <p><strong>Status:</strong> {ethWalletReady ? '✓ (Sepolia)' : ethConnected ? '❌ (Wrong network)' : '❌'}</p>
+                  <p><strong>Status:</strong> {ethWalletReady ? `✓ (${ETHEREUM_NETWORK.shortName})` : ethConnected ? '❌ (Wrong network)' : '❌'}</p>
                   <p><strong>Address:</strong> <code>{ethConnected ? short(ethAddress) : '-'}</code></p>
-                  {ethConnected && !onSepolia ? (
+                  {ethConnected && !onExpectedEthereumNetwork ? (
                     <div className="actions">
-                      <button type="button" onClick={switchToSepolia}>
-                        Switch to Sepolia
+                      <button type="button" onClick={switchToEthereumNetwork}>
+                        Switch to {ETHEREUM_NETWORK.shortName}
                       </button>
                     </div>
                   ) : null}
@@ -2525,7 +2579,7 @@ export function App() {
         </div>
       ) : null}
 
-      {showFaucetModal ? (
+      {ENABLE_TESTNET_FEATURES && showFaucetModal ? (
         <div className="wallet-connect-overlay" role="presentation" onClick={() => setShowFaucetModal(false)}>
           <section
             className="wallet-connect-dialog card"
@@ -2536,7 +2590,7 @@ export function App() {
           >
             <div className="wallet-connect-head">
               <p className="eyebrow" id="faucet-dialog-title">Get Test Tokens</p>
-              <button type="button" onClick={() => setShowFaucetModal(false)}>Close</button>
+              <button type="button" aria-label="Close test token dialog" title="Close test token dialog" onClick={() => setShowFaucetModal(false)}><CloseIcon /></button>
             </div>
             <section className="flow-card faucet-modal-panel">
               <div className="card-head faucet-head">
@@ -2608,7 +2662,7 @@ export function App() {
               </div>
               <p className={`notice ${faucetReady ? 'ok' : ''}`}>
                 {!faucetReady
-                  ? 'Connect an Ethereum wallet on Sepolia to use faucet'
+                  ? `Connect an Ethereum wallet on ${ETHEREUM_NETWORK.shortName} to use faucet`
                   : faucetCooldownActive
                     ? `Cooldown active. Wait ${formatDurationShort(faucetCooldownRemainingSec)}`
                     : 'Faucet ready'}
@@ -2619,7 +2673,7 @@ export function App() {
                 {faucetTxHash ? (
                   <>
                     {'\n'}
-                    <a href={`https://sepolia.etherscan.io/tx/${faucetTxHash}`} target="_blank" rel="noreferrer">
+                    <a href={`${ETHEREUM_NETWORK.txExplorerBaseUrl}${faucetTxHash}`} target="_blank" rel="noreferrer">
                       View on Etherscan ↗
                     </a>
                   </>
@@ -2641,7 +2695,7 @@ export function App() {
           >
             <div className="wallet-connect-head">
               <p className="eyebrow" id="api-dialog-title">API Status</p>
-              <button type="button" onClick={() => setShowApiModal(false)}>Close</button>
+              <button type="button" aria-label="Close API dialog" title="Close API dialog" onClick={() => setShowApiModal(false)}><CloseIcon /></button>
             </div>
             <section className="status-panel api-modal-panel">
               <div className="card-head api-status-head">
@@ -2737,7 +2791,7 @@ export function App() {
                   alt="OPbridge"
                 />
               </div>
-              <p className="eyebrow">OP_BRIDGE TESTNET LIVE</p>
+              <p className="eyebrow">{HERO_NETWORK_LABEL}</p>
               <div className="brand-meta">
                 <div className="powered-by">
                   <span>Powered by</span>
@@ -2754,6 +2808,20 @@ export function App() {
                     />
                   </a>
                 </div>
+                <a
+                  className="brand-social-link"
+                  href="https://github.com/tgeuscr/opbridge"
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="View OP_BRIDGE on GitHub"
+                  title="View OP_BRIDGE on GitHub"
+                >
+                  <img
+                    src={themeMode === 'dark' ? '/branding/github_dark.svg' : '/branding/github.svg'}
+                    alt=""
+                    aria-hidden="true"
+                  />
+                </a>
                 <a
                   className="brand-social-link"
                   href="https://x.com/opbridgebtc"
@@ -2780,7 +2848,7 @@ export function App() {
                 </a>
               </div>
             </div>
-            <div className="hero-actions">
+            <div className={`hero-actions hero-actions--${APP_NETWORK_MODE}`}>
               <button
                 type="button"
                 className="hero-api-button"
@@ -2794,13 +2862,6 @@ export function App() {
                 onClick={() => setShowWalletModal(true)}
               >
                 {walletPairReady ? 'Connected' : 'Connect'}
-              </button>
-              <button
-                type="button"
-                className="hero-faucet-button"
-                onClick={() => setShowFaucetModal(true)}
-              >
-                Get Test Tokens
               </button>
               <button
                 type="button"
@@ -2825,6 +2886,15 @@ export function App() {
                   {themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
                 </span>
               </button>
+              {ENABLE_TESTNET_FEATURES ? (
+                <button
+                  type="button"
+                  className="hero-faucet-button"
+                  onClick={() => setShowFaucetModal(true)}
+                >
+                  Get Test Tokens
+                </button>
+              ) : null}
             </div>
           </div>
         </section>
@@ -2936,7 +3006,7 @@ export function App() {
               {depositApproveTxHash ? (
                 <>
                   {'\n'}
-                  <a href={`https://sepolia.etherscan.io/tx/${depositApproveTxHash}`} target="_blank" rel="noreferrer">
+                  <a href={`${ETHEREUM_NETWORK.txExplorerBaseUrl}${depositApproveTxHash}`} target="_blank" rel="noreferrer">
                     View approve tx on Etherscan ↗
                   </a>
                 </>
@@ -2944,7 +3014,7 @@ export function App() {
               {depositTxHash ? (
                 <>
                   {'\n'}
-                  <a href={`https://sepolia.etherscan.io/tx/${depositTxHash}`} target="_blank" rel="noreferrer">
+                  <a href={`${ETHEREUM_NETWORK.txExplorerBaseUrl}${depositTxHash}`} target="_blank" rel="noreferrer">
                     View deposit tx on Etherscan ↗
                   </a>
                 </>
@@ -3052,7 +3122,7 @@ export function App() {
               {claimReleaseTxHash ? (
                 <>
                   {'\n'}
-                  <a href={`https://sepolia.etherscan.io/tx/${claimReleaseTxHash}`} target="_blank" rel="noreferrer">
+                  <a href={`${ETHEREUM_NETWORK.txExplorerBaseUrl}${claimReleaseTxHash}`} target="_blank" rel="noreferrer">
                     View withdrawal tx on Etherscan ↗
                   </a>
                 </>
@@ -3075,10 +3145,19 @@ export function App() {
               aria-label="Dismiss bridge status popup"
               title="Dismiss bridge status popup"
             >
-              Close
+              <CloseIcon />
             </button>
           </div>
           <p className="muted">{activeBridgeNotice.message}</p>
+          {activeBridgeNotice.links?.length ? (
+            <div className="actions">
+              {activeBridgeNotice.links.map((link) => (
+                <a key={link.href} href={link.href} target="_blank" rel="noreferrer">
+                  {link.label} ↗
+                </a>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {bridgeConfirm ? (

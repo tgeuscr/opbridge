@@ -37,6 +37,7 @@ Browser-safe only.
 - `VITE_OPNET_WETH_ADDRESS`
 - `VITE_OPNET_PAXG_ADDRESS`
 - `VITE_OPNET_BRIDGE_ADDRESS`
+- `VITE_APP_NETWORK_MODE` (`testnet` or `mainnet`; use `mainnet` to disable testnet-only UI such as the faucet)
 - `VITE_ETHEREUM_GAS_LIMIT_CAP` (default `15000000`, must stay below chain cap)
 - `VITE_BRIDGE_FEE_PERCENT` (default `0.5`, expressed as a percent)
 - `VITE_OPNET_FEE_RATE` (default `2`)
@@ -56,6 +57,7 @@ VITE_OPNET_WBTC_ADDRESS=op...
 VITE_OPNET_WETH_ADDRESS=op...
 VITE_OPNET_PAXG_ADDRESS=op...
 VITE_OPNET_BRIDGE_ADDRESS=op...
+VITE_APP_NETWORK_MODE=testnet
 VITE_ETHEREUM_GAS_LIMIT_CAP=15000000
 VITE_BRIDGE_FEE_PERCENT=0.5
 VITE_OPNET_FEE_RATE=2
@@ -83,6 +85,7 @@ Set env vars (Vercel Project Settings -> Environment Variables):
 - `VITE_OPNET_WETH_ADDRESS`
 - `VITE_OPNET_PAXG_ADDRESS`
 - `VITE_OPNET_BRIDGE_ADDRESS`
+- `VITE_APP_NETWORK_MODE`
 - `VITE_ETHEREUM_GAS_LIMIT_CAP`
 - `VITE_BRIDGE_FEE_PERCENT`
 - `VITE_OPNET_FEE_RATE`
