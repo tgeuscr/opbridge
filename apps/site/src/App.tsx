@@ -46,7 +46,7 @@ const ETHEREUM_NETWORK = APP_NETWORK_MODE === 'mainnet'
       blockExplorerBaseUrl: 'https://sepolia.etherscan.io',
       txExplorerBaseUrl: 'https://sepolia.etherscan.io/tx/',
     };
-const OPNET_NETWORK_LABEL = APP_NETWORK_MODE === 'mainnet' ? 'OPNet mainnet' : 'OPNet testnet';
+const OPNET_NETWORK_LABEL = APP_NETWORK_MODE === 'mainnet' ? 'OP_NET mainnet' : 'OP_NET testnet';
 const OPNET_NETWORK_QUERY = APP_NETWORK_MODE === 'mainnet' ? 'mainnet' : 'op_testnet';
 const HERO_NETWORK_LABEL = APP_NETWORK_MODE === 'mainnet' ? 'OP_BRIDGE MAINNET LIVE' : 'OP_BRIDGE TESTNET LIVE';
 const DOCUMENT_TITLE = APP_NETWORK_MODE === 'mainnet' ? 'OP_BRIDGE | Mainnet' : 'OP_BRIDGE | Testnet';
@@ -1480,6 +1480,14 @@ export function App() {
         message: 'Your OP_WALLET confirmation is being processed. Once the claim lands, your bridged balance will update below.',
         links: claimMintOpnetTxId ? [{ href: buildOpscanTxUrl(claimMintOpnetTxId), label: 'View mint tx on OPScan' }] : undefined,
       };
+    } else if (claimMintOpnetTxId) {
+      bridgeNotice = {
+        key: `claim-mint-submitted:${claimMintOpnetTxId}`,
+        eyebrow: 'Deposit Claim',
+        title: 'Claim submitted',
+        message: 'Your deposit claim was submitted. You can track it on OPScan below while the balance update settles.',
+        links: [{ href: buildOpscanTxUrl(claimMintOpnetTxId), label: 'View mint tx on OPScan' }],
+      };
     } else if (readyMintCandidates.length > 0) {
       bridgeNotice = {
         key: `claim-ready:${readyMintCandidates.length}:${readyMintCandidates.map((item) => item.depositId ?? item.mintSubmission?.nonce ?? '').join(',')}`,
@@ -1492,7 +1500,7 @@ export function App() {
         key: `deposit-wait:${depositTxHash}`,
         eyebrow: 'Deposit Submitted',
         title: 'Waiting for claim candidate',
-        message: 'Your deposit is confirmed. Relayers are preparing the deposit claim candidate now. Keep this tab open or use Refresh Ready Deposits.',
+        message: 'Your deposit claim will be available shortly after 10 Ethereum blocks are confirmed. Keep this tab open or use Refresh Ready Deposits.',
         links: [{ href: `${ETHEREUM_NETWORK.txExplorerBaseUrl}${depositTxHash}`, label: 'View deposit tx on Etherscan' }],
       };
     } else if (depositBusy || depositApproveTxHash) {
@@ -1517,6 +1525,14 @@ export function App() {
           ? [{ href: `${ETHEREUM_NETWORK.txExplorerBaseUrl}${claimReleaseTxHash}`, label: 'View withdrawal tx on Etherscan' }]
           : undefined,
       };
+    } else if (claimReleaseTxHash) {
+      bridgeNotice = {
+        key: `claim-release-submitted:${claimReleaseTxHash}`,
+        eyebrow: 'Withdrawal Claim',
+        title: 'Claim submitted',
+        message: 'Your withdrawal claim was submitted. You can track it on Etherscan below while finalization settles.',
+        links: [{ href: `${ETHEREUM_NETWORK.txExplorerBaseUrl}${claimReleaseTxHash}`, label: 'View withdrawal tx on Etherscan' }],
+      };
     } else if (readyReleaseCandidates.length > 0) {
       bridgeNotice = {
         key: `withdrawal-ready:${readyReleaseCandidates.length}:${readyReleaseCandidates.map((item) => item.withdrawalId ?? item.releaseSubmission?.withdrawalId ?? '').join(',')}`,
@@ -1529,7 +1545,7 @@ export function App() {
         key: `withdrawal-wait:${burnOpnetTxId}`,
         eyebrow: 'Withdrawal Submitted',
         title: 'Waiting for claim candidate',
-        message: 'Your OPNet burn is confirmed. Relayers are preparing the withdrawal claim candidate now. Keep this tab open or use Refresh Ready Withdrawals.',
+        message: 'Your withdrawal claim will be available shortly after 4 Bitcoin blocks are confirmed. Keep this tab open or use Refresh Ready Withdrawals.',
         links: [{ href: buildOpscanTxUrl(burnOpnetTxId), label: 'View burn tx on OPScan' }],
       };
     } else if (burnBusy) {
@@ -2549,7 +2565,7 @@ export function App() {
                       className={`wallet-provider-logo-button ${ethConnected && evmWalletType === 'metamask' ? 'active' : ''}`}
                       onClick={ethConnected && evmWalletType === 'metamask' ? disconnectEvmWallet : connectMetaMask}
                       aria-label={ethConnected && evmWalletType === 'metamask' ? 'Disconnect MetaMask' : 'Connect MetaMask'}
-                      title={ethConnected && evmWalletType === 'metamask' ? 'Disconnect MetaMask' : `Connect MetaMask (${ETHEREUM_NETWORK.shortName})`}
+                      title={ethConnected && evmWalletType === 'metamask' ? 'Disconnect MetaMask' : `Connect MetaMask (${GUIDE_ETHEREUM_LABEL})`}
                     >
                       <img className="wallet-provider-logo" src="/branding/metamask.svg" alt="MetaMask" />
                     </button>
@@ -2557,18 +2573,18 @@ export function App() {
                       className={`wallet-provider-logo-button ${ethConnected && evmWalletType === 'rabby' ? 'active' : ''}`}
                       onClick={ethConnected && evmWalletType === 'rabby' ? disconnectEvmWallet : connectRabby}
                       aria-label={ethConnected && evmWalletType === 'rabby' ? 'Disconnect Rabby' : 'Connect Rabby'}
-                      title={ethConnected && evmWalletType === 'rabby' ? 'Disconnect Rabby' : `Connect Rabby (${ETHEREUM_NETWORK.shortName})`}
+                      title={ethConnected && evmWalletType === 'rabby' ? 'Disconnect Rabby' : `Connect Rabby (${GUIDE_ETHEREUM_LABEL})`}
                     >
                       <img className="wallet-provider-logo" src="/branding/rabby.svg" alt="Rabby" />
                     </button>
                   </div>
                   <h3>EVM Wallet</h3>
-                  <p><strong>Status:</strong> {ethWalletReady ? `✓ (${ETHEREUM_NETWORK.shortName})` : ethConnected ? '❌ (Wrong network)' : '❌'}</p>
+                  <p><strong>Status:</strong> {ethWalletReady ? `✓ (${GUIDE_ETHEREUM_LABEL})` : ethConnected ? '❌ (Wrong network)' : '❌'}</p>
                   <p><strong>Address:</strong> <code>{ethConnected ? short(ethAddress) : '-'}</code></p>
                   {ethConnected && !onExpectedEthereumNetwork ? (
                     <div className="actions">
                       <button type="button" onClick={switchToEthereumNetwork}>
-                        Switch to {ETHEREUM_NETWORK.shortName}
+                        Switch to {GUIDE_ETHEREUM_LABEL}
                       </button>
                     </div>
                   ) : null}
