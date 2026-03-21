@@ -108,6 +108,7 @@ type BridgeNoticeState = {
   eyebrow: string;
   title: string;
   message: string;
+  showSpinner?: boolean;
   links?: Array<{
     href: string;
     label: string;
@@ -1478,6 +1479,7 @@ export function App() {
         eyebrow: 'Deposit Claim',
         title: 'Claim in progress',
         message: 'Your OP_WALLET confirmation is being processed. Once the claim lands, your bridged balance will update below.',
+        showSpinner: true,
         links: claimMintOpnetTxId ? [{ href: buildOpscanTxUrl(claimMintOpnetTxId), label: 'View mint tx on OPScan' }] : undefined,
       };
     } else if (claimMintOpnetTxId) {
@@ -1501,6 +1503,7 @@ export function App() {
         eyebrow: 'Deposit Submitted',
         title: 'Waiting for claim candidate',
         message: 'Your deposit claim will be available shortly after 10 Ethereum blocks are confirmed. Keep this tab open or use Refresh Ready Deposits.',
+        showSpinner: true,
         links: [{ href: `${ETHEREUM_NETWORK.txExplorerBaseUrl}${depositTxHash}`, label: 'View deposit tx on Etherscan' }],
       };
     } else if (depositBusy || depositApproveTxHash) {
@@ -1509,6 +1512,7 @@ export function App() {
         eyebrow: 'Deposit Flow',
         title: 'Deposit in progress',
         message: 'Follow the wallet prompts to approve and submit the deposit. The claim candidate will appear here after the deposit is indexed.',
+        showSpinner: true,
         links: depositApproveTxHash
           ? [{ href: `${ETHEREUM_NETWORK.txExplorerBaseUrl}${depositApproveTxHash}`, label: 'View approve tx on Etherscan' }]
           : undefined,
@@ -1521,6 +1525,7 @@ export function App() {
         eyebrow: 'Withdrawal Claim',
         title: 'Claim in progress',
         message: 'Your EVM wallet confirmation is being processed. Once the claim lands, the withdrawal will finalize on Ethereum.',
+        showSpinner: true,
         links: claimReleaseTxHash
           ? [{ href: `${ETHEREUM_NETWORK.txExplorerBaseUrl}${claimReleaseTxHash}`, label: 'View withdrawal tx on Etherscan' }]
           : undefined,
@@ -1546,6 +1551,7 @@ export function App() {
         eyebrow: 'Withdrawal Submitted',
         title: 'Waiting for claim candidate',
         message: 'Your withdrawal claim will be available shortly after 4 Bitcoin blocks are confirmed. Keep this tab open or use Refresh Ready Withdrawals.',
+        showSpinner: true,
         links: [{ href: buildOpscanTxUrl(burnOpnetTxId), label: 'View burn tx on OPScan' }],
       };
     } else if (burnBusy) {
@@ -1554,6 +1560,7 @@ export function App() {
         eyebrow: 'Withdrawal Flow',
         title: 'Burn in progress',
         message: 'Follow the OP_WALLET prompts to submit the burn. The withdrawal claim candidate will appear here after relayers index it.',
+        showSpinner: true,
       };
     }
   }
@@ -2546,16 +2553,16 @@ export function App() {
                     className={`wallet-provider-logo-button ${opConnected ? 'active' : ''}`}
                     onClick={opConnected ? disconnect : connectOpWallet}
                     disabled={connecting && !opConnected}
-                    aria-label={opConnected ? 'Disconnect OP Wallet' : 'Connect OP Wallet'}
-                    title={opConnected ? 'Disconnect OP Wallet' : `Connect OP Wallet (${OPNET_NETWORK_LABEL})`}
+                    aria-label={opConnected ? 'Disconnect OP_WALLET' : 'Connect OP_WALLET'}
+                    title={opConnected ? 'Disconnect OP_WALLET' : `Connect OP_WALLET (${OPNET_NETWORK_LABEL})`}
                   >
                     <img
                       className="wallet-provider-logo"
                       src={themeMode === 'dark' && !opConnected ? '/branding/op-dark.svg' : '/branding/op.svg'}
-                      alt="OP Wallet"
+                      alt="OP_WALLET"
                     />
                   </button>
-                  <h3>OP Wallet</h3>
+                  <h3>OP_WALLET</h3>
                   <p><strong>Status:</strong> {opWalletReady ? `✓ (${OPNET_NETWORK_LABEL})` : opConnected ? '❌ (Wrong network)' : '❌'}</p>
                   <p><strong>Address:</strong> <code>{short(walletAddress)}</code></p>
                 </div>
@@ -3164,7 +3171,10 @@ export function App() {
               <CloseIcon />
             </button>
           </div>
-          <p className="muted">{activeBridgeNotice.message}</p>
+          <div className="bridge-status-popup-body">
+            {activeBridgeNotice.showSpinner ? <span className="bridge-status-spinner" aria-hidden="true" /> : null}
+            <p className="muted">{activeBridgeNotice.message}</p>
+          </div>
           {activeBridgeNotice.links?.length ? (
             <div className="actions">
               {activeBridgeNotice.links.map((link) => (
