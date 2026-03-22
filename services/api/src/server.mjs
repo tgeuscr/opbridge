@@ -113,7 +113,7 @@ function readJsonBody(req) {
 
 function isAuthorized(req, expectedToken) {
   const token = expectedToken?.trim();
-  if (!token) return true;
+  if (!token) return false;
   const provided = String(req.headers['x-relayer-token'] || '').trim();
   return Boolean(provided) && provided === token;
 }

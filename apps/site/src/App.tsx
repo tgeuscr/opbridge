@@ -1,6 +1,6 @@
 import { SupportedWallets, useWalletConnect } from '@btc-vision/walletconnect';
 import { networks } from '@btc-vision/bitcoin';
-import { Address, UnisatSigner } from '@btc-vision/transaction';
+import { Address, type Unisat, UnisatSigner } from '@btc-vision/transaction';
 import { ABIDataTypes, BitcoinAbiTypes, OP_NET_ABI, getContract } from 'opnet';
 import { useEffect, useState, type ReactNode } from 'react';
 
@@ -48,6 +48,7 @@ const ETHEREUM_NETWORK = APP_NETWORK_MODE === 'mainnet'
     };
 const OPNET_NETWORK_LABEL = APP_NETWORK_MODE === 'mainnet' ? 'OP_NET mainnet' : 'OP_NET testnet';
 const OPNET_NETWORK_QUERY = APP_NETWORK_MODE === 'mainnet' ? 'mainnet' : 'op_testnet';
+const OPNET_RUNTIME_NETWORK = APP_NETWORK_MODE === 'mainnet' ? networks.bitcoin : networks.opnetTestnet;
 const HERO_NETWORK_LABEL = APP_NETWORK_MODE === 'mainnet' ? 'OP_BRIDGE MAINNET LIVE' : 'OP_BRIDGE TESTNET LIVE';
 const DOCUMENT_TITLE = APP_NETWORK_MODE === 'mainnet' ? 'OP_BRIDGE | Mainnet' : 'OP_BRIDGE | Testnet';
 const GUIDE_ETHEREUM_LABEL = APP_NETWORK_MODE === 'mainnet' ? 'Ethereum mainnet' : 'Ethereum Sepolia testnet';
@@ -127,6 +128,54 @@ type FaucetAssetState = {
 type OpnetAssetBalanceState = {
   balanceRaw: bigint | null;
   error?: string;
+};
+
+type OpnetCallResult = {
+  properties?: Record<string, unknown>;
+  revert?: string;
+};
+
+type OpnetSendTransactionParams = {
+  signer: unknown;
+  mldsaSigner: null;
+  refundTo: string;
+  maximumAllowedSatToSpend: bigint;
+  feeRate: number;
+  network: (typeof networks.bitcoin) | (typeof networks.opnetTestnet);
+};
+
+type OpnetSimulationResult = OpnetCallResult & {
+  sendTransaction: (params: OpnetSendTransactionParams) => Promise<{ transactionId?: string }>;
+};
+
+type OpnetBalanceContract = {
+  balanceOf: (account: Address) => Promise<OpnetCallResult>;
+};
+
+type OpnetBridgeContractBase = {
+  setSender?: (sender: Address) => void;
+};
+
+type OpnetBurnBridgeContract = OpnetBridgeContractBase & {
+  requestBurn: (
+    assetId: number,
+    from: Address,
+    ethereumRecipient: Address,
+    amount: bigint,
+  ) => Promise<OpnetSimulationResult>;
+};
+
+type OpnetMintBridgeContract = OpnetBridgeContractBase & {
+  mintWithRelaySignatures: (
+    assetId: number,
+    ethereumUser: Uint8Array,
+    recipient: Address,
+    amount: bigint,
+    depositId: bigint,
+    attestationVersion: number,
+    relayIndexesPacked: Uint8Array,
+    relaySignaturesPacked: Uint8Array,
+  ) => Promise<OpnetSimulationResult>;
 };
 
 type MintSubmission = {
@@ -894,7 +943,7 @@ class OPWalletSigner extends UnisatSigner {
     if (!module) {
       throw new Error('OP_WALLET extension not found');
     }
-    return module as any;
+    return module as unknown as Unisat;
   }
 }
 
@@ -1792,9 +1841,14 @@ export function App() {
           }
 
           try {
-            const token = getContract(tokenAddress, OPNET_TOKEN_BALANCE_ABI as never, opnetProvider as never, networks.opnetTestnet);
-            const result = await (token as any).balanceOf(sender);
-            const properties = (result as { properties?: Record<string, unknown> })?.properties ?? {};
+            const token = getContract(
+              tokenAddress,
+              OPNET_TOKEN_BALANCE_ABI as never,
+              opnetProvider as never,
+              OPNET_RUNTIME_NETWORK,
+            ) as unknown as OpnetBalanceContract;
+            const result = await token.balanceOf(sender);
+            const properties = result.properties ?? {};
             const rawCandidate = properties.balance ?? Object.values(properties)[0];
             next[asset] = { balanceRaw: BigInt(rawCandidate as bigint | string | number) };
           } catch (error) {
@@ -1973,13 +2027,18 @@ export function App() {
       const sender = await resolveConnectedSender();
       if (!sender) throw new Error('Connected OP_WALLET sender address is unavailable.');
 
-      const bridge = getContract(OPNET_BRIDGE_ADDRESS, BRIDGE_BURN_ABI as never, opnetProvider as never, networks.opnetTestnet);
-      if (typeof (bridge as any).setSender === 'function') {
-        (bridge as any).setSender(sender);
+      const bridge = getContract(
+        OPNET_BRIDGE_ADDRESS,
+        BRIDGE_BURN_ABI as never,
+        opnetProvider as never,
+        OPNET_RUNTIME_NETWORK,
+      ) as unknown as OpnetBurnBridgeContract;
+      if (typeof bridge.setSender === 'function') {
+        bridge.setSender(sender);
       }
 
       setBurnStatus('Simulating burn request on OPNet...');
-      const simulation = await (bridge as any).requestBurn(
+      const simulation = await bridge.requestBurn(
         assetId,
         sender,
         ethereumRecipient,
@@ -2001,7 +2060,7 @@ export function App() {
         refundTo: walletAddress,
         maximumAllowedSatToSpend: OPNET_MAX_SAT_SPEND,
         feeRate: OPNET_FEE_RATE,
-        network: networks.opnetTestnet,
+        network: OPNET_RUNTIME_NETWORK,
       });
       const txId = String((tx as { transactionId?: string })?.transactionId || '').trim();
       if (txId) setBurnOpnetTxId(txId);
@@ -2246,13 +2305,18 @@ export function App() {
         2,
       );
       setClaimMintPreflight(preflightDetails);
-      const bridge = getContract(OPNET_BRIDGE_ADDRESS, BRIDGE_MINT_ABI as never, opnetProvider as never, networks.opnetTestnet);
-      if (typeof (bridge as { setSender?: (sender: Address) => void }).setSender === 'function') {
-        (bridge as { setSender: (sender: Address) => void }).setSender(sender);
+      const bridge = getContract(
+        OPNET_BRIDGE_ADDRESS,
+        BRIDGE_MINT_ABI as never,
+        opnetProvider as never,
+        OPNET_RUNTIME_NETWORK,
+      ) as unknown as OpnetMintBridgeContract;
+      if (typeof bridge.setSender === 'function') {
+        bridge.setSender(sender);
       }
 
       setClaimMintStatus(`Preflight OK.\n${preflightDetails}\nSimulating mint for depositId=${depositId.toString()}...`);
-      const simulation = await (bridge as any).mintWithRelaySignatures(
+      const simulation = await bridge.mintWithRelaySignatures(
         assetId,
         ethereumUser,
         recipient,
@@ -2277,7 +2341,7 @@ export function App() {
         refundTo: walletAddress,
         maximumAllowedSatToSpend: OPNET_MAX_SAT_SPEND,
         feeRate: OPNET_FEE_RATE,
-        network: networks.opnetTestnet,
+        network: OPNET_RUNTIME_NETWORK,
       });
       const txId = String((tx as { transactionId?: string })?.transactionId || '').trim();
       if (txId) setClaimMintOpnetTxId(txId);

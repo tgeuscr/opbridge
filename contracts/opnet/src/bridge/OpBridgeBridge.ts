@@ -382,9 +382,8 @@ export class OpBridgeBridge extends OP_NET {
         burnWriter.writeAddress(from);
         burnWriter.writeU256(amount);
 
-        Blockchain.call(token, burnWriter, true);
-
         this._processedWithdrawalsStore().set(withdrawalId, u256.One);
+        Blockchain.call(token, burnWriter, true);
         this.emitEvent(new BurnRequestedEvent(asset, from, ethereumRecipient, amount, withdrawalId));
 
         return new BytesWriter(0);
@@ -795,14 +794,14 @@ export class OpBridgeBridge extends OP_NET {
         depositId: u256,
         token: Address,
     ): void {
+        this._processedDepositsStore().set(depositId, u256.One);
+
         const mintWriter = new BytesWriter(4 + 32 + 32);
         mintWriter.writeSelector(TOKEN_MINT_SELECTOR);
         mintWriter.writeAddress(recipient);
         mintWriter.writeU256(amount);
 
         Blockchain.call(token, mintWriter, true);
-
-        this._processedDepositsStore().set(depositId, u256.One);
         this.emitEvent(new MintFinalizedEvent(asset, recipient, amount, depositId));
     }
 

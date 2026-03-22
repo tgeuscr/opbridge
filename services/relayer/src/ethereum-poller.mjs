@@ -20,10 +20,19 @@ const VAULT_PAUSED_SELECTOR = "0x5c975abb";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
-const DEFAULT_MAPPING_FILE = path.resolve(REPO_ROOT, "contracts/ethereum/deployments/sepolia-latest.json");
 const DEFAULT_OUTPUT_FILE = path.resolve(REPO_ROOT, "services/relayer/.data/pending-attestations.json");
 const DIRECTION_ETH_TO_OP_MINT = 1;
 const DEFAULT_ATTESTATION_VERSION = 1;
+
+function defaultMappingFile() {
+  const ethereumNetwork = String(process.env.ETHEREUM_NETWORK ?? "").trim().toLowerCase();
+  const opnetNetwork = String(process.env.OPNET_NETWORK ?? "").trim().toLowerCase();
+  const manifestName =
+    ethereumNetwork === "ethereum" || opnetNetwork === "mainnet"
+      ? "ethereum-latest.json"
+      : "sepolia-latest.json";
+  return path.resolve(REPO_ROOT, "contracts/ethereum/deployments", manifestName);
+}
 
 function hexToBigInt(hex) {
   return BigInt(hex);
@@ -352,7 +361,7 @@ Optional:
   RELAYER_SIGNER_MODE (default: kms)
   RELAYER_INDEX (required)
   RELAYER_KMS_KEY_ID or KMS_OPNET_KEY_ID (required)
-  RELAYER_MAPPING_FILE (default: ${DEFAULT_MAPPING_FILE})
+  RELAYER_MAPPING_FILE (default: ${defaultMappingFile()})
   OPNET_BRIDGE_ADDRESS (required only if mapping file does not include opnet.bridgeAddress)
   OPNET_BRIDGE_HEX (32-byte hex bridge address used for signature hash; required when bridgeAddress is op...)
   ATTESTATION_VERSION (default: ${DEFAULT_ATTESTATION_VERSION})
@@ -368,7 +377,7 @@ Example:
     return;
   }
 
-  const mappingFile = process.env.RELAYER_MAPPING_FILE || DEFAULT_MAPPING_FILE;
+  const mappingFile = process.env.RELAYER_MAPPING_FILE || defaultMappingFile();
   const outputFile = process.env.RELAYER_OUTPUT_FILE || DEFAULT_OUTPUT_FILE;
   const relayerId = process.env.RELAYER_ID?.trim() || "relayer-0";
   const pollIntervalMs = Number(process.env.RELAYER_POLL_INTERVAL_MS || 30000);

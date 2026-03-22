@@ -19,7 +19,6 @@ import { resolveSecretBackedValue } from "./secret-provider.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
-const DEFAULT_MAPPING_FILE = path.resolve(REPO_ROOT, "contracts/ethereum/deployments/sepolia-latest.json");
 const DEFAULT_OUTPUT_FILE = path.resolve(REPO_ROOT, "services/relayer/.data/release-attestations/relayer-opnet.json");
 const DIRECTION_OP_TO_ETH_RELEASE = 2;
 const DEFAULT_ATTESTATION_VERSION = 1;
@@ -28,6 +27,16 @@ const TESTNET_OPNET_RPC_URL = "https://testnet.opnet.org";
 const DISCOVERY_DEBUG_ENABLED =
   process.env.RELAYER_DEBUG_DISCOVERY?.trim() === "1" ||
   process.env.RELAYER_DEBUG_DISCOVERY?.trim()?.toLowerCase() === "true";
+
+function defaultMappingFile() {
+  const ethereumNetwork = String(process.env.ETHEREUM_NETWORK ?? "").trim().toLowerCase();
+  const opnetNetwork = String(process.env.OPNET_NETWORK ?? "").trim().toLowerCase();
+  const manifestName =
+    ethereumNetwork === "ethereum" || opnetNetwork === "mainnet"
+      ? "ethereum-latest.json"
+      : "sepolia-latest.json";
+  return path.resolve(REPO_ROOT, "contracts/ethereum/deployments", manifestName);
+}
 
 const BRIDGE_EVENTS_ABI = [
   {
@@ -585,7 +594,7 @@ Required:
 Optional:
   OPNET_NETWORK (default: regtest; regtest|testnet|mainnet)
   RELAYER_ID (default: relayer-opnet)
-  RELAYER_MAPPING_FILE (default: ${DEFAULT_MAPPING_FILE})
+  RELAYER_MAPPING_FILE (default: ${defaultMappingFile()})
   ATTESTATION_VERSION (default: ${DEFAULT_ATTESTATION_VERSION})
   RELAYER_OUTPUT_FILE (default: ${DEFAULT_OUTPUT_FILE})
   RELAYER_START_BLOCK (default: latest-20)
@@ -601,7 +610,7 @@ ECDSA relay signer configuration:
     return;
   }
 
-  const mappingFile = process.env.RELAYER_MAPPING_FILE?.trim() || DEFAULT_MAPPING_FILE;
+  const mappingFile = process.env.RELAYER_MAPPING_FILE?.trim() || defaultMappingFile();
   const mapping = parseMapping(fs.readFileSync(mappingFile, "utf8"));
   const opnetNetworkName = process.env.OPNET_NETWORK || mapping.opnet.network;
   const opnetNetwork = resolveOPNetNetwork(opnetNetworkName);
