@@ -66,6 +66,8 @@ Optional actions (any combination):
   ETHEREUM_VAULT_PAUSED=true|false
   ETH_VAULT_FEE_BPS=<0..10000>           # pause-guarded in contract
   ETH_VAULT_FEE_RECIPIENT=0x...
+  ETH_VAULT_FEE_WHITELIST_ACCOUNT=0x...
+  ETH_VAULT_FEE_WHITELIST_ENABLED=true|false
 
 Notes:
   - If pausing and setting fee bps in the same run, pause is applied first.
@@ -83,10 +85,21 @@ Notes:
   );
   const feeBpsTarget = parseOptionalFeeBps(process.env.ETH_VAULT_FEE_BPS);
   const feeRecipientTarget = process.env.ETH_VAULT_FEE_RECIPIENT?.trim() || "";
+  const feeWhitelistAccountTarget = process.env.ETH_VAULT_FEE_WHITELIST_ACCOUNT?.trim() || "";
+  const feeWhitelistEnabledTarget = parseOptionalBool(
+    process.env.ETH_VAULT_FEE_WHITELIST_ENABLED,
+    "ETH_VAULT_FEE_WHITELIST_ENABLED",
+  );
 
-  if (pausedTarget === undefined && feeBpsTarget === undefined && !feeRecipientTarget) {
+  if ((feeWhitelistAccountTarget && feeWhitelistEnabledTarget === undefined) || (!feeWhitelistAccountTarget && feeWhitelistEnabledTarget !== undefined)) {
     throw new Error(
-      "No actions requested. Set at least one of ETHEREUM_VAULT_PAUSED, ETH_VAULT_FEE_BPS, ETH_VAULT_FEE_RECIPIENT.",
+      "ETH_VAULT_FEE_WHITELIST_ACCOUNT and ETH_VAULT_FEE_WHITELIST_ENABLED must be set together.",
+    );
+  }
+
+  if (pausedTarget === undefined && feeBpsTarget === undefined && !feeRecipientTarget && !feeWhitelistAccountTarget) {
+    throw new Error(
+      "No actions requested. Set at least one of ETHEREUM_VAULT_PAUSED, ETH_VAULT_FEE_BPS, ETH_VAULT_FEE_RECIPIENT, ETH_VAULT_FEE_WHITELIST_ACCOUNT+ETH_VAULT_FEE_WHITELIST_ENABLED.",
     );
   }
 
@@ -110,9 +123,11 @@ Notes:
     "function paused() view returns (bool)",
     "function feeBps() view returns (uint16)",
     "function feeRecipient() view returns (address)",
+    "function feeWhitelist(address account) view returns (bool)",
     "function setPaused(bool nextPaused) external",
     "function setFeeBps(uint16 nextFeeBps) external",
     "function setFeeRecipient(address nextFeeRecipient) external",
+    "function setFeeWhitelist(address account, bool whitelisted) external",
   ];
   const vault = new ethers.Contract(vaultAddress, vaultAbi, signer);
 
@@ -151,6 +166,18 @@ Notes:
       console.log(`Set feeRecipient -> ${feeRecipientTarget}`);
     } else {
       console.log("Skipped setFeeRecipient (already matches)");
+    }
+  }
+
+  if (feeWhitelistAccountTarget) {
+    const normalizedAccount = ethers.getAddress(feeWhitelistAccountTarget);
+    const current = Boolean(await vault.feeWhitelist(normalizedAccount));
+    if (current !== feeWhitelistEnabledTarget) {
+      const tx = await vault.setFeeWhitelist(normalizedAccount, feeWhitelistEnabledTarget);
+      await tx.wait();
+      console.log(`Set feeWhitelist -> account=${normalizedAccount} enabled=${feeWhitelistEnabledTarget}`);
+    } else {
+      console.log(`Skipped setFeeWhitelist (already matches) for ${normalizedAccount}`);
     }
   }
 
