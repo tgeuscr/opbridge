@@ -105,21 +105,6 @@ const BRIDGE_EVENTS_ABI = [
   },
 ];
 
-function extractScalar(value) {
-  if (value == null) return value;
-  if (typeof value !== "object") return value;
-  if (Array.isArray(value) && value.length > 0) return extractScalar(value[0]);
-  if ("paused" in value) return extractScalar(value.paused);
-  if ("value" in value) return extractScalar(value.value);
-  if ("result" in value) return extractScalar(value.result);
-  if ("values" in value && Array.isArray(value.values) && value.values.length > 0) {
-    return extractScalar(value.values[0]);
-  }
-  const entries = Object.entries(value);
-  if (entries.length > 0) return extractScalar(entries[0][1]);
-  return value;
-}
-
 function requireEnv(name) {
   const value = process.env[name];
   if (!value || !value.trim()) {
@@ -1171,7 +1156,7 @@ ECDSA relay signer configuration:
         status: "ok",
         detail: JSON.stringify({
           sourceChain: opnetNetworkName,
-          bridgePaused: Boolean(extractScalar(heartbeatPausedResult)),
+          bridgePaused: heartbeatPausedResult?.properties?.paused === true,
           currentHead: Number(heartbeatHead),
           finalizedHead: heartbeatFinalizedHead >= 0n ? Number(heartbeatFinalizedHead) : null,
           minConfirmations,
