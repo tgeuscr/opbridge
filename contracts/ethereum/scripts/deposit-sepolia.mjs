@@ -1,23 +1,15 @@
 import fs from "node:fs";
-import path from "node:path";
 import process from "node:process";
 import { ethers } from "ethers";
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value || !value.trim()) {
-    throw new Error(`Missing required env var: ${name}`);
-  }
-  return value.trim();
-}
-
-function getEnv(...names) {
-  for (const name of names) {
-    const value = process.env[name];
-    if (value && value.trim()) return value.trim();
-  }
-  return "";
-}
+import {
+  assertExpectedChainId,
+  getDeploymentPath,
+  getDepositorPrivateKey,
+  getEnv,
+  getEthereumNetworkConfig,
+  getRpcUrl,
+  requireEnv,
+} from "./lib/network-config.mjs";
 
 function parseBytes32Recipient(raw) {
   const value = raw.trim();
@@ -54,21 +46,22 @@ function resolveAsset(assets, selector) {
 }
 
 async function main() {
+  const networkConfig = getEthereumNetworkConfig();
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
-    console.log(`Sepolia Approve + Deposit Script
+    console.log(`${networkConfig.label} Approve + Deposit Script
 
 Required:
-  ETHEREUM_RPC_URL (or SEPOLIA_RPC_URL fallback)
+  ${networkConfig.rpcEnv}
   ETHEREUM_DEPOSITOR_PRIVATE_KEY (or fallback: ETHEREUM_DEPLOYER_PRIVATE_KEY)
   ETHEREUM_DEPOSIT_ASSET (symbol or assetId, e.g. USDT or 0)
   ETHEREUM_DEPOSIT_AMOUNT (human units, e.g. 10.5)
   ETHEREUM_DEPOSIT_RECIPIENT (bytes32, OPNet recipient / hashed MLDSA key)
 
 Optional:
-  ETHEREUM_DEPLOYMENT_FILE (default: contracts/ethereum/deployments/sepolia-latest.json)
+  ETHEREUM_DEPLOYMENT_FILE (default: contracts/ethereum/deployments/${networkConfig.manifestLatestFile})
 
 Example:
-  ETHEREUM_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY> \\
+  ${networkConfig.rpcEnv}=https://... \\
   ETHEREUM_DEPOSITOR_PRIVATE_KEY=0x... \\
   ETHEREUM_DEPOSIT_ASSET=USDT \\
   ETHEREUM_DEPOSIT_AMOUNT=25 \\
@@ -79,19 +72,21 @@ Example:
   }
 
   const projectRoot = process.cwd();
-  const deploymentPath =
-    getEnv("ETHEREUM_DEPLOYMENT_FILE", "SEPOLIA_DEPLOYMENT_FILE") ||
-    path.join(projectRoot, "deployments", "sepolia-latest.json");
-  const rpcUrl = getEnv("ETHEREUM_RPC_URL", "SEPOLIA_RPC_URL") || requireEnv("SEPOLIA_RPC_URL");
-  const privateKey =
-    getEnv("ETHEREUM_DEPOSITOR_PRIVATE_KEY", "SEPOLIA_DEPOSITOR_PRIVATE_KEY") ||
-    getEnv("ETHEREUM_DEPLOYER_PRIVATE_KEY", "SEPOLIA_DEPLOYER_PRIVATE_KEY");
+  const deploymentPath = getDeploymentPath(projectRoot, networkConfig);
+  const rpcUrl = getRpcUrl(networkConfig);
+  const privateKey = getDepositorPrivateKey(networkConfig);
   if (!privateKey) {
     throw new Error("Missing required env var: ETHEREUM_DEPOSITOR_PRIVATE_KEY (or ETHEREUM_DEPLOYER_PRIVATE_KEY)");
   }
-  const assetSelector = parseAssetSelector(getEnv("ETHEREUM_DEPOSIT_ASSET", "SEPOLIA_DEPOSIT_ASSET") || requireEnv("SEPOLIA_DEPOSIT_ASSET"));
-  const amountHuman = getEnv("ETHEREUM_DEPOSIT_AMOUNT", "SEPOLIA_DEPOSIT_AMOUNT") || requireEnv("SEPOLIA_DEPOSIT_AMOUNT");
-  const recipient = parseBytes32Recipient(getEnv("ETHEREUM_DEPOSIT_RECIPIENT", "SEPOLIA_DEPOSIT_RECIPIENT") || requireEnv("SEPOLIA_DEPOSIT_RECIPIENT"));
+  const assetSelector = parseAssetSelector(
+    getEnv("ETHEREUM_DEPOSIT_ASSET", networkConfig.depositAssetEnv) || requireEnv(networkConfig.depositAssetEnv),
+  );
+  const amountHuman =
+    getEnv("ETHEREUM_DEPOSIT_AMOUNT", networkConfig.depositAmountEnv) || requireEnv(networkConfig.depositAmountEnv);
+  const recipient = parseBytes32Recipient(
+    getEnv("ETHEREUM_DEPOSIT_RECIPIENT", networkConfig.depositRecipientEnv) ||
+      requireEnv(networkConfig.depositRecipientEnv),
+  );
 
   if (!fs.existsSync(deploymentPath)) {
     throw new Error(`Deployment file not found: ${deploymentPath}`);
@@ -123,9 +118,7 @@ Example:
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   const signer = new ethers.Wallet(privateKey, provider);
   const chainId = (await provider.getNetwork()).chainId;
-  if (chainId !== 11155111n) {
-    throw new Error(`Expected Sepolia (11155111), got chainId=${chainId.toString()}`);
-  }
+  assertExpectedChainId(chainId, networkConfig);
 
   const tokenAbi = [
     "function approve(address spender, uint256 amount) external returns (bool)",
@@ -181,7 +174,7 @@ Example:
     JSON.stringify(
       {
         action: "ethereum/deposit/terminal",
-        network: "sepolia",
+        network: networkConfig.manifestPrefix,
         deploymentFile: deploymentPath,
         wallet: signer.address,
         vaultAddress: String(deployment.vaultAddress),

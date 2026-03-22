@@ -1,23 +1,14 @@
 import fs from "node:fs";
-import path from "node:path";
 import process from "node:process";
 import { ethers } from "ethers";
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value || !value.trim()) {
-    throw new Error(`Missing required env var: ${name}`);
-  }
-  return value.trim();
-}
-
-function getEnv(...names) {
-  for (const name of names) {
-    const value = process.env[name];
-    if (value && value.trim()) return value.trim();
-  }
-  return "";
-}
+import {
+  assertExpectedChainId,
+  getDeployerPrivateKey,
+  getDeploymentPath,
+  getEnv,
+  getEthereumNetworkConfig,
+  getRpcUrl,
+} from "./lib/network-config.mjs";
 
 function parseOptionalBool(raw, fieldName) {
   if (raw == null || String(raw).trim() === "") return undefined;
@@ -36,10 +27,8 @@ function parseOptionalFeeBps(raw) {
   return n;
 }
 
-function parseDeployment(projectRoot) {
-  const deploymentPath =
-    getEnv("ETHEREUM_DEPLOYMENT_FILE", "SEPOLIA_DEPLOYMENT_FILE") ||
-    path.join(projectRoot, "deployments", "sepolia-latest.json");
+function parseDeployment(projectRoot, networkConfig) {
+  const deploymentPath = getDeploymentPath(projectRoot, networkConfig);
   if (!fs.existsSync(deploymentPath)) {
     throw new Error(`Deployment file not found: ${deploymentPath}`);
   }
@@ -51,16 +40,17 @@ function parseDeployment(projectRoot) {
 }
 
 async function main() {
+  const networkConfig = getEthereumNetworkConfig();
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
-    console.log(`Vault Admin (Sepolia)
+    console.log(`Vault Admin (${networkConfig.label})
 
 Required:
-  ETHEREUM_RPC_URL (or SEPOLIA_RPC_URL fallback)
-  ETHEREUM_DEPLOYER_PRIVATE_KEY (or SEPOLIA_DEPLOYER_PRIVATE_KEY fallback)
+  ${networkConfig.rpcEnv}
+  ${networkConfig.deployerKeyEnv}
 
 Vault selection (one required):
   ETHEREUM_VAULT_ADDRESS
-  OR deployment file with vaultAddress (ETHEREUM_DEPLOYMENT_FILE or deployments/sepolia-latest.json)
+  OR deployment file with vaultAddress (ETHEREUM_DEPLOYMENT_FILE or deployments/${networkConfig.manifestLatestFile})
 
 Optional actions (any combination):
   ETHEREUM_VAULT_PAUSED=true|false
@@ -77,10 +67,10 @@ Notes:
   }
 
   const projectRoot = process.cwd();
-  const rpcUrl = getEnv("ETHEREUM_RPC_URL", "SEPOLIA_RPC_URL") || requireEnv("SEPOLIA_RPC_URL");
-  const privateKey = getEnv("ETHEREUM_DEPLOYER_PRIVATE_KEY", "SEPOLIA_DEPLOYER_PRIVATE_KEY") || requireEnv("SEPOLIA_DEPLOYER_PRIVATE_KEY");
+  const rpcUrl = getRpcUrl(networkConfig);
+  const privateKey = getDeployerPrivateKey(networkConfig);
   const pausedTarget = parseOptionalBool(
-    getEnv("ETHEREUM_VAULT_PAUSED", "SEPOLIA_VAULT_PAUSED"),
+    getEnv("ETHEREUM_VAULT_PAUSED", networkConfig.vaultPausedEnv),
     "ETHEREUM_VAULT_PAUSED",
   );
   const feeBpsTarget = parseOptionalFeeBps(process.env.ETH_VAULT_FEE_BPS);
@@ -104,9 +94,9 @@ Notes:
   }
 
   let deploymentPath = "";
-  let vaultAddress = getEnv("ETHEREUM_VAULT_ADDRESS", "SEPOLIA_VAULT_ADDRESS");
+  let vaultAddress = getEnv("ETHEREUM_VAULT_ADDRESS", networkConfig.vaultAddressEnv);
   if (!vaultAddress) {
-    const parsed = parseDeployment(projectRoot);
+    const parsed = parseDeployment(projectRoot, networkConfig);
     deploymentPath = parsed.deploymentPath;
     vaultAddress = parsed.deployment.vaultAddress;
   }
@@ -114,9 +104,7 @@ Notes:
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   const signer = new ethers.Wallet(privateKey, provider);
   const chainId = (await provider.getNetwork()).chainId;
-  if (chainId !== 11155111n) {
-    throw new Error(`Expected Sepolia (11155111), got chainId=${chainId.toString()}`);
-  }
+  assertExpectedChainId(chainId, networkConfig);
 
   const vaultAbi = [
     "function owner() view returns (address)",

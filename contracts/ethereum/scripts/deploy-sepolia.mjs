@@ -3,6 +3,13 @@ import path from "node:path";
 import process from "node:process";
 import { ethers } from "ethers";
 import { compileContracts, getCompiledContract } from "./lib/compile.mjs";
+import {
+  assertExpectedChainId,
+  getDeployerPrivateKey,
+  getEthereumNetworkConfig,
+  getRpcUrl,
+  getEnv,
+} from "./lib/network-config.mjs";
 
 const DEFAULT_TOKENS = [
   { assetId: 0, symbol: "USDT", name: "OP_BRIDGE Test USDT", decimals: 6 },
@@ -10,22 +17,6 @@ const DEFAULT_TOKENS = [
   { assetId: 2, symbol: "WETH", name: "OP_BRIDGE Test Wrapped ETH", decimals: 18 },
   { assetId: 3, symbol: "PAXG", name: "OP_BRIDGE Test PAXG", decimals: 18 },
 ];
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value || !value.trim()) {
-    throw new Error(`Missing required env var: ${name}`);
-  }
-  return value.trim();
-}
-
-function getEnv(...names) {
-  for (const name of names) {
-    const value = process.env[name];
-    if (value && value.trim()) return value.trim();
-  }
-  return "";
-}
 
 function parseMintAmount(raw, decimals) {
   return ethers.parseUnits(raw, decimals);
@@ -40,12 +31,13 @@ function parseBool(raw, fallback) {
 }
 
 async function main() {
+  const networkConfig = getEthereumNetworkConfig();
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
-    console.log(`Deploy Ethereum test contracts
+    console.log(`Deploy OP_BRIDGE Ethereum contracts
 
 Required:
-  ETHEREUM_RPC_URL (or SEPOLIA_RPC_URL fallback)
-  ETHEREUM_DEPLOYER_PRIVATE_KEY (or SEPOLIA_DEPLOYER_PRIVATE_KEY fallback)
+  ${networkConfig.rpcEnv}
+  ${networkConfig.deployerKeyEnv}
 
 Optional:
   ETH_VAULT_OWNER
@@ -60,15 +52,17 @@ Optional:
   OPNET_HWBTC_ADDRESS
   OPNET_HETH_ADDRESS
   OPNET_HPAXG_ADDRESS
+  ETHEREUM_TOKEN_USDT_ADDRESS / ETH_MAINNET_TOKEN_USDT_ADDRESS
+  ETHEREUM_TOKEN_WBTC_ADDRESS / ETH_MAINNET_TOKEN_WBTC_ADDRESS
+  ETHEREUM_TOKEN_WETH_ADDRESS / ETH_MAINNET_TOKEN_WETH_ADDRESS
+  ETHEREUM_TOKEN_PAXG_ADDRESS / ETH_MAINNET_TOKEN_PAXG_ADDRESS
 `);
     return;
   }
 
   const projectRoot = process.cwd();
-  const rpcUrl = getEnv("ETHEREUM_RPC_URL", "SEPOLIA_RPC_URL") || requireEnv("SEPOLIA_RPC_URL");
-  const privateKey =
-    getEnv("ETHEREUM_DEPLOYER_PRIVATE_KEY", "SEPOLIA_DEPLOYER_PRIVATE_KEY") ||
-    requireEnv("SEPOLIA_DEPLOYER_PRIVATE_KEY");
+  const rpcUrl = getRpcUrl(networkConfig);
+  const privateKey = getDeployerPrivateKey(networkConfig);
   const initialOwner = process.env.ETH_VAULT_OWNER?.trim() || "";
   const ownerAddress = initialOwner || new ethers.Wallet(privateKey).address;
   const feeRecipientRaw = process.env.ETH_VAULT_FEE_RECIPIENT?.trim() || "";
@@ -88,9 +82,7 @@ Optional:
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   const signer = new ethers.Wallet(privateKey, provider);
   const network = await provider.getNetwork();
-  if (network.chainId !== 11155111n) {
-    throw new Error(`Expected Sepolia (11155111), got chainId=${network.chainId.toString()}`);
-  }
+  assertExpectedChainId(network.chainId, networkConfig);
 
   const { output, errors, fatal } = compileContracts(projectRoot);
   for (const entry of errors) {
@@ -101,62 +93,83 @@ Optional:
     throw new Error(`Compilation failed with ${fatal.length} error(s).`);
   }
 
-  const tokenCompiled = getCompiledContract(output, "OpBridgeTestToken.sol", "OpBridgeTestToken");
   const vaultCompiled = getCompiledContract(output, "OpBridgeVault.sol", "OpBridgeVault");
-
-  const tokenFactory = new ethers.ContractFactory(
-    tokenCompiled.abi,
-    tokenCompiled.evm.bytecode.object,
-    signer,
-  );
   const vaultFactory = new ethers.ContractFactory(
     vaultCompiled.abi,
     vaultCompiled.evm.bytecode.object,
     signer,
   );
 
-  console.log(`Deploying with deployer=${signer.address} owner=${ownerAddress} feeRecipient=${feeRecipientAddress}`);
+  console.log(
+    `Deploying ${networkConfig.label} with deployer=${signer.address} owner=${ownerAddress} feeRecipient=${feeRecipientAddress}`,
+  );
 
   const deployedTokens = [];
-  for (const token of DEFAULT_TOKENS) {
-    const symbolClaimRaw =
-      getEnv(`ETHEREUM_TEST_FAUCET_${token.symbol}_CLAIM_AMOUNT`, `SEPOLIA_TEST_FAUCET_${token.symbol}_CLAIM_AMOUNT`);
-    const faucetClaimAmountRaw = symbolClaimRaw || defaultFaucetClaimAmountRaw;
-    const faucetClaimAmount = parseMintAmount(faucetClaimAmountRaw, token.decimals);
-    const instance = await tokenFactory.deploy(
-      token.name,
-      token.symbol,
-      token.decimals,
-      ownerAddress,
-      faucetClaimAmount,
-      faucetCooldownSeconds,
-      faucetEnabled,
-    );
-    await instance.waitForDeployment();
-    const tokenAddress = await instance.getAddress();
-    console.log(
-      `Token deployed ${token.symbol} -> ${tokenAddress} (faucetEnabled=${faucetEnabled} claim=${faucetClaimAmountRaw} cooldown=${faucetCooldownSeconds}s)`,
+  if (networkConfig.deployMockTokens) {
+    const tokenCompiled = getCompiledContract(output, "OpBridgeTestToken.sol", "OpBridgeTestToken");
+    const tokenFactory = new ethers.ContractFactory(
+      tokenCompiled.abi,
+      tokenCompiled.evm.bytecode.object,
+      signer,
     );
 
-    if (ownerAddress.toLowerCase() === signer.address.toLowerCase()) {
-      const mintAmount = parseMintAmount(mintPerTokenRaw, token.decimals);
-      const mintTx = await instance.mint(ownerAddress, mintAmount);
-      await mintTx.wait();
-      console.log(`Minted ${mintPerTokenRaw} ${token.symbol} to ${ownerAddress}`);
-    } else {
-      console.log(`Skipped mint for ${token.symbol} (owner != deployer)`);
+    for (const token of DEFAULT_TOKENS) {
+      const symbolClaimRaw =
+        getEnv(`ETHEREUM_TEST_FAUCET_${token.symbol}_CLAIM_AMOUNT`, `SEPOLIA_TEST_FAUCET_${token.symbol}_CLAIM_AMOUNT`);
+      const faucetClaimAmountRaw = symbolClaimRaw || defaultFaucetClaimAmountRaw;
+      const faucetClaimAmount = parseMintAmount(faucetClaimAmountRaw, token.decimals);
+      const instance = await tokenFactory.deploy(
+        token.name,
+        token.symbol,
+        token.decimals,
+        ownerAddress,
+        faucetClaimAmount,
+        faucetCooldownSeconds,
+        faucetEnabled,
+      );
+      await instance.waitForDeployment();
+      const tokenAddress = await instance.getAddress();
+      console.log(
+        `Token deployed ${token.symbol} -> ${tokenAddress} (faucetEnabled=${faucetEnabled} claim=${faucetClaimAmountRaw} cooldown=${faucetCooldownSeconds}s)`,
+      );
+
+      if (ownerAddress.toLowerCase() === signer.address.toLowerCase()) {
+        const mintAmount = parseMintAmount(mintPerTokenRaw, token.decimals);
+        const mintTx = await instance.mint(ownerAddress, mintAmount);
+        await mintTx.wait();
+        console.log(`Minted ${mintPerTokenRaw} ${token.symbol} to ${ownerAddress}`);
+      } else {
+        console.log(`Skipped mint for ${token.symbol} (owner != deployer)`);
+      }
+
+      deployedTokens.push({
+        ...token,
+        tokenAddress,
+        mintPerTokenRaw,
+        faucet: {
+          enabled: faucetEnabled,
+          claimAmountRaw: faucetClaimAmountRaw,
+          cooldownSeconds: faucetCooldownSeconds,
+        },
+      });
     }
-
-    deployedTokens.push({
-      ...token,
-      tokenAddress,
-      mintPerTokenRaw,
-      faucet: {
-        enabled: faucetEnabled,
-        claimAmountRaw: faucetClaimAmountRaw,
-        cooldownSeconds: faucetCooldownSeconds,
-      },
-    });
+  } else {
+    for (const token of DEFAULT_TOKENS) {
+      const tokenAddress = getEnv(
+        `ETHEREUM_TOKEN_${token.symbol}_ADDRESS`,
+        `ETH_MAINNET_TOKEN_${token.symbol}_ADDRESS`,
+      );
+      if (!tokenAddress) {
+        throw new Error(
+          `Missing token address for ${token.symbol}. Set ETHEREUM_TOKEN_${token.symbol}_ADDRESS or ETH_MAINNET_TOKEN_${token.symbol}_ADDRESS.`,
+        );
+      }
+      deployedTokens.push({
+        ...token,
+        tokenAddress: ethers.getAddress(tokenAddress),
+        faucet: null,
+      });
+    }
   }
 
   const vault = await vaultFactory.deploy(ownerAddress);
@@ -182,7 +195,7 @@ Optional:
   fs.mkdirSync(outputDir, { recursive: true });
   const timestamp = new Date().toISOString().replaceAll(":", "-");
   const deployment = {
-    network: "sepolia",
+    network: networkConfig.manifestPrefix,
     chainId: Number(network.chainId),
     deployedAt: new Date().toISOString(),
     deployer: signer.address,
@@ -197,8 +210,9 @@ Optional:
       faucet: token.faucet,
     })),
     opnet: {
-      network: "regtest",
+      network: process.env.OPNET_NETWORK?.trim() || networkConfig.defaultOpnetNetwork,
       bridgeAddress: process.env.OPNET_BRIDGE_ADDRESS || "",
+      bridgeHex: process.env.OPNET_BRIDGE_HEX || "",
       wrappedTokens: {
         USDT: process.env.OPNET_HUSDT_ADDRESS || "",
         WBTC: process.env.OPNET_HWBTC_ADDRESS || "",
@@ -208,8 +222,8 @@ Optional:
     },
   };
 
-  const datedPath = path.join(outputDir, `sepolia-${timestamp}.json`);
-  const latestPath = path.join(outputDir, "sepolia-latest.json");
+  const datedPath = path.join(outputDir, `${networkConfig.manifestPrefix}-${timestamp}.json`);
+  const latestPath = path.join(outputDir, networkConfig.manifestLatestFile);
   fs.writeFileSync(datedPath, JSON.stringify(deployment, null, 2));
   fs.writeFileSync(latestPath, JSON.stringify(deployment, null, 2));
   console.log(`Deployment artifacts written:\n- ${datedPath}\n- ${latestPath}`);

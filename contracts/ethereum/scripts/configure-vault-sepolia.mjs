@@ -1,31 +1,34 @@
 import fs from "node:fs";
-import path from "node:path";
 import process from "node:process";
 import { ethers } from "ethers";
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value || !value.trim()) {
-    throw new Error(`Missing required env var: ${name}`);
-  }
-  return value.trim();
-}
-
-function getEnv(...names) {
-  for (const name of names) {
-    const value = process.env[name];
-    if (value && value.trim()) return value.trim();
-  }
-  return "";
-}
+import {
+  assertExpectedChainId,
+  getDeployerPrivateKey,
+  getDeploymentPath,
+  getEthereumNetworkConfig,
+  getRpcUrl,
+} from "./lib/network-config.mjs";
 
 async function main() {
+  const networkConfig = getEthereumNetworkConfig();
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    console.log(`Configure Vault (${networkConfig.label})
+
+Required:
+  ${networkConfig.rpcEnv}
+  ${networkConfig.deployerKeyEnv}
+
+Optional:
+  ETHEREUM_DEPLOYMENT_FILE (default: deployments/${networkConfig.manifestLatestFile})
+  ETH_VAULT_FEE_RECIPIENT=0x...
+`);
+    return;
+  }
+
   const projectRoot = process.cwd();
-  const deploymentPath =
-    getEnv("ETHEREUM_DEPLOYMENT_FILE", "SEPOLIA_DEPLOYMENT_FILE") ||
-    path.join(projectRoot, "deployments", "sepolia-latest.json");
-  const rpcUrl = getEnv("ETHEREUM_RPC_URL", "SEPOLIA_RPC_URL") || requireEnv("SEPOLIA_RPC_URL");
-  const privateKey = getEnv("ETHEREUM_DEPLOYER_PRIVATE_KEY", "SEPOLIA_DEPLOYER_PRIVATE_KEY") || requireEnv("SEPOLIA_DEPLOYER_PRIVATE_KEY");
+  const deploymentPath = getDeploymentPath(projectRoot, networkConfig);
+  const rpcUrl = getRpcUrl(networkConfig);
+  const privateKey = getDeployerPrivateKey(networkConfig);
   const feeRecipientRaw = process.env.ETH_VAULT_FEE_RECIPIENT?.trim() || "";
 
   if (!fs.existsSync(deploymentPath)) {
@@ -36,9 +39,7 @@ async function main() {
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   const signer = new ethers.Wallet(privateKey, provider);
   const chainId = (await provider.getNetwork()).chainId;
-  if (chainId !== 11155111n) {
-    throw new Error(`Expected Sepolia (11155111), got chainId=${chainId.toString()}`);
-  }
+  assertExpectedChainId(chainId, networkConfig);
 
   const vaultAddress = deployment.vaultAddress;
   const vaultAbi = [

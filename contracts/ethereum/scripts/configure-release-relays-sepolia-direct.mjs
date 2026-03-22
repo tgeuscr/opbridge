@@ -1,23 +1,14 @@
 import fs from "node:fs";
-import path from "node:path";
 import process from "node:process";
 import { ethers } from "ethers";
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value || !value.trim()) {
-    throw new Error(`Missing required env var: ${name}`);
-  }
-  return value.trim();
-}
-
-function getEnv(...names) {
-  for (const name of names) {
-    const value = process.env[name];
-    if (value && value.trim()) return value.trim();
-  }
-  return "";
-}
+import {
+  assertExpectedChainId,
+  getDeployerPrivateKey,
+  getDeploymentPath,
+  getEnv,
+  getEthereumNetworkConfig,
+  getRpcUrl,
+} from "./lib/network-config.mjs";
 
 function normalizeBytes32Hex(raw, fieldName) {
   const value = String(raw ?? "").trim();
@@ -29,10 +20,8 @@ function normalizeBytes32Hex(raw, fieldName) {
   return normalized;
 }
 
-function parseDeployment(projectRoot) {
-  const deploymentPath =
-    getEnv("ETHEREUM_DEPLOYMENT_FILE", "SEPOLIA_DEPLOYMENT_FILE") ||
-    path.join(projectRoot, "deployments", "sepolia-latest.json");
+function parseDeployment(projectRoot, networkConfig) {
+  const deploymentPath = getDeploymentPath(projectRoot, networkConfig);
   if (!fs.existsSync(deploymentPath)) {
     throw new Error(`Deployment file not found: ${deploymentPath}`);
   }
@@ -80,12 +69,13 @@ function resolveBridgeHex(deployment) {
 }
 
 async function main() {
+  const networkConfig = getEthereumNetworkConfig();
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
-    console.log(`Configure Vault Release Relays Directly (Sepolia)
+    console.log(`Configure Vault Release Relays Directly (${networkConfig.label})
 
 Required:
-  ETHEREUM_RPC_URL (or SEPOLIA_RPC_URL fallback)
-  ETHEREUM_DEPLOYER_PRIVATE_KEY (or SEPOLIA_DEPLOYER_PRIVATE_KEY fallback)
+  ${networkConfig.rpcEnv}
+  ${networkConfig.deployerKeyEnv}
   RELAY_SIGNER_0, RELAY_SIGNER_1, ... in relay index order
 
 OP_NET bridge binding (one required):
@@ -93,18 +83,16 @@ OP_NET bridge binding (one required):
   OR deployment file containing opnet.bridgeHex
 
 Optional:
-  ETHEREUM_DEPLOYMENT_FILE (default: deployments/sepolia-latest.json)
+  ETHEREUM_DEPLOYMENT_FILE (default: deployments/${networkConfig.manifestLatestFile})
   RELAYER_THRESHOLD (default: 2)
 `);
     return;
   }
 
   const projectRoot = process.cwd();
-  const rpcUrl = getEnv("ETHEREUM_RPC_URL", "SEPOLIA_RPC_URL") || requireEnv("SEPOLIA_RPC_URL");
-  const privateKey =
-    getEnv("ETHEREUM_DEPLOYER_PRIVATE_KEY", "SEPOLIA_DEPLOYER_PRIVATE_KEY") ||
-    requireEnv("SEPOLIA_DEPLOYER_PRIVATE_KEY");
-  const { deploymentPath, deployment } = parseDeployment(projectRoot);
+  const rpcUrl = getRpcUrl(networkConfig);
+  const privateKey = getDeployerPrivateKey(networkConfig);
+  const { deploymentPath, deployment } = parseDeployment(projectRoot, networkConfig);
   const bridgeHex = resolveBridgeHex(deployment);
   const relaySigners = loadRelaySigners();
   const relayCount = relaySigners.length;
@@ -116,9 +104,7 @@ Optional:
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   const signer = new ethers.Wallet(privateKey, provider);
   const chainId = (await provider.getNetwork()).chainId;
-  if (chainId !== 11155111n) {
-    throw new Error(`Expected Sepolia (11155111), got chainId=${chainId.toString()}`);
-  }
+  assertExpectedChainId(chainId, networkConfig);
 
   const vaultAbi = [
     "function owner() view returns (address)",
