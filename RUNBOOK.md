@@ -1,4 +1,13 @@
-# OP_BRIDGE E2E Runbook (Regtest OP_NET + Sepolia)
+# OP_BRIDGE E2E Runbook
+
+This runbook is primarily a testnet/operator reference for Sepolia + OP_NET testnet style deployments.
+
+For the higher-level docs set, start with:
+
+- `docs/README.md`
+- `docs/architecture-overview.md`
+- `docs/operator-guide.md`
+- `docs/ethereum-deployment-guide.md`
 
 This runbook covers the full cycle:
 

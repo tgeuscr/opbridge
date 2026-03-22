@@ -106,6 +106,10 @@ npm run typecheck
 
 ## Operations And Docs
 
+- Documentation index: `docs/README.md`
+- Architecture overview: `docs/architecture-overview.md`
+- Operator guide: `docs/operator-guide.md`
+- Ethereum deployment guide: `docs/ethereum-deployment-guide.md`
 - End-to-end bridge runbook: `RUNBOOK.md`
 - Public site notes and env vars: `apps/site/README.md`
 - Relayer service usage: `services/relayer/README.md`
@@ -113,7 +117,7 @@ npm run typecheck
 - Ethereum contract details: `contracts/ethereum/README.md`
 - OP_NET contract details: `contracts/opnet/README.md`
 - Protocol draft: `docs/message-protocol-v1.md`
-- Latest operational handoff: `docs/session-handoff-2026-03-14.md`
+- Mainnet planning: `docs/mainnet-production-plan.md`
 
 ## Testnet Notes
 

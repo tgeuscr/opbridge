@@ -5,27 +5,31 @@ Off-chain signer network responsibilities:
 - Observe Ethereum deposits and OP_NET burns
 - Canonicalize bridge message payloads
 - Produce threshold signatures
-- Publish signatures for user retrieval/submission
+- Publish signatures, processed-state observations, and heartbeat status
 
-Current scaffolding:
+Current components:
 
 - Deterministic protocol builder for Ethereum deposit observations
 - Canonical payload generation for message hashing/signing
-- In-memory idempotency + pending-attestation store
-- Runtime methods:
-  - `ingestEthereumDeposit`
-  - `listPendingAttestations`
-  - `snapshot`
-- Sepolia poller CLI for `DepositInitiated` event ingestion:
+- Ethereum poller CLI for `DepositInitiated` ingestion:
   - `src/ethereum-poller.mjs`
   - `npm run run:ethereum --workspace @opbridge/relayer`
-  - mapping loader + log polling + canonical payload + pending attestation output
+- OP_NET burn poller CLI for withdrawal release attestation generation:
+  - `src/opnet-burn-poller.mjs`
+  - `npm run run:opnet --workspace @opbridge/relayer`
+- Threshold aggregators for both bridge directions
+- OP_NET mint submission CLI
+- AWS KMS-backed ML-DSA and ECDSA signer support
+- Relayer API publication:
+  - attestations
+  - processed mints
+  - heartbeats
+  - pause status (`vaultPaused`, `bridgePaused`)
 
-Still pending:
+Operational note:
 
-- real Ethereum/OPNet listeners
-- key management + threshold signature aggregation
-- persistence and production observability
+- the relayer system is live and in production use on testnet
+- the remaining operational weak point has been public OP_NET RPC reliability, not absence of relayer functionality
 
 ## Sepolia poller usage
 
