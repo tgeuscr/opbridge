@@ -1,66 +1,66 @@
 {
   "network": "sepolia",
   "chainId": 11155111,
-  "deployedAt": "2026-03-04T17:39:28.683Z",
+  "deployedAt": "2026-03-19T22:12:16.136Z",
   "deployer": "0xDBC112f28da61cA54e8F2A802866Dcc516Fa6D86",
   "owner": "0xDBC112f28da61cA54e8F2A802866Dcc516Fa6D86",
   "feeRecipient": "0x7c72d96895627928B8060942E37e6f0a43a1Dba4",
-  "vaultAddress": "0x9a27a441132AD4a86a8d781Bb2617a741104F342",
+  "vaultAddress": "0x50E6a38e9B1c0B375752BD96715C43d2a91760e5",
   "assets": [
     {
       "assetId": 0,
       "symbol": "USDT",
       "decimals": 6,
-      "tokenAddress": "0x70642a53a64aDF15AA1F8311425D38efc04Ef02a",
+      "tokenAddress": "0x7083344Afd1332929042944916217cb74944a53C",
       "faucet": {
         "enabled": true,
-        "claimAmountRaw": "5000",
-        "cooldownSeconds": 3600
+        "claimAmountRaw": "10000",
+        "cooldownSeconds": 86400
       }
     },
     {
       "assetId": 1,
       "symbol": "WBTC",
       "decimals": 8,
-      "tokenAddress": "0x9D42E00B0D72B6F54e181c68F31f1F53944EA969",
+      "tokenAddress": "0x98a212018a3A9C65610b464236172e65554c37DF",
       "faucet": {
         "enabled": true,
-        "claimAmountRaw": "0.1",
-        "cooldownSeconds": 3600
+        "claimAmountRaw": "0.2",
+        "cooldownSeconds": 86400
       }
     },
     {
       "assetId": 2,
       "symbol": "WETH",
       "decimals": 18,
-      "tokenAddress": "0x96DA5575B1bD0c3CF4786733355513Dff2A9334D",
+      "tokenAddress": "0x4B98D6b1f4ed837A1a0023eEbC75Be42AEEA8b97",
       "faucet": {
         "enabled": true,
-        "claimAmountRaw": "2",
-        "cooldownSeconds": 3600
+        "claimAmountRaw": "5",
+        "cooldownSeconds": 86400
       }
     },
     {
       "assetId": 3,
       "symbol": "PAXG",
       "decimals": 18,
-      "tokenAddress": "0xD8CD8E95b0461D4e76C2A97C705be7695539fA7E",
+      "tokenAddress": "0xC7bE981A9dcF107bbD016f7eA8260426C8262790",
       "faucet": {
         "enabled": true,
-        "claimAmountRaw": "1",
-        "cooldownSeconds": 3600
+        "claimAmountRaw": "2",
+        "cooldownSeconds": 86400
       }
     }
   ],
   "opnet": {
     "network": "testnet",
-    "bridgeAddress": "opt1sqq3sffh6wasa9pdstgc2dtlrswfm2t878vp0hc8j",
-    "bridgeHex": "0x7b47f9d39c855c13ec94e3a7a9750a5f386a4ae58f96242194549f643ce6afd7",
+    "bridgeAddress": "opt1sqzpz43ykxzyjynt3a804fqgqkl2754sv6gpvrqfk",
+    "bridgeHex": "0x28aaa7128a0106ee04bbcc38f82bac582e5840daea9068aa81269ccb34974c0f",
     "wrappedTokens": {
-      "USDT": "opt1sqr8ayy2476cv7zrrnp2gsq2lk67d0tdc9y2uzw55",
-      "WBTC": "opt1sqqhqx4r78fgzgv0vfkx038983fh68chkkutqvzzx",
-      "WETH": "opt1sqqawsa9nu30345wu29l97ql4nphndnrn5s99v7ac",
-      "PAXG": "opt1sqpr0re5zchswwxqxpje844a636lhl4f5t5pdfzjx"
+      "USDT": "opt1sqzteg2fr9ecjt66wh5fyms4vz8wdzztnaqtgxrqh",
+      "WBTC": "opt1sqz0eecnrxz82d9995l3urnjh7xtzhn53dckfgh93",
+      "WETH": "opt1sqrzm9xgx4tvqgz6cagradhrzfkexx8efn5z9tak4",
+      "PAXG": "opt1sqprt4n67j3pp76menhm3qh8d50jpqrk6gsn2q5kd"
     }
   }
 }
