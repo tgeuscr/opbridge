@@ -237,6 +237,16 @@ function short(value?: string | null) {
   return `${value.slice(0, 8)}...${value.slice(-6)}`;
 }
 
+function parseJsonObject(raw: string | null | undefined): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
 function CloseIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -1455,6 +1465,17 @@ export function App() {
   const burnAssetBalanceLabel = burnAssetState?.balanceRaw != null
     ? `${formatTokenAmount(burnAssetState.balanceRaw, ETH_ASSET_CONFIG[burnAsset].decimals)} ${formatOpnetTicker(burnAsset)}`
     : '-';
+  const bridgePauseState = statusApiRelayers.reduce(
+    (acc, relayer) => {
+      const detail = parseJsonObject(relayer.detail);
+      if (!detail) return acc;
+      if (typeof detail.vaultPaused === 'boolean') acc.vaultPaused = acc.vaultPaused || detail.vaultPaused;
+      if (typeof detail.bridgePaused === 'boolean') acc.bridgePaused = acc.bridgePaused || detail.bridgePaused;
+      return acc;
+    },
+    { vaultPaused: false, bridgePaused: false },
+  );
+  const bridgePausedForMaintenance = bridgePauseState.vaultPaused || bridgePauseState.bridgePaused;
   const depositReady = walletPairReady && Boolean(opRecipientHash);
   const burnReady = walletPairReady;
   const depositConfigReady = Boolean(ETH_VAULT_ADDRESS && ETH_TOKEN_ADDRESSES[depositAsset as AssetSymbol]);
@@ -2498,6 +2519,21 @@ export function App() {
         </div>
         {tokenActionStatus ? <p className="muted token-action-status">{tokenActionStatus}</p> : null}
       </section>
+    );
+  }
+
+  if (bridgePausedForMaintenance) {
+    return (
+      <main className="paused-landing" aria-live="polite">
+        <div className="paused-landing-inner">
+          <img
+            className="paused-landing-wordmark"
+            src="/branding/opbridge-wordmark-dark.svg"
+            alt="OPbridge"
+          />
+          <p className="paused-landing-message">The bridge is paused for maintenance. We will be back shortly.</p>
+        </div>
+      </main>
     );
   }
 

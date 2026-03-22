@@ -126,6 +126,33 @@ body::before {
     var(--surface);
 }
 
+.paused-landing {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background: #000;
+}
+
+.paused-landing-inner {
+  display: grid;
+  justify-items: center;
+  gap: 1.25rem;
+  text-align: center;
+}
+
+.paused-landing-wordmark {
+  width: min(42rem, 92vw);
+  height: auto;
+}
+
+.paused-landing-message {
+  margin: 0;
+  color: rgba(235, 240, 248, 0.82);
+  font-size: clamp(1rem, 2vw, 1.2rem);
+  line-height: 1.5;
+}
+
 .hero-top {
   display: flex;
   align-items: flex-start;

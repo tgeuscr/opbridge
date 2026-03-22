@@ -31,6 +31,11 @@ const DISCOVERY_DEBUG_ENABLED =
 
 const BRIDGE_EVENTS_ABI = [
   {
+    name: "paused",
+    outputs: [{ name: "paused", type: ABIDataTypes.BOOL }],
+    type: BitcoinAbiTypes.Function,
+  },
+  {
     name: "MintFinalized",
     values: [
       { name: "assetId", type: ABIDataTypes.UINT8 },
@@ -99,6 +104,21 @@ const BRIDGE_EVENTS_ABI = [
     type: BitcoinAbiTypes.Event,
   },
 ];
+
+function extractScalar(value) {
+  if (value == null) return value;
+  if (typeof value !== "object") return value;
+  if (Array.isArray(value) && value.length > 0) return extractScalar(value[0]);
+  if ("paused" in value) return extractScalar(value.paused);
+  if ("value" in value) return extractScalar(value.value);
+  if ("result" in value) return extractScalar(value.result);
+  if ("values" in value && Array.isArray(value.values) && value.values.length > 0) {
+    return extractScalar(value.values[0]);
+  }
+  const entries = Object.entries(value);
+  if (entries.length > 0) return extractScalar(entries[0][1]);
+  return value;
+}
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -1142,6 +1162,7 @@ ECDSA relay signer configuration:
 
     try {
       const heartbeatHead = await provider.getBlockNumber();
+      const heartbeatPausedResult = await bridge.paused();
       const heartbeatFinalizedHead =
         heartbeatHead >= BigInt(minConfirmations) ? heartbeatHead - BigInt(minConfirmations) : -1n;
       await publishRelayerHeartbeat({
@@ -1150,6 +1171,7 @@ ECDSA relay signer configuration:
         status: "ok",
         detail: JSON.stringify({
           sourceChain: opnetNetworkName,
+          bridgePaused: Boolean(extractScalar(heartbeatPausedResult)),
           currentHead: Number(heartbeatHead),
           finalizedHead: heartbeatFinalizedHead >= 0n ? Number(heartbeatFinalizedHead) : null,
           minConfirmations,

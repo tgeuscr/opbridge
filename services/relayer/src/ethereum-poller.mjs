@@ -16,6 +16,7 @@ const DEPOSIT_INITIATED_TOPIC0 =
   "0x3fb1c794079291b42d6d8707ba973ad40ab31522db5ff4280e7606823b71be73";
 const WITHDRAWAL_RELEASED_TOPIC0 =
   "0xf508cb4e522554ecdc6cdaed6e06898939fadca9fe07857fa51c68ddc2bead4a";
+const VAULT_PAUSED_SELECTOR = "0x5c975abb";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../../..");
@@ -614,6 +615,10 @@ Example:
 
     try {
       const heartbeatHead = hexToBigInt(await rpc(rpcUrl, "eth_blockNumber", []));
+      const heartbeatPausedRaw = await rpc(rpcUrl, "eth_call", [
+        { to: mapping.ethereum.vaultAddress, data: VAULT_PAUSED_SELECTOR },
+        "latest",
+      ]);
       const heartbeatFinalizedHead =
         heartbeatHead >= BigInt(minConfirmations) ? heartbeatHead - BigInt(minConfirmations) : -1n;
       await publishRelayerHeartbeat({
@@ -622,6 +627,7 @@ Example:
         status: "ok",
         detail: JSON.stringify({
           sourceChain: "sepolia",
+          vaultPaused: hexToBigInt(heartbeatPausedRaw) !== 0n,
           currentHead: Number(heartbeatHead),
           finalizedHead: heartbeatFinalizedHead >= 0n ? Number(heartbeatFinalizedHead) : null,
           minConfirmations,
