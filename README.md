@@ -2,6 +2,8 @@
 
 OP_BRIDGE is a bi-directional bridge between Ethereum and OP_NET that moves assets between Sepolia and OP_NET testnet.
 
+Licensed under [Apache-2.0](LICENSE).
+
 ## Current Status
 
 OP_BRIDGE is already live and operational on testnet.
